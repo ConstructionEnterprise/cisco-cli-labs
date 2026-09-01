@@ -1,137 +1,154 @@
 // Packet Observatory design: terminal-first, asymmetric lab console; IBM Plex Sans + IBM Plex Mono; cyan traces, amber focus, coral errors.
 import { useMemo, useState } from "react";
-import { Check, ChevronRight, CircleHelp, Copy, ExternalLink, Gauge, Network, Play, RotateCcw, TerminalSquare, Wifi, X } from "lucide-react";
+import { Check, ChevronRight, CircleHelp, Copy, ExternalLink, Gauge, Network, Play, RotateCcw, TerminalSquare, Wifi } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
-type Step = {
-  id: number;
-  code: string;
-  eyebrow: string;
-  title: string;
-  description: string;
-  device: "R1" | "R2" | "BOTH";
-  expected: string[];
-  success: string;
-  hint: string;
-  explain: string;
-};
+type DeviceName = "R1" | "R2";
+type Mode = "user" | "privileged" | "config" | "interface";
+type InterfaceName = "g0/0" | "loopback0" | null;
+type InterfaceState = { global?: string; linkLocal?: string; up: boolean };
+type DeviceState = { mode: Mode; context: InterfaceName; forwarding: boolean; interfaces: { "g0/0": InterfaceState; loopback0: InterfaceState }; routes: string[]; history: string[] };
+type LabState = { activeDevice: DeviceName; verified: boolean; devices: Record<DeviceName, DeviceState> };
+
+type Step = { id: number; code: string; eyebrow: string; title: string; description: string; device: "R1" | "R2" | "BOTH"; hint: string; explain: string };
 
 const steps: Step[] = [
-  { id: 1, code: "01", eyebrow: "ACCESS", title: "Enter privileged EXEC mode", description: "Start on R1. Move from user EXEC to privileged EXEC so the router will accept configuration commands.", device: "R1", expected: ["enable"], success: "R1 is now in privileged EXEC mode.", hint: "The command is a single word: enable", explain: "The # prompt indicates privileged EXEC mode." },
-  { id: 2, code: "02", eyebrow: "FORWARDING", title: "Enable IPv6 forwarding", description: "Turn the router into an IPv6 router. This is the global prerequisite for forwarding packets between interfaces.", device: "R1", expected: ["configure terminal", "conf t", "ipv6 unicast-routing"], success: "IPv6 unicast forwarding is enabled on R1.", hint: "Enter configuration mode first, then use ipv6 unicast-routing.", explain: "IPv6 forwarding is a global router setting, not an interface setting." },
-  { id: 3, code: "03", eyebrow: "ADDRESSING", title: "Configure R1’s transit interface", description: "Give G0/0 a global address and a predictable link-local address, then bring the interface up.", device: "R1", expected: ["interface gigabitEthernet 0/0", "int g0/0", "ipv6 address 2001:db8:12:12::1/64", "ipv6 address fe80::1 link-local", "no shutdown"], success: "R1’s transit interface is addressed and up.", hint: "Use the exact address from the addressing plan: 2001:db8:12:12::1/64.", explain: "The /64 prefix identifies the shared transit network. The link-local address stays on that link." },
-  { id: 4, code: "04", eyebrow: "SIMULATED LAN", title: "Configure R1’s loopback", description: "Use Loopback0 as a stable simulated LAN prefix so the lab can test routing without a switch or PC.", device: "R1", expected: ["interface loopback 0", "int lo0", "ipv6 address 2001:db8:1::1/64"], success: "R1’s simulated LAN is ready.", hint: "Loopback interfaces stay logically up and are perfect for representing a routed prefix.", explain: "The loopback creates a connected route for 2001:db8:1::/64." },
-  { id: 5, code: "05", eyebrow: "PEER CONFIG", title: "Configure R2", description: "Switch to R2 and mirror the transit and loopback design with R2’s addresses.", device: "R2", expected: ["ipv6 unicast-routing", "ipv6 address 2001:db8:12:12::2/64", "ipv6 address fe80::2 link-local", "ipv6 address 2001:db8:2::1/64"], success: "R2 now has IPv6 forwarding and both local prefixes.", hint: "On R2, use ::2 on the transit link and 2001:db8:2::1/64 on Loopback0.", explain: "Both routers now share one transit prefix and each owns one unique LAN prefix." },
-  { id: 6, code: "06", eyebrow: "ROUTING", title: "Add static routes", description: "Tell each router how to reach the remote loopback. Use the neighbor’s link-local address and the transit interface.", device: "BOTH", expected: ["ipv6 route 2001:db8:2::/64 fe80::2 gigabitEthernet 0/0", "ipv6 route 2001:db8:1::/64 fe80::1 gigabitEthernet 0/0"], success: "Static routes installed in both directions.", hint: "A link-local next hop needs the outgoing interface: fe80::2 g0/0 from R1, fe80::1 g0/0 from R2.", explain: "The routing table now has an explicit path to the remote simulated LAN." },
-  { id: 7, code: "07", eyebrow: "EVIDENCE", title: "Verify the path", description: "Run a reachability test from R1 to R2’s loopback. The packet should cross the transit link and arrive at 2001:db8:2::1.", device: "R1", expected: ["ping ipv6 2001:db8:2::1", "show ipv6 route", "show ipv6 neighbors"], success: "End-to-end IPv6 reachability confirmed.", hint: "Start with ping ipv6 2001:db8:2::1. Then inspect the route and neighbor table.", explain: "A successful ping is the final evidence that addressing, forwarding, routing, and neighbor discovery align." },
+  { id: 1, code: "01", eyebrow: "ACCESS", title: "Enter privileged EXEC mode", description: "Start on R1. Move from user EXEC to privileged EXEC so the router will accept configuration commands.", device: "R1", hint: "The command is a single word: enable", explain: "The # prompt indicates privileged EXEC mode." },
+  { id: 2, code: "02", eyebrow: "FORWARDING", title: "Enable IPv6 forwarding", description: "Turn the router into an IPv6 router. This is the global prerequisite for forwarding packets between interfaces.", device: "R1", hint: "Enter configuration mode first, then use ipv6 unicast-routing.", explain: "IPv6 forwarding is a global router setting, not an interface setting." },
+  { id: 3, code: "03", eyebrow: "ADDRESSING", title: "Configure R1’s transit interface", description: "Give G0/0 a global address and a predictable link-local address, then bring the interface up.", device: "R1", hint: "Use 2001:db8:12:12::1/64 and fe80::1 on G0/0, then no shutdown.", explain: "The /64 prefix identifies the shared transit network. The link-local address stays on that link." },
+  { id: 4, code: "04", eyebrow: "SIMULATED LAN", title: "Configure R1’s loopback", description: "Use Loopback0 as a stable simulated LAN prefix so the lab can test routing without a switch or PC.", device: "R1", hint: "Select interface loopback 0 and use 2001:db8:1::1/64.", explain: "The loopback creates a connected route for 2001:db8:1::/64." },
+  { id: 5, code: "05", eyebrow: "PEER CONFIG", title: "Configure R2", description: "Switch to R2 and mirror the transit and loopback design with R2’s addresses.", device: "R2", hint: "On R2 use ::2 on the transit link, fe80::2 as link-local, and 2001:db8:2::1/64 on Loopback0.", explain: "Both routers now share one transit prefix and each owns one unique LAN prefix." },
+  { id: 6, code: "06", eyebrow: "ROUTING", title: "Add static routes", description: "Tell each router how to reach the remote loopback. Use the neighbor’s link-local address and the transit interface.", device: "BOTH", hint: "R1 routes 2001:db8:2::/64 via fe80::2 g0/0. R2 routes 2001:db8:1::/64 via fe80::1 g0/0.", explain: "The routing table now has an explicit path to the remote simulated LAN." },
+  { id: 7, code: "07", eyebrow: "EVIDENCE", title: "Verify the path", description: "Run a reachability test from R1 to R2’s loopback. The packet should cross the transit link and arrive at 2001:db8:2::1.", device: "R1", hint: "On R1, run ping ipv6 2001:db8:2::1. You can also inspect show ipv6 route and show ipv6 neighbors.", explain: "A successful ping confirms addressing, forwarding, routing, and neighbor discovery align." },
 ];
 
-const outputByDevice: Record<string, string[]> = {
-  R1: ["R1> enable", "R1# configure terminal", "R1(config)# ipv6 unicast-routing", "R1(config)# interface g0/0", "R1(config-if)# ipv6 address 2001:db8:12:12::1/64", "R1(config-if)# no shutdown", "R1(config-if)# %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to up"],
-  R2: ["R2# configure terminal", "R2(config)# ipv6 unicast-routing", "R2(config)# interface g0/0", "R2(config-if)# ipv6 address 2001:db8:12:12::2/64", "R2(config-if)# no shutdown", "R2(config-if)# %LINK-5-CHANGED: Interface GigabitEthernet0/0, changed state to up"],
-};
+function initialDevice(name: DeviceName): DeviceState {
+  return { mode: "user", context: null, forwarding: false, interfaces: { "g0/0": { up: false }, loopback0: { up: false } }, routes: [], history: ["Cisco IOS Software, IPv6 Lab Simulator", "Press Enter to submit a command. Tab completion is intentionally simplified.", ""] };
+}
+function initialLab(): LabState { return { activeDevice: "R1", verified: false, devices: { R1: initialDevice("R1"), R2: initialDevice("R2") } }; }
+function cloneLab(lab: LabState): LabState {
+  return { ...lab, devices: { R1: { ...lab.devices.R1, interfaces: { "g0/0": { ...lab.devices.R1.interfaces["g0/0"] }, loopback0: { ...lab.devices.R1.interfaces.loopback0 } }, routes: [...lab.devices.R1.routes], history: [...lab.devices.R1.history] }, R2: { ...lab.devices.R2, interfaces: { "g0/0": { ...lab.devices.R2.interfaces["g0/0"] }, loopback0: { ...lab.devices.R2.interfaces.loopback0 } }, routes: [...lab.devices.R2.routes], history: [...lab.devices.R2.history] } } };
+}
+function promptFor(device: DeviceState, name: DeviceName) {
+  if (device.mode === "user") return `${name}>`;
+  if (device.mode === "privileged") return `${name}#`;
+  if (device.mode === "config") return `${name}(config)#`;
+  return `${name}(config-if)#`;
+}
+function normalized(value: string) { return value.trim().toLowerCase().replace(/\s+/g, " "); }
+function interfaceLabel(context: InterfaceName) { return context === "loopback0" ? "Loopback0" : "GigabitEthernet0/0"; }
+
+function getCompletion(lab: LabState) {
+  const r1 = lab.devices.R1; const r2 = lab.devices.R2;
+  const r1Transit = Boolean(r1.interfaces["g0/0"].global && r1.interfaces["g0/0"].linkLocal && r1.interfaces["g0/0"].up);
+  const r2Transit = Boolean(r2.interfaces["g0/0"].global && r2.interfaces["g0/0"].linkLocal && r2.interfaces["g0/0"].up);
+  const r1Loop = Boolean(r1.interfaces.loopback0.global && r1.interfaces.loopback0.up);
+  const r2Loop = Boolean(r2.interfaces.loopback0.global && r2.interfaces.loopback0.up);
+  const bothRoutes = r1.routes.includes("2001:db8:2::/64") && r2.routes.includes("2001:db8:1::/64");
+  return [r1.mode !== "user", r1.forwarding, r1Transit, r1Loop, r2.forwarding && r2Transit && r2Loop, bothRoutes, lab.verified];
+}
+function suggestedCommand(lab: LabState, stepId: number): { device: DeviceName; command: string } {
+  const deviceName: DeviceName = stepId <= 4 ? "R1" : stepId === 5 ? "R2" : lab.activeDevice;
+  const d = lab.devices[deviceName];
+  if (stepId === 6) {
+    const targetName: DeviceName = !lab.devices.R1.routes.includes("2001:db8:2::/64") ? "R1" : "R2";
+    const target = lab.devices[targetName];
+    const route = targetName === "R1" ? "ipv6 route 2001:db8:2::/64 fe80::2 g0/0" : "ipv6 route 2001:db8:1::/64 fe80::1 g0/0";
+    if (target.mode === "user") return { device: targetName, command: "enable" };
+    if (target.mode === "privileged") return { device: targetName, command: "configure terminal" };
+    return { device: targetName, command: route };
+  }
+  if (stepId === 7) {
+    const r1 = lab.devices.R1;
+    return { device: "R1", command: r1.mode === "privileged" ? "ping ipv6 2001:db8:2::1" : r1.mode === "config" || r1.mode === "interface" ? "end" : "enable" };
+  }
+  if (d.mode === "user") return { device: deviceName, command: "enable" };
+  if (d.mode === "privileged") return { device: deviceName, command: "configure terminal" };
+  if (!d.forwarding && (stepId === 2 || stepId === 5)) return { device: deviceName, command: "ipv6 unicast-routing" };
+  if (stepId === 3) { const i = d.interfaces["g0/0"]; if (d.mode !== "interface" || d.context !== "g0/0") return { device: deviceName, command: "interface g0/0" }; if (!i.global) return { device: deviceName, command: `ipv6 address 2001:db8:12:12::${deviceName === "R1" ? "1" : "2"}/64` }; if (!i.linkLocal) return { device: deviceName, command: `ipv6 address fe80::${deviceName === "R1" ? "1" : "2"} link-local` }; if (!i.up) return { device: deviceName, command: "no shutdown" }; }
+  if (stepId === 4) { const i = d.interfaces.loopback0; if (d.mode !== "interface" || d.context !== "loopback0") return { device: deviceName, command: "interface loopback 0" }; if (!i.global) return { device: deviceName, command: "ipv6 address 2001:db8:1::1/64" }; if (!i.up) return { device: deviceName, command: "no shutdown" }; }
+  if (stepId === 5) { const i = d.interfaces["g0/0"]; if (d.mode !== "interface" || d.context !== "g0/0") return { device: deviceName, command: "interface g0/0" }; if (!i.global) return { device: deviceName, command: "ipv6 address 2001:db8:12:12::2/64" }; if (!i.linkLocal) return { device: deviceName, command: "ipv6 address fe80::2 link-local" }; if (!i.up) return { device: deviceName, command: "no shutdown" }; if (!d.interfaces.loopback0.global) return { device: deviceName, command: "interface loopback 0" }; if (!d.interfaces.loopback0.up) return { device: deviceName, command: "no shutdown" }; }
+  return { device: deviceName, command: "show ipv6 route" };
+}
 
 export default function Home() {
-  const [activeStep, setActiveStep] = useState(1);
-  const [device, setDevice] = useState<"R1" | "R2">("R1");
+  const [lab, setLab] = useState<LabState>(() => initialLab());
   const [command, setCommand] = useState("");
-  const [history, setHistory] = useState<string[]>(outputByDevice.R1);
-  const [completed, setCompleted] = useState<number[]>([]);
   const [hintVisible, setHintVisible] = useState(false);
   const [showGuide, setShowGuide] = useState(true);
-
+  const completion = getCompletion(lab);
+  const completedCount = completion.filter(Boolean).length;
+  const activeStep = Math.min(completion.findIndex((done) => !done) + 1 || steps.length, steps.length);
   const step = steps[activeStep - 1];
-  const percent = Math.round((completed.length / steps.length) * 100);
-  const statusLabel = completed.length === steps.length ? "LAB COMPLETE" : `STEP ${String(activeStep).padStart(2, "0")} OF ${String(steps.length).padStart(2, "0")}`;
+  const device = lab.devices[lab.activeDevice];
+  const prompt = promptFor(device, lab.activeDevice);
+  const percent = Math.round((completedCount / steps.length) * 100);
+  const statusLabel = completedCount === steps.length ? "LAB COMPLETE" : `STEP ${String(activeStep).padStart(2, "0")} OF ${String(steps.length).padStart(2, "0")}`;
 
-  const prompt = useMemo(() => {
-    if (activeStep === 1) return `${device}>`;
-    if (activeStep === 3 || activeStep === 4) return `${device}(config-if)#`;
-    return `${device}(config)#`;
-  }, [activeStep, device]);
+  function switchDevice(next: DeviceName) { setLab((current) => ({ ...current, activeDevice: next })); setCommand(""); setHintVisible(false); toast(`Console switched to ${next}`, { description: "The simulator is ready for the next command." }); }
 
   function submitCommand(value = command) {
-    const normalized = value.trim().toLowerCase().replace(/\s+/g, " ");
-    if (!normalized) return;
-    const expected = step.expected.some((item) => normalized === item.toLowerCase() || normalized.includes(item.toLowerCase()));
-    const line = `${prompt} ${value.trim()}`;
-    setHistory((current) => [...current, line]);
-    setCommand("");
-    if (!expected) {
-      setHistory((current) => [...current, `% Invalid input detected at '^' marker.`, `Hint: ${step.hint}`]);
-      toast.error("That command does not complete this step yet.");
+    const text = value.trim(); if (!text) return;
+    const next = cloneLab(lab); const d = next.devices[next.activeDevice]; const name = next.activeDevice; const beforePrompt = promptFor(d, name); const cmd = normalized(text); d.history.push(`${beforePrompt} ${text}`);
+    let response: string[] = []; let valid = true;
+    const add = (...lines: string[]) => { response = [...response, ...lines]; };
+    const invalid = (hint = step.hint) => { valid = false; add("% Invalid input detected at '^' marker.", `Hint: ${hint}`); };
+
+    if (cmd === "enable") { if (d.mode !== "user") invalid("You are already in privileged or configuration mode."); else { d.mode = "privileged"; add(`${name} is now in privileged EXEC mode.`, "✓ Evidence: The # prompt indicates privileged EXEC mode."); } }
+    else if (cmd === "configure terminal" || cmd === "conf t") { if (d.mode !== "privileged") invalid("Use enable first, then configure terminal."); else { d.mode = "config"; add("Enter configuration commands, one per line. End with CNTL/Z."); } }
+    else if (cmd === "end") { if (d.mode === "user") invalid("Use enable before leaving configuration mode."); else { d.mode = "privileged"; d.context = null; add("Returned to privileged EXEC mode."); } }
+    else if (cmd === "exit") { if (d.mode === "interface") { d.mode = "config"; d.context = null; add("Returned to global configuration mode."); } else if (d.mode === "config") { d.mode = "privileged"; add("Returned to privileged EXEC mode."); } else invalid("There is no configuration context to exit from."); }
+    else if (cmd === "ipv6 unicast-routing") { if (d.mode !== "config") invalid("Enter configure terminal mode before enabling IPv6 forwarding."); else { d.forwarding = true; add("IPv6 unicast forwarding enabled.", "✓ Evidence: IPv6 forwarding is a global router setting."); } }
+    else if (cmd === "interface g0/0" || cmd === "int g0/0" || cmd === "interface gigabitethernet 0/0" || cmd === "int gigabitethernet 0/0") { if (d.mode !== "config") invalid("Enter configure terminal before selecting an interface."); else { d.mode = "interface"; d.context = "g0/0"; add(`Interface ${interfaceLabel("g0/0")} selected.`); } }
+    else if (cmd === "interface loopback 0" || cmd === "int loopback 0" || cmd === "interface lo0" || cmd === "int lo0") { if (d.mode !== "config") invalid("Enter configure terminal before selecting a loopback."); else { d.mode = "interface"; d.context = "loopback0"; add("Interface Loopback0 selected."); } }
+    else if (cmd.startsWith("ipv6 address ")) {
+      if (d.mode !== "interface" || !d.context) invalid("Select G0/0 or Loopback0 before assigning an address.");
+      else if (cmd.includes("fe80::1") && name === "R1" && cmd.endsWith("link-local")) { d.interfaces["g0/0"].linkLocal = "fe80::1"; add("Link-local address fe80::1 applied to G0/0."); }
+      else if (cmd.includes("fe80::2") && name === "R2" && cmd.endsWith("link-local")) { d.interfaces["g0/0"].linkLocal = "fe80::2"; add("Link-local address fe80::2 applied to G0/0."); }
+      else if (d.context === "g0/0" && ((name === "R1" && cmd.includes("2001:db8:12:12::1/64")) || (name === "R2" && cmd.includes("2001:db8:12:12::2/64")))) { d.interfaces["g0/0"].global = name === "R1" ? "2001:db8:12:12::1/64" : "2001:db8:12:12::2/64"; add(`Global IPv6 address applied to ${interfaceLabel("g0/0")}.`); }
+      else if (d.context === "loopback0" && name === "R1" && cmd.includes("2001:db8:1::1/64")) { d.interfaces.loopback0.global = "2001:db8:1::1/64"; add("Global IPv6 address applied to Loopback0."); }
+      else if (d.context === "loopback0" && name === "R2" && cmd.includes("2001:db8:2::1/64")) { d.interfaces.loopback0.global = "2001:db8:2::1/64"; add("Global IPv6 address applied to Loopback0."); }
+      else invalid("Use the IPv6 address shown in the addressing plan for the selected interface.");
+    }
+    else if (cmd === "no shutdown") { if (d.mode !== "interface" || !d.context) invalid("Select an interface before using no shutdown."); else { d.interfaces[d.context].up = true; add(`%LINK-5-CHANGED: Interface ${interfaceLabel(d.context)}, changed state to up`, `✓ Evidence: ${interfaceLabel(d.context)} is administratively enabled.`); } }
+    else if (cmd.startsWith("ipv6 route ")) {
+      if (d.mode !== "config") invalid("Enter global configuration mode before adding a route.");
+      else if (name === "R1" && cmd.includes("2001:db8:2::/64") && cmd.includes("fe80::2") && cmd.includes("g0/0")) { if (!d.routes.includes("2001:db8:2::/64")) d.routes.push("2001:db8:2::/64"); add("Static route to 2001:db8:2::/64 installed."); }
+      else if (name === "R2" && cmd.includes("2001:db8:1::/64") && cmd.includes("fe80::1") && cmd.includes("g0/0")) { if (!d.routes.includes("2001:db8:1::/64")) d.routes.push("2001:db8:1::/64"); add("Static route to 2001:db8:1::/64 installed."); }
+      else invalid("Use the remote loopback prefix, the neighbor link-local address, and g0/0.");
+    }
+    else if (cmd === "show ipv6 interface brief") { if (d.mode !== "privileged") invalid("Use end to return to privileged EXEC mode before show commands."); else { add(`${name}# show ipv6 interface brief`, `${d.interfaces["g0/0"].up ? "GigabitEthernet0/0     up/up" : "GigabitEthernet0/0     administratively down"}   ${d.interfaces["g0/0"].global ?? "unassigned"}`, `${d.interfaces.loopback0.up ? "Loopback0             up/up" : "Loopback0             down/down"}   ${d.interfaces.loopback0.global ?? "unassigned"}`); } }
+    else if (cmd === "show ipv6 route") { if (d.mode !== "privileged") invalid("Use end to return to privileged EXEC mode before show commands."); else { add(`${name}# show ipv6 route`, `C   ${name === "R1" ? "2001:DB8:1::/64" : "2001:DB8:2::/64"} is directly connected, Loopback0`, "C   2001:DB8:12:12::/64 is directly connected, GigabitEthernet0/0", ...(d.routes.length ? d.routes.map((route) => `S   ${route.toUpperCase()} [1/0]`) : ["% No static IPv6 routes configured"])); } }
+    else if (cmd === "show ipv6 neighbors") { if (d.mode !== "privileged") invalid("Use end to return to privileged EXEC mode before show commands."); else if (lab.devices.R1.interfaces["g0/0"].up && lab.devices.R2.interfaces["g0/0"].up) add(`${name}# show ipv6 neighbors`, `${name === "R1" ? "FE80::2" : "FE80::1"}  ${name === "R1" ? "2001:DB8:12:12::2" : "2001:DB8:12:12::1"}  G0/0  STALE`); else add(`${name}# show ipv6 neighbors`, "% No IPv6 neighbors discovered yet."); }
+    else if (cmd === "ping ipv6 2001:db8:2::1") { if (d.mode !== "privileged") invalid("Use end to return to privileged EXEC mode before testing reachability."); else if (lab.devices.R1.routes.includes("2001:db8:2::/64") && lab.devices.R2.routes.includes("2001:db8:1::/64") && lab.devices.R1.interfaces["g0/0"].up && lab.devices.R2.interfaces["g0/0"].up) { next.verified = true; add("Type escape sequence to abort.", "Sending 5, 100-byte ICMP Echos to 2001:DB8:2::1, timeout is 2 seconds:", "!!!!!", "Success rate is 100 percent (5/5)", "✓ Evidence: End-to-end IPv6 reachability confirmed."); } else add("Type escape sequence to abort.", ".....", "Success rate is 0 percent (0/5)", "% Destination unreachable — inspect the routing table and interface state."); }
+    else if (cmd === "ping ipv6 2001:db8:1::1") { if (d.mode !== "privileged") invalid("Use end to return to privileged EXEC mode before testing reachability."); else add("Type escape sequence to abort.", "!!!!!", "Success rate is 100 percent (5/5)"); }
+    else invalid();
+
+    d.history.push(...response);
+    setLab(next); setCommand(""); setHintVisible(false);
+    if (!valid) toast.error("That command cannot run in the current CLI context."); else toast.success("Command accepted", { description: "The simulator state has been updated." });
+  }
+
+  function runSuggested() {
+    const suggestion = suggestedCommand(lab, activeStep);
+    if (lab.activeDevice !== suggestion.device) {
+      setLab((current) => ({ ...current, activeDevice: suggestion.device }));
+      setCommand(suggestion.command);
+      toast(`Console switched to ${suggestion.device}`, { description: "The suggested command is ready. Press Enter to run it." });
       return;
     }
-    setHistory((current) => [...current, step.success, `✓ Evidence: ${step.explain}`]);
-    if (!completed.includes(step.id)) setCompleted((current) => [...current, step.id]);
-    setHintVisible(false);
-    toast.success(`Step ${step.code} verified`);
-    if (activeStep < steps.length) {
-      setActiveStep((current) => current + 1);
-      if (step.id === 4) setDevice("R2");
-    }
+    submitCommand(suggestion.command);
   }
+  function resetLab() { setLab(initialLab()); setCommand(""); setHintVisible(false); toast("Lab reset", { description: "Both simulated routers returned to their initial state." }); }
+  function copyHint() { navigator.clipboard?.writeText(step.hint); toast("Hint copied"); }
 
-  function resetLab() {
-    setActiveStep(1); setDevice("R1"); setCommand(""); setCompleted([]); setHintVisible(false); setHistory(outputByDevice.R1);
-    toast("Lab reset", { description: "Your progress was cleared. Start again from R1>" });
-  }
-
-  function switchDevice(next: "R1" | "R2") {
-    setDevice(next);
-    setHistory(outputByDevice[next]);
-    toast(`Console switched to ${next}`, { description: "The simulator is ready for the next command." });
-  }
-
-  return (
-    <main className="min-h-screen overflow-hidden bg-[#0b1118] text-[#f2f5f5]">
-      <header className="border-b border-white/10 bg-[#0b1118]/95 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1500px] items-center justify-between px-5 py-4 lg:px-8">
-          <div className="flex items-center gap-3">
-            <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-[#63e6e2]/40 bg-[#10252b] shadow-[0_0_22px_rgba(99,230,226,.12)]">
-              <img src="/manus-storage/ipv6-trace-mark_f814341b.png" alt="IPv6 CLI Lab mark" className="h-8 w-8 object-contain" />
-            </div>
-            <div><div className="font-mono text-[11px] uppercase tracking-[.22em] text-[#63e6e2]">Packet Observatory</div><div className="font-display text-lg font-semibold tracking-tight">IPv6 CLI Lab</div></div>
-          </div>
-          <div className="flex items-center gap-3 text-xs text-[#98a8b0]"><span className="hidden sm:inline">TRAINING CONSOLE</span><span className="h-1.5 w-1.5 rounded-full bg-[#63e6e2] shadow-[0_0_10px_#63e6e2]" /><span className="font-mono">LOCAL SESSION</span></div>
-        </div>
-      </header>
-
-      <div className="mx-auto grid max-w-[1500px] grid-cols-1 lg:grid-cols-[250px_1fr]">
-        <aside className="border-b border-white/10 bg-[#0d151e] lg:min-h-[calc(100vh-73px)] lg:border-b-0 lg:border-r">
-          <div className="p-5 lg:sticky lg:top-0">
-            <div className="mb-7 flex items-center justify-between"><div><div className="instrument-label">LAB PATH</div><div className="mt-1 text-sm text-[#9eacb2]">IPv6 foundations</div></div><Gauge className="h-4 w-4 text-[#f5b74b]" /></div>
-            <nav className="space-y-1.5" aria-label="Lab steps">
-              {steps.map((item) => {
-                const done = completed.includes(item.id); const current = item.id === activeStep;
-                return <button key={item.id} onClick={() => setActiveStep(item.id)} className={`group flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition-all duration-200 ${current ? "bg-[#173038] text-white shadow-[inset_3px_0_0_#63e6e2]" : "text-[#82919a] hover:bg-white/[.04] hover:text-[#dce5e5]"}`}><span className={`font-mono text-[10px] ${current ? "text-[#63e6e2]" : done ? "text-[#f5b74b]" : "text-[#54626a]"}`}>{item.code}</span><span className="min-w-0 flex-1 truncate text-sm">{item.title}</span>{done ? <Check className="h-3.5 w-3.5 text-[#f5b74b]" /> : current ? <ChevronRight className="h-3.5 w-3.5 text-[#63e6e2]" /> : null}</button>;
-              })}
-            </nav>
-            <div className="mt-8 border-t border-white/10 pt-5"><div className="mb-2 flex justify-between font-mono text-[10px] uppercase tracking-wider text-[#77858d]"><span>Progress</span><span className="text-[#63e6e2]">{percent}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#63e6e2] transition-all duration-300" style={{ width: `${percent}%` }} /></div><p className="mt-3 text-xs leading-relaxed text-[#6d7b83]">Run the command, read the evidence, explain the path.</p></div>
-          </div>
-        </aside>
-
-        <section className="relative min-w-0">
-          <div className="absolute inset-0 opacity-35" style={{ backgroundImage: "url('/manus-storage/packet-observatory-texture_96a51270.jpg')", backgroundSize: "cover", backgroundPosition: "top right" }} />
-          <div className="relative mx-auto max-w-[1240px] px-5 py-7 lg:px-10 lg:py-9">
-            <div className="mb-7 flex flex-col justify-between gap-5 md:flex-row md:items-end"><div><div className="instrument-label text-[#f5b74b]">{statusLabel}</div><h1 className="mt-2 max-w-3xl font-display text-3xl font-semibold tracking-[-.03em] text-white md:text-5xl">Build the path.<br /><span className="text-[#63e6e2]">Trust the evidence.</span></h1></div><div className="flex gap-2"><Button variant="outline" className="border-white/15 bg-[#101923]/70 text-[#aab8bd] hover:bg-white/10 hover:text-white" onClick={() => setShowGuide((v) => !v)}><CircleHelp className="mr-2 h-4 w-4" /> {showGuide ? "Hide brief" : "Show brief"}</Button><Button variant="outline" className="border-white/15 bg-[#101923]/70 text-[#aab8bd] hover:bg-white/10 hover:text-white" onClick={resetLab}><RotateCcw className="mr-2 h-4 w-4" /> Reset</Button></div></div>
-
-            {showGuide && <div className="mb-7 grid gap-4 xl:grid-cols-[1.15fr_.85fr]"><div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#111c27]/90 p-5 shadow-2xl"><div className="absolute inset-y-0 right-0 w-1/2 opacity-30" style={{ backgroundImage: "url('/manus-storage/ipv6-route-atlas_06f29285.jpg')", backgroundSize: "cover", backgroundPosition: "center" }} /><div className="relative max-w-xl"><div className="instrument-label">MISSION BRIEF</div><p className="mt-3 max-w-lg text-base leading-7 text-[#c2cccf]">Configure a two-router IPv6-only path using the Cisco CLI. Loopbacks stand in for LANs so every route decision stays visible.</p><div className="mt-5 flex flex-wrap gap-2"><span className="data-chip"><Network className="h-3.5 w-3.5 text-[#63e6e2]" /> 2 routers</span><span className="data-chip"><Wifi className="h-3.5 w-3.5 text-[#63e6e2]" /> 1 transit /64</span><span className="data-chip"><TerminalSquare className="h-3.5 w-3.5 text-[#63e6e2]" /> 7 checks</span></div></div></div><div className="rounded-xl border border-[#63e6e2]/20 bg-[#0d171e]/80 p-5"><div className="instrument-label text-[#63e6e2]">ADDRESSING PLAN</div><div className="mt-4 space-y-3 font-mono text-xs"><div className="flex items-center justify-between border-b border-white/10 pb-3"><span className="text-[#74838b]">R1 transit</span><span className="text-[#dce5e5]">2001:db8:12:12::1/64</span></div><div className="flex items-center justify-between border-b border-white/10 pb-3"><span className="text-[#74838b]">R2 transit</span><span className="text-[#dce5e5]">2001:db8:12:12::2/64</span></div><div className="flex items-center justify-between border-b border-white/10 pb-3"><span className="text-[#74838b]">R1 loopback</span><span className="text-[#dce5e5]">2001:db8:1::1/64</span></div><div className="flex items-center justify-between"><span className="text-[#74838b]">R2 loopback</span><span className="text-[#dce5e5]">2001:db8:2::1/64</span></div></div></div></div>}
-
-            <div className="grid gap-6 xl:grid-cols-[.86fr_1.14fr]">
-              <div className="space-y-6">
-                <section className="panel-surface overflow-hidden"><div className="flex items-center justify-between border-b border-white/10 px-5 py-4"><div><div className="instrument-label">TOPOLOGY / LIVE TRACE</div><div className="mt-1 text-sm text-[#aab8bd]">Current route under construction</div></div><span className="status-pill"><span className="status-dot" /> {completed.length ? "SIGNAL ACTIVE" : "STANDBY"}</span></div><div className="relative min-h-[246px] overflow-hidden px-6 py-9"><div className="absolute left-[20%] right-[20%] top-[48%] h-px bg-[#34505a]" /><div className={`packet-line ${completed.length > 0 ? "packet-line-active" : ""}`} /><div className="topology-node left-[12%] top-[32%]"><span className="node-label">R1</span><span className="node-sub">2001:db8:1::/64</span></div><div className="topology-node right-[12%] top-[32%]"><span className="node-label">R2</span><span className="node-sub">2001:db8:2::/64</span></div><div className="absolute left-1/2 top-[51%] -translate-x-1/2 font-mono text-[10px] tracking-widest text-[#63e6e2]">2001:DB8:12:12::/64</div><div className="absolute bottom-5 left-6 right-6 flex justify-between font-mono text-[10px] uppercase tracking-wider text-[#64747d]"><span>g0/0 · fe80::1</span><span>g0/0 · fe80::2</span></div></div></section>
-                <section className="panel-surface"><div className="flex items-center justify-between border-b border-white/10 px-5 py-4"><div><div className="instrument-label">CURRENT OBJECTIVE</div><div className="mt-1 font-display text-lg font-semibold text-white">{step.title}</div></div><span className="rounded-md bg-[#f5b74b]/10 px-2 py-1 font-mono text-[10px] text-[#f5b74b]">{step.device === "BOTH" ? "R1 + R2" : step.device}</span></div><div className="p-5"><p className="text-sm leading-6 text-[#b7c2c5]">{step.description}</p><div className="mt-5 flex gap-2"><Button className="bg-[#63e6e2] text-[#071014] hover:bg-[#83efec]" onClick={() => setHintVisible((v) => !v)}><CircleHelp className="mr-2 h-4 w-4" /> {hintVisible ? "Hide hint" : "Need a nudge?"}</Button>{hintVisible && <div className="flex-1 rounded-lg border border-[#f5b74b]/20 bg-[#f5b74b]/10 px-3 py-2 text-xs leading-5 text-[#f5d58b]">{step.hint}</div>}</div></div></section>
-              </div>
-
-              <section className="terminal-shell"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#111b24] px-5 py-3"><div className="flex items-center gap-2"><div className="flex gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#f07178]" /><span className="h-2.5 w-2.5 rounded-full bg-[#f5b74b]" /><span className="h-2.5 w-2.5 rounded-full bg-[#63e6e2]" /></div><span className="ml-2 font-mono text-[10px] uppercase tracking-[.18em] text-[#74848d]">ios-sim / console</span></div><div className="flex items-center gap-1 rounded-lg border border-white/10 bg-[#0b1118] p-1"><button onClick={() => switchDevice("R1")} className={`rounded px-3 py-1 font-mono text-[11px] transition ${device === "R1" ? "bg-[#173038] text-[#63e6e2]" : "text-[#70818a] hover:text-white"}`}>R1</button><button onClick={() => switchDevice("R2")} className={`rounded px-3 py-1 font-mono text-[11px] transition ${device === "R2" ? "bg-[#173038] text-[#63e6e2]" : "text-[#70818a] hover:text-white"}`}>R2</button></div></div><div className="terminal-output" aria-live="polite"><div className="mb-4 text-[#72848d]">Cisco IOS Software, IPv6 Lab Simulator<br />Press Enter to submit a command. Tab completion is intentionally simplified.</div>{history.map((line, index) => <div key={`${line}-${index}`} className={`${line.startsWith("%") ? "text-[#f07178]" : line.startsWith("✓") ? "text-[#f5b74b]" : line.startsWith("R") ? "text-[#c8d4d7]" : "text-[#85959d]"}`}>{line}</div>)}<div className="mt-3 flex items-center gap-2"><span className="text-[#63e6e2]">{prompt}</span><input autoFocus value={command} onChange={(e) => setCommand(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitCommand()} className="min-w-0 flex-1 bg-transparent font-mono text-sm text-white outline-none placeholder:text-[#42535c]" placeholder="type a command..." aria-label="Cisco CLI command" /></div></div><div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-[#0e1720] px-5 py-3"><div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-[#667780]"><span className="h-1.5 w-1.5 rounded-full bg-[#63e6e2]" /> session ready</div><div className="flex gap-2"><Button variant="outline" size="sm" className="border-white/15 bg-transparent text-[#94a4aa] hover:bg-white/10 hover:text-white" onClick={() => { navigator.clipboard?.writeText(step.expected[0]); toast("Suggested command copied"); }}><Copy className="mr-2 h-3.5 w-3.5" /> Copy hint</Button><Button size="sm" className="bg-[#f5b74b] text-[#1c160b] hover:bg-[#ffca69]" onClick={() => submitCommand(step.expected[0])}><Play className="mr-2 h-3.5 w-3.5" /> Run suggested</Button></div></div></section>
-            </div>
-
-            <div className="mt-6 flex flex-col justify-between gap-3 border-t border-white/10 pt-5 text-xs text-[#687780] sm:flex-row"><span>Isolated training environment · Documentation prefixes only</span><a href="https://www.cisco.com/c/en/us/td/docs/ios/ipv6/configuration/guide/ipv6-xe-16-book-cat8000/m_ip6-addrg-bsc-con.html" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[#8ba8aa] hover:text-[#63e6e2]">Cisco IPv6 reference <ExternalLink className="h-3 w-3" /></a></div>
-          </div>
-        </section>
-      </div>
-    </main>
-  );
+  return <main className="min-h-screen overflow-hidden bg-[#0b1118] text-[#f2f5f5]">
+    <header className="border-b border-white/10 bg-[#0b1118]/95 backdrop-blur-md"><div className="mx-auto flex max-w-[1500px] items-center justify-between px-5 py-4 lg:px-8"><div className="flex items-center gap-3"><div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-[#63e6e2]/40 bg-[#10252b] shadow-[0_0_22px_rgba(99,230,226,.12)]"><img src="/manus-storage/ipv6-trace-mark_f814341b.png" alt="IPv6 CLI Lab mark" className="h-8 w-8 object-contain" /></div><div><div className="font-mono text-[11px] uppercase tracking-[.22em] text-[#63e6e2]">Packet Observatory</div><div className="font-display text-lg font-semibold tracking-tight">IPv6 CLI Lab</div></div></div><div className="flex items-center gap-3 text-xs text-[#98a8b0]"><span className="hidden sm:inline">TRAINING CONSOLE</span><span className="h-1.5 w-1.5 rounded-full bg-[#63e6e2] shadow-[0_0_10px_#63e6e2]" /><span className="font-mono">LOCAL SESSION</span></div></div></header>
+    <div className="mx-auto grid max-w-[1500px] grid-cols-1 lg:grid-cols-[250px_1fr]"><aside className="border-b border-white/10 bg-[#0d151e] lg:min-h-[calc(100vh-73px)] lg:border-b-0 lg:border-r"><div className="p-5 lg:sticky lg:top-0"><div className="mb-7 flex items-center justify-between"><div><div className="instrument-label">LAB PATH</div><div className="mt-1 text-sm text-[#9eacb2]">IPv6 foundations</div></div><Gauge className="h-4 w-4 text-[#f5b74b]" /></div><nav className="space-y-1.5" aria-label="Lab steps">{steps.map((item, index) => { const done = completion[index]; const current = item.id === activeStep; return <button key={item.id} onClick={() => { if (item.device !== "BOTH" && item.device !== lab.activeDevice) switchDevice(item.device); }} className={`group flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition-all duration-200 ${current ? "bg-[#173038] text-white shadow-[inset_3px_0_0_#63e6e2]" : "text-[#82919a] hover:bg-white/[.04] hover:text-[#dce5e5]"}`}><span className={`font-mono text-[10px] ${current ? "text-[#63e6e2]" : done ? "text-[#f5b74b]" : "text-[#54626a]"}`}>{item.code}</span><span className="min-w-0 flex-1 truncate text-sm">{item.title}</span>{done ? <Check className="h-3.5 w-3.5 text-[#f5b74b]" /> : current ? <ChevronRight className="h-3.5 w-3.5 text-[#63e6e2]" /> : null}</button>; })}</nav><div className="mt-8 border-t border-white/10 pt-5"><div className="mb-2 flex justify-between font-mono text-[10px] uppercase tracking-wider text-[#77858d]"><span>Progress</span><span className="text-[#63e6e2]">{percent}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#63e6e2] transition-all duration-300" style={{ width: `${percent}%` }} /></div><p className="mt-3 text-xs leading-relaxed text-[#6d7b83]">Run the command. Read the evidence. Explain the path.</p></div></div></aside>
+      <section className="relative min-w-0"><div className="absolute inset-0 opacity-35" style={{ backgroundImage: "url('/manus-storage/packet-observatory-texture_96a51270.jpg')", backgroundSize: "cover", backgroundPosition: "top right" }} /><div className="relative mx-auto max-w-[1240px] px-5 py-7 lg:px-10 lg:py-9"><div className="mb-7 flex flex-col justify-between gap-5 md:flex-row md:items-end"><div><div className="instrument-label text-[#f5b74b]">{statusLabel}</div><h1 className="mt-2 max-w-3xl font-display text-3xl font-semibold tracking-[-.03em] text-white md:text-5xl">Build the path.<br /><span className="text-[#63e6e2]">Trust the evidence.</span></h1></div><div className="flex gap-2"><Button variant="outline" className="border-white/15 bg-[#101923]/70 text-[#aab8bd] hover:bg-white/10 hover:text-white" onClick={() => setShowGuide((v) => !v)}><CircleHelp className="mr-2 h-4 w-4" /> {showGuide ? "Hide brief" : "Show brief"}</Button><Button variant="outline" className="border-white/15 bg-[#101923]/70 text-[#aab8bd] hover:bg-white/10 hover:text-white" onClick={resetLab}><RotateCcw className="mr-2 h-4 w-4" /> Reset</Button></div></div>
+        {showGuide && <div className="mb-7 grid gap-4 xl:grid-cols-[1.15fr_.85fr]"><div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#111c27]/90 p-5 shadow-2xl"><div className="absolute inset-y-0 right-0 w-1/2 opacity-30" style={{ backgroundImage: "url('/manus-storage/ipv6-route-atlas_06f29285.jpg')", backgroundSize: "cover", backgroundPosition: "center" }} /><div className="relative max-w-xl"><div className="instrument-label">MISSION BRIEF</div><p className="mt-3 max-w-lg text-base leading-7 text-[#c2cccf]">Configure a two-router IPv6-only path using the Cisco CLI. Loopbacks stand in for LANs so every route decision stays visible.</p><div className="mt-5 flex flex-wrap gap-2"><span className="data-chip"><Network className="h-3.5 w-3.5 text-[#63e6e2]" /> 2 routers</span><span className="data-chip"><Wifi className="h-3.5 w-3.5 text-[#63e6e2]" /> 1 transit /64</span><span className="data-chip"><TerminalSquare className="h-3.5 w-3.5 text-[#63e6e2]" /> 7 checks</span></div></div></div><div className="rounded-xl border border-[#63e6e2]/20 bg-[#0d171e]/80 p-5"><div className="instrument-label text-[#63e6e2]">ADDRESSING PLAN</div><div className="mt-4 space-y-3 font-mono text-xs"><div className="flex items-center justify-between border-b border-white/10 pb-3"><span className="text-[#74838b]">R1 transit</span><span className="text-[#dce5e5]">2001:db8:12:12::1/64</span></div><div className="flex items-center justify-between border-b border-white/10 pb-3"><span className="text-[#74838b]">R2 transit</span><span className="text-[#dce5e5]">2001:db8:12:12::2/64</span></div><div className="flex items-center justify-between border-b border-white/10 pb-3"><span className="text-[#74838b]">R1 loopback</span><span className="text-[#dce5e5]">2001:db8:1::1/64</span></div><div className="flex items-center justify-between"><span className="text-[#74838b]">R2 loopback</span><span className="text-[#dce5e5]">2001:db8:2::1/64</span></div></div></div></div>}
+        <div className="grid gap-6 xl:grid-cols-[.86fr_1.14fr]"><div className="space-y-6"><section className="panel-surface overflow-hidden"><div className="flex items-center justify-between border-b border-white/10 px-5 py-4"><div><div className="instrument-label">TOPOLOGY / LIVE TRACE</div><div className="mt-1 text-sm text-[#aab8bd]">Current route under construction</div></div><span className="status-pill"><span className="status-dot" /> {completedCount ? "SIGNAL ACTIVE" : "STANDBY"}</span></div><div className="relative min-h-[246px] overflow-hidden px-6 py-9"><div className="absolute left-[20%] right-[20%] top-[48%] h-px bg-[#34505a]" /><div className={`packet-line ${completedCount > 0 ? "packet-line-active" : ""}`} /><div className="topology-node left-[12%] top-[32%]"><span className="node-label">R1</span><span className="node-sub">2001:db8:1::/64</span></div><div className="topology-node right-[12%] top-[32%]"><span className="node-label">R2</span><span className="node-sub">2001:db8:2::/64</span></div><div className="absolute left-1/2 top-[51%] -translate-x-1/2 font-mono text-[10px] tracking-widest text-[#63e6e2]">2001:DB8:12:12::/64</div><div className="absolute bottom-5 left-6 right-6 flex justify-between font-mono text-[10px] uppercase tracking-wider text-[#64747d]"><span>g0/0 · FE80::1</span><span>g0/0 · FE80::2</span></div></div></section><section className="panel-surface"><div className="flex items-center justify-between border-b border-white/10 px-5 py-4"><div><div className="instrument-label">CURRENT OBJECTIVE</div><div className="mt-1 font-display text-lg font-semibold text-white">{step.title}</div></div><span className="rounded-md bg-[#f5b74b]/10 px-2 py-1 font-mono text-[10px] text-[#f5b74b]">{step.device === "BOTH" ? "R1 + R2" : step.device}</span></div><div className="p-5"><p className="text-sm leading-6 text-[#b7c2c5]">{step.description}</p><div className="mt-5 flex gap-2"><Button className="bg-[#63e6e2] text-[#071014] hover:bg-[#83efec]" onClick={() => setHintVisible((v) => !v)}><CircleHelp className="mr-2 h-4 w-4" /> {hintVisible ? "Hide hint" : "Need a nudge?"}</Button>{hintVisible && <div className="flex-1 rounded-lg border border-[#f5b74b]/20 bg-[#f5b74b]/10 px-3 py-2 text-xs leading-5 text-[#f5d58b]">{step.hint}</div>}</div></div></section></div>
+          <section className="terminal-shell"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#111b24] px-5 py-3"><div className="flex items-center gap-2"><div className="flex gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#f07178]" /><span className="h-2.5 w-2.5 rounded-full bg-[#f5b74b]" /><span className="h-2.5 w-2.5 rounded-full bg-[#63e6e2]" /></div><span className="ml-2 font-mono text-[10px] uppercase tracking-[.18em] text-[#74848d]">ios-sim / console</span></div><div className="flex items-center gap-1 rounded-lg border border-white/10 bg-[#0b1118] p-1"><button onClick={() => switchDevice("R1")} className={`rounded px-3 py-1 font-mono text-[11px] transition ${lab.activeDevice === "R1" ? "bg-[#173038] text-[#63e6e2]" : "text-[#70818a] hover:text-white"}`}>R1</button><button onClick={() => switchDevice("R2")} className={`rounded px-3 py-1 font-mono text-[11px] transition ${lab.activeDevice === "R2" ? "bg-[#173038] text-[#63e6e2]" : "text-[#70818a] hover:text-white"}`}>R2</button></div></div><div className="terminal-output" aria-live="polite">{device.history.map((line, index) => <div key={`${line}-${index}`} className={`${line.startsWith("%") ? "text-[#f07178]" : line.startsWith("✓") ? "text-[#f5b74b]" : line.startsWith("Cisco") || line.startsWith("Press") ? "text-[#72848d]" : line.startsWith("R") ? "text-[#c8d4d7]" : "text-[#85959d]"}`}>{line || "\u00a0"}</div>)}<div className="mt-3 flex items-center gap-2"><span className="text-[#63e6e2]">{prompt}</span><input autoFocus value={command} onChange={(e) => setCommand(e.target.value)} onKeyDown={(e) => e.key === "Enter" && submitCommand()} className="min-w-0 flex-1 bg-transparent font-mono text-sm text-white outline-none placeholder:text-[#42535c]" placeholder="type a command..." aria-label="Cisco CLI command" /></div></div><div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-[#0e1720] px-5 py-3"><div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-[#667780]"><span className="h-1.5 w-1.5 rounded-full bg-[#63e6e2]" /> {lab.activeDevice} · {device.mode}{device.context ? ` · ${device.context}` : ""}</div><div className="flex gap-2"><Button variant="outline" size="sm" className="border-white/15 bg-transparent text-[#94a4aa] hover:bg-white/10 hover:text-white" onClick={copyHint}><Copy className="mr-2 h-3.5 w-3.5" /> Copy hint</Button><Button size="sm" className="bg-[#f5b74b] text-[#1c160b] hover:bg-[#ffca69]" onClick={runSuggested}><Play className="mr-2 h-3.5 w-3.5" /> Run suggested</Button></div></div></section></div><div className="mt-6 flex flex-col justify-between gap-3 border-t border-white/10 pt-5 text-xs text-[#687780] sm:flex-row"><span>Isolated training environment · Documentation prefixes only</span><a href="https://www.cisco.com/c/en/us/td/docs/ios/ipv6/configuration/guide/ipv6-xe-16-book-cat8000/m_ip6-addrg-bsc-con.html" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[#8ba8aa] hover:text-[#63e6e2]">Cisco IPv6 reference <ExternalLink className="h-3 w-3" /></a></div></div></section></div>
+  </main>;
 }
