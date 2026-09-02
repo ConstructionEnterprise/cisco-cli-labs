@@ -1,5 +1,16 @@
 # CLI Simulator Repair Tasks
 
+## Full-App IOS Consistency Rebuild
+
+- [x] Use one canonical command parser and mode model across all five labs.
+- [x] Add exact router, DHCP pool, VTY line, and named ACL configuration modes.
+- [x] Ensure each full command is accepted only in its correct device and mode.
+- [x] Make Run suggested execute the exact next command after selecting the required device.
+- [x] Replace generic vocabulary and instructions with the same named Construction Enterprises / Factory to Foundation topology language.
+- [x] Validate complete command paths for all five labs, including manual errors and reset.
+- [x] Push the verified source to the shared GitHub repository.
+
+
 - [x] Replace the preloaded fake transcript with state-derived terminal history and prompts.
 - [x] Model device mode per router: user EXEC, privileged EXEC, global configuration, interface configuration, and loopback configuration.
 - [x] Accept valid Cisco command abbreviations without advancing unrelated objectives.

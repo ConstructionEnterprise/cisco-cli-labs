@@ -71,3 +71,8 @@ The mark is a compact geometric “6” formed from two offset route segments an
 - Use cyan for active IPv6 traces, amber for current learning focus, and coral for errors.
 - Keep motion short, informative, and reduced-motion safe.
 - Prefer crisp 10–14px corner radii, hairline borders, and layered surfaces over uniform rounded cards.
+
+- The visible product name is **IPv6 CLI Lab**; Cisco appears as training context, not the primary brand.
+- The cyan packet trace is structural: it connects topology, active task, progress, and verification evidence.
+- Curriculum navigation is a lab route with operational states rather than generic SaaS tabs.
+- The terminal remains the visual center of gravity, with surrounding panels functioning as measured annotations.
