@@ -32,6 +32,13 @@
 - [x] Preserve Lab 1 state and behavior when switching curriculum modules.
 - [x] Verify the in-app Lab 2 flow and publish a new checkpoint.
 
+## Lab 2 Flow Repair
+
+- [x] Derive Lab 2 progress from all virtual devices instead of the currently selected console.
+- [x] Keep the active objective stable when switching between SW1, SW2, and R1.
+- [x] Make the device rack selection support the prescribed multi-device sequence.
+- [ ] Verify the five-check flow from reset through final reachability.
+
 ## Accuracy and Domain Refactor
 
 - [x] Replace simplified Lab 2 milestone shortcuts with full Cisco IOS command and mode behavior.
