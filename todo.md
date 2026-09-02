@@ -8,3 +8,4 @@
 - [x] Make Run suggested execute the next valid command for the active step and context.
 - [x] Ensure reset restores both router states, history, prompt, device selection, and lesson progress.
 - [x] Verify manual R1/R2 configuration, static routes, final ping, and error handling.
+- [x] Accept and explain directly connected global and link-local transit pings.
