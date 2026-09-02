@@ -31,4 +31,14 @@
 - [x] Add Lab 2 hints, suggested commands, progress, reset, and challenge mode.
 - [x] Preserve Lab 1 state and behavior when switching curriculum modules.
 - [x] Verify the in-app Lab 2 flow and publish a new checkpoint.
+
+## Accuracy and Domain Refactor
+
+- [x] Replace simplified Lab 2 milestone shortcuts with full Cisco IOS command and mode behavior.
+- [x] Support exact configuration submodes such as `config-vlan`, `config-if`, `config-subif`, and `config-if-range` where appropriate.
+- [x] Preserve full command sequences instead of accepting one representative command as completion.
+- [x] Rename devices, VLANs, interfaces, and mission copy around Construction Enterprises and Factory to Foundation.
+- [x] Define a coherent named topology for the Construction Enterprises headquarters and Factory to Foundation site.
+- [x] Add exact command-specific verification output and no generic fallback names.
+- [x] Re-run type-check, build, visual verification, and checkpoint only after the refactor is complete.
 - [x] Verify exactly five labs are visible and each can be selected without breaking existing behavior.
