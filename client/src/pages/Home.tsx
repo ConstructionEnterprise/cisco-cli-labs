@@ -418,6 +418,59 @@ function initialSessions(lab: Lab): Record<string, Session> {
   return Object.fromEntries(lab.devices.map((device) => [device.name, boot(device.name, device.role)]));
 }
 
+type LabProgress = { stepIndex: number; sessions: Record<string, Session>; activeDevice: string };
+type PersistedAppState = { version: 1; selectedLab: number; labStates: Record<string, Partial<LabProgress>> };
+type AppState = { selectedLab: number; labStates: Record<number, LabProgress> };
+
+const STORAGE_KEY = "cisco-cli-labs-progress-v1";
+const MODES: Mode[] = ["user", "privileged", "config", "vlan", "interface", "interface-range", "subinterface", "router", "dhcp", "line", "acl"];
+
+function freshLabProgress(lab: Lab): LabProgress {
+  return { stepIndex: 0, sessions: initialSessions(lab), activeDevice: lab.steps[0]?.device ?? lab.devices[0]?.name ?? "" };
+}
+
+function isSession(value: unknown): value is Session {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<Session>;
+  return MODES.includes(candidate.mode as Mode) && (candidate.context === null || typeof candidate.context === "string") && Array.isArray(candidate.history) && candidate.history.every((line) => typeof line === "string");
+}
+
+function restoreLabProgress(lab: Lab, saved: Partial<LabProgress> | undefined): LabProgress {
+  const fresh = freshLabProgress(lab);
+  if (!saved || typeof saved !== "object") return fresh;
+  const rawStepIndex = typeof saved.stepIndex === "number" && Number.isFinite(saved.stepIndex) ? Math.floor(saved.stepIndex) : 0;
+  const stepIndex = Math.max(0, Math.min(rawStepIndex, lab.steps.length));
+  const sessions = { ...fresh.sessions };
+  if (saved.sessions && typeof saved.sessions === "object") {
+    for (const device of lab.devices) {
+      const candidate = (saved.sessions as Record<string, unknown>)[device.name];
+      if (isSession(candidate)) sessions[device.name] = candidate;
+    }
+  }
+  const activeDevice = typeof saved.activeDevice === "string" && lab.devices.some((device) => device.name === saved.activeDevice) ? saved.activeDevice : fresh.activeDevice;
+  return { stepIndex, sessions, activeDevice };
+}
+
+function loadPersistedAppState(): PersistedAppState | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedAppState>;
+    if (parsed.version !== 1 || typeof parsed.selectedLab !== "number" || !parsed.labStates || typeof parsed.labStates !== "object") return null;
+    return parsed as PersistedAppState;
+  } catch {
+    return null;
+  }
+}
+
+function createInitialAppState(): AppState {
+  const persisted = loadPersistedAppState();
+  const selectedLab = persisted && labs.some((lab) => lab.id === persisted.selectedLab) ? persisted.selectedLab : 1;
+  const labStates = Object.fromEntries(labs.map((lab) => [lab.id, restoreLabProgress(lab, persisted?.labStates[String(lab.id)])]));
+  return { selectedLab, labStates };
+}
+
 function nextMode(command: string, current: Mode): { mode: Mode; context: string | null } {
   if (command === "enable") return { mode: "privileged", context: null };
   if (command === "configure terminal") return { mode: "config", context: null };
@@ -437,25 +490,47 @@ function nextMode(command: string, current: Mode): { mode: Mode; context: string
 }
 
 export default function Home() {
-  const [selectedLab, setSelectedLab] = useState(1);
+  const [appState, setAppState] = useState<AppState>(createInitialAppState);
+  const selectedLab = appState.selectedLab;
   const lab = labs[selectedLab - 1];
-  const [stepIndex, setStepIndex] = useState(0);
-  const [sessions, setSessions] = useState<Record<string, Session>>(() => initialSessions(lab));
-  const [activeDevice, setActiveDevice] = useState(lab.steps[0].device);
+  const labProgress = appState.labStates[selectedLab] ?? freshLabProgress(lab);
+  const { stepIndex, sessions, activeDevice } = labProgress;
+  const fallbackDevice = lab.devices[0] ?? { name: "", role: "" };
   const [input, setInput] = useState("");
   const [hint, setHint] = useState(false);
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
   const step = lab.steps[Math.min(stepIndex, lab.steps.length - 1)];
-  const session = sessions[activeDevice];
+  const session = sessions[activeDevice] ?? sessions[fallbackDevice.name] ?? boot(fallbackDevice.name, fallbackDevice.role);
   const prompt = modePrompt(activeDevice, session);
   const complete = stepIndex >= lab.steps.length;
   const percent = Math.round((stepIndex / lab.steps.length) * 100);
 
-  function selectLab(id: number) {
-    const nextLab = labs[id - 1];
-    setSelectedLab(id); setStepIndex(0); setSessions(initialSessions(nextLab)); setActiveDevice(nextLab.steps[0].device); setInput(""); setHint(false);
+  function updateLabProgress(labId: number, updater: (progress: LabProgress) => LabProgress) {
+    setAppState((current) => {
+      const targetLab = labs.find((item) => item.id === labId);
+      if (!targetLab) return current;
+      const currentProgress = current.labStates[labId] ?? freshLabProgress(targetLab);
+      return { ...current, labStates: { ...current.labStates, [labId]: updater(currentProgress) } };
+    });
   }
-  function reset() { setStepIndex(0); setSessions(initialSessions(lab)); setActiveDevice(lab.steps[0].device); setInput(""); setHint(false); toast("Lab reset", { description: `${lab.code} is ready at the first IOS prompt.` }); }
+  function selectDevice(deviceName: string) {
+    updateLabProgress(selectedLab, (current) => ({ ...current, activeDevice: deviceName }));
+    setInput(""); setHint(false);
+  }
+  function selectStep(deviceName: string, index: number) {
+    updateLabProgress(selectedLab, (current) => ({ ...current, activeDevice: deviceName, stepIndex: index <= current.stepIndex ? index : current.stepIndex }));
+    setInput(""); setHint(false);
+  }
+  function selectLab(id: number) {
+    if (!labs.some((item) => item.id === id)) return;
+    setAppState((current) => ({ ...current, selectedLab: id }));
+    setInput(""); setHint(false); setPendingCommand(null);
+  }
+  function reset() {
+    updateLabProgress(selectedLab, () => freshLabProgress(lab));
+    setInput(""); setHint(false); setPendingCommand(null);
+    toast("Lab reset", { description: `${lab.code} is ready at the first IOS prompt.` });
+  }
   function submit(value = input) {
     const raw = value.trim();
     if (!raw) return;
@@ -466,26 +541,40 @@ export default function Home() {
     const expectedMode = step.mode;
     const normalized = raw.replace(/\s+/g, " ");
     if (complete) {
-      setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, "Lab complete. Reset to run this sequence again."] } })); setInput(""); return;
+      updateLabProgress(selectedLab, (progress) => ({ ...progress, sessions: { ...progress.sessions, [activeDevice]: { ...current, history: [...updatedHistory, "Lab complete. Reset to run this sequence again."] } } }));
+      setInput(""); return;
     }
     if (activeDevice !== expectedDevice || current.mode !== expectedMode || normalized !== step.command) {
       const reason = activeDevice !== expectedDevice ? `Switch to ${expectedDevice}.` : current.mode !== expectedMode ? `Use the ${expectedMode === "user" ? "user EXEC" : expectedMode === "privileged" ? "privileged EXEC" : expectedMode} prompt.` : `Expected the full command: ${step.command}`;
-      setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, "% Invalid input detected at '^' marker.", `Hint: ${reason}`] } })); setInput(""); return;
+      updateLabProgress(selectedLab, (progress) => ({ ...progress, sessions: { ...progress.sessions, [activeDevice]: { ...current, history: [...updatedHistory, "% Invalid input detected at '^' marker.", `Hint: ${reason}`] } } }));
+      setInput(""); return;
     }
     const transition = nextMode(normalized, current.mode);
     const nextSession: Session = { ...current, mode: transition.mode, context: transition.context, history: [...updatedHistory, step.success] };
-    setSessions((all) => ({ ...all, [activeDevice]: nextSession }));
-    setStepIndex((index) => index + 1); setInput(""); setHint(false);
+    updateLabProgress(selectedLab, (progress) => ({ ...progress, sessions: { ...progress.sessions, [activeDevice]: nextSession }, stepIndex: progress.stepIndex + 1 }));
+    setInput(""); setHint(false);
   }
   function runSuggested() {
     if (complete) return;
-    if (activeDevice !== step.device) { setPendingCommand(step.command); setActiveDevice(step.device); setInput(""); setHint(false); return; }
+    if (activeDevice !== step.device) { setPendingCommand(step.command); selectDevice(step.device); return; }
     if (session.mode !== step.mode) { setInput(step.mode === "privileged" ? "enable" : step.mode === "config" ? "configure terminal" : step.mode === "user" ? "" : "exit"); setHint(true); return; }
     submit(step.command);
   }
   const recent = session.history.slice(-12);
   const currentDeviceRole = lab.devices.find((device) => device.name === activeDevice)?.role;
   const allDone = useMemo(() => complete, [complete]);
+  useEffect(() => {
+    try {
+      const persisted: PersistedAppState = {
+        version: 1,
+        selectedLab: appState.selectedLab,
+        labStates: Object.fromEntries(Object.entries(appState.labStates).map(([id, progress]) => [String(id), progress])),
+      };
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
+    } catch {
+      // Persistence is best effort when browser storage is unavailable or full.
+    }
+  }, [appState]);
   useEffect(() => {
     if (pendingCommand && activeDevice === step.device) {
       const command = pendingCommand;
@@ -498,9 +587,9 @@ export default function Home() {
     <header className="border-b border-white/10 bg-[#0b1118]/95 backdrop-blur-md"><div className="mx-auto flex max-w-[1500px] items-center justify-between px-5 py-4 lg:px-8"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#63e6e2]/40 bg-[#10252b]"><img src="/manus-storage/ipv6-trace-mark_f814341b.png" alt="Cisco CLI Labs mark" className="h-8 w-8 object-contain" /></div><div><div className="font-mono text-[11px] uppercase tracking-[.22em] text-[#63e6e2]">IPv6 CLI Lab</div><div className="font-display text-lg font-semibold tracking-tight">Packet Observatory</div></div></div><div className="hidden items-center gap-3 text-xs text-[#98a8b0] sm:flex"><span>CONSTRUCTION ENTERPRISES</span><span className="h-1.5 w-1.5 rounded-full bg-[#63e6e2] shadow-[0_0_10px_#63e6e2]" /><span className="font-mono">CISCO IOS TRAINING CONSOLE</span></div></div></header>
     <nav className="border-b border-white/10 bg-[#0d151e] px-5 py-3 lg:px-8"><div className="mx-auto flex max-w-[1500px] items-center gap-2 overflow-x-auto"><span className="mr-2 shrink-0 font-mono text-[10px] uppercase tracking-[.16em] text-[#667780]">Curriculum</span>{labs.map((item) => <button key={item.id} onClick={() => selectLab(item.id)} className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-left transition ${selectedLab === item.id ? "border-[#63e6e2]/40 bg-[#173038] text-white" : "border-white/10 bg-[#101923] text-[#7f9098] hover:border-white/20 hover:text-white"}`}><span className="font-mono text-[10px] text-[#63e6e2]">{item.code}</span><span className="text-xs">{item.title}</span>{item.id === selectedLab && <span className="rounded bg-[#f5b74b]/10 px-1.5 py-0.5 font-mono text-[9px] text-[#f5b74b]">ACTIVE</span>}</button>)}</div></nav>
     <div className="mx-auto grid max-w-[1500px] grid-cols-1 lg:grid-cols-[270px_1fr]">
-      <aside className="border-b border-white/10 bg-[#0d151e] lg:min-h-[calc(100vh-121px)] lg:border-b-0 lg:border-r"><div className="p-5 lg:sticky lg:top-0"><div className="mb-7 flex items-center justify-between"><div><div className="instrument-label">LAB PATH</div><div className="mt-1 text-sm text-[#9eacb2]">{lab.domain}</div></div><TerminalSquare className="h-4 w-4 text-[#f5b74b]" /></div><div className="mb-6 rounded-xl border border-white/10 bg-[#111c27] p-4"><div className="text-xs font-semibold text-white">{lab.title}</div><p className="mt-2 text-xs leading-5 text-[#8fa0a7]">{lab.blurb}</p><div className="mt-4 font-mono text-[10px] uppercase tracking-wider text-[#63e6e2]">{lab.topology}</div></div><nav className="space-y-1.5" aria-label="Lab command path">{lab.steps.slice(0, Math.min(lab.steps.length, 16)).map((item, index) => { const done = index < stepIndex; const current = index === stepIndex && !complete; return <button key={`${item.command}-${index}`} onClick={() => { setActiveDevice(item.device); if (index <= stepIndex) setStepIndex(index); }} className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${current ? "bg-[#173038] text-white shadow-[inset_3px_0_0_#63e6e2]" : "text-[#82919a] hover:bg-white/[.04] hover:text-white"}`}><span className="w-5 font-mono text-[10px] text-[#667780]">{String(index + 1).padStart(2, "0")}</span>{done ? <Check className="h-3.5 w-3.5 text-[#63e6e2]" /> : <span className="h-3.5 w-3.5 rounded-full border border-[#53646d]" />}<span className="min-w-0 flex-1 truncate text-xs">{item.title}</span></button>; })}{lab.steps.length > 16 && <div className="px-3 py-2 font-mono text-[10px] text-[#667780]">+ {lab.steps.length - 16} more IOS commands below</div>}</nav><div className="mt-7 border-t border-white/10 pt-5"><div className="mb-2 flex justify-between font-mono text-[10px] uppercase tracking-wider text-[#77858d]"><span>Progress</span><span className="text-[#63e6e2]">{percent}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#63e6e2] transition-all duration-300" style={{ width: `${percent}%` }} /></div><p className="mt-3 text-xs leading-relaxed text-[#6d7b83]">Type the command. Read the prompt. Trust the evidence.</p></div></div></aside>
+      <aside className="border-b border-white/10 bg-[#0d151e] lg:min-h-[calc(100vh-121px)] lg:border-b-0 lg:border-r"><div className="p-5 lg:sticky lg:top-0"><div className="mb-7 flex items-center justify-between"><div><div className="instrument-label">LAB PATH</div><div className="mt-1 text-sm text-[#9eacb2]">{lab.domain}</div></div><TerminalSquare className="h-4 w-4 text-[#f5b74b]" /></div><div className="mb-6 rounded-xl border border-white/10 bg-[#111c27] p-4"><div className="text-xs font-semibold text-white">{lab.title}</div><p className="mt-2 text-xs leading-5 text-[#8fa0a7]">{lab.blurb}</p><div className="mt-4 font-mono text-[10px] uppercase tracking-wider text-[#63e6e2]">{lab.topology}</div></div><nav className="space-y-1.5" aria-label="Lab command path">{lab.steps.slice(0, Math.min(lab.steps.length, 16)).map((item, index) => { const done = index < stepIndex; const current = index === stepIndex && !complete; return <button key={`${item.command}-${index}`} onClick={() => selectStep(item.device, index)} className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${current ? "bg-[#173038] text-white shadow-[inset_3px_0_0_#63e6e2]" : "text-[#82919a] hover:bg-white/[.04] hover:text-white"}`}><span className="w-5 font-mono text-[10px] text-[#667780]">{String(index + 1).padStart(2, "0")}</span>{done ? <Check className="h-3.5 w-3.5 text-[#63e6e2]" /> : <span className="h-3.5 w-3.5 rounded-full border border-[#53646d]" />}<span className="min-w-0 flex-1 truncate text-xs">{item.title}</span></button>; })}{lab.steps.length > 16 && <div className="px-3 py-2 font-mono text-[10px] text-[#667780]">+ {lab.steps.length - 16} more IOS commands below</div>}</nav><div className="mt-7 border-t border-white/10 pt-5"><div className="mb-2 flex justify-between font-mono text-[10px] uppercase tracking-wider text-[#77858d]"><span>Progress</span><span className="text-[#63e6e2]">{percent}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#63e6e2] transition-all duration-300" style={{ width: `${percent}%` }} /></div><p className="mt-3 text-xs leading-relaxed text-[#6d7b83]">Type the command. Read the prompt. Trust the evidence.</p></div></div></aside>
       <section className="relative min-w-0"><div className="absolute inset-0 opacity-25" style={{ backgroundImage: "url('/manus-storage/packet-observatory-texture_96a51270.jpg')", backgroundSize: "cover", backgroundPosition: "top right" }} /><div className="relative mx-auto max-w-[1240px] px-5 py-7 lg:px-10 lg:py-9"><div className="mb-6 flex flex-col justify-between gap-5 md:flex-row md:items-end"><div><div className="instrument-label text-[#f5b74b]">{lab.code} · {lab.domain}</div><h1 className="mt-2 max-w-3xl font-display text-3xl font-semibold tracking-[-.03em] text-white md:text-5xl">{lab.title}<br /><span className="text-[#63e6e2]">Practice the signal.</span></h1><p className="mt-3 max-w-2xl text-sm leading-6 text-[#b4c1c5]">{lab.blurb}</p></div><Button variant="outline" className="border-white/15 bg-[#101923]/70 text-[#aab8bd] hover:bg-white/10 hover:text-white" onClick={reset}><RotateCcw className="mr-2 h-4 w-4" /> Reset {lab.code}</Button></div>
-        <div className="mb-7 grid gap-4 xl:grid-cols-[1.05fr_.95fr]"><div className="panel-surface p-5"><div className="instrument-label text-[#f5b74b]">PACKET TRACE / OPERATIONAL CONTEXT</div><div className="mt-4 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#0e1720] p-4 font-mono text-center text-xs">{lab.devices.map((device, index) => <div key={device.name} className="flex min-w-0 flex-1 items-center gap-2"><button type="button" aria-pressed={activeDevice === device.name} aria-label={`Connect console to ${device.name}`} onClick={() => { setActiveDevice(device.name); setInput(""); setHint(false); }} className={`min-w-0 flex-1 rounded-lg border px-2 py-3 transition hover:border-[#63e6e2]/60 hover:bg-[#173038] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#63e6e2] ${activeDevice === device.name ? "border-[#63e6e2]/40 bg-[#173038]" : "border-white/10 bg-[#111c27]"}`}><div className="truncate text-[#63e6e2]">{device.name}</div><div className="mt-1 truncate text-[9px] text-[#718189]">{device.role}</div></button>{index < lab.devices.length - 1 && <div className="h-px w-5 shrink-0 bg-[#385159]" />}</div>)}</div><div className="mt-4 flex items-center gap-3 font-mono text-[10px] uppercase tracking-wider text-[#77858d]"><span className="h-px flex-1 bg-gradient-to-r from-[#63e6e2] to-transparent" /><span>{lab.topology}</span><span className="h-px flex-1 bg-gradient-to-l from-[#63e6e2] to-transparent" /></div></div><div className="panel-surface p-5"><div className="flex items-center justify-between"><div className="instrument-label text-[#63e6e2]">CURRENT PACKET TRACE</div><span className="status-pill"><span className="status-dot" /> {complete ? "COMPLETE" : `${stepIndex + 1}/${lab.steps.length}`}</span></div><div className="mt-3 font-display text-xl font-semibold text-white">{allDone ? "Evidence accepted." : step.title}</div><p className="mt-2 text-sm leading-6 text-[#aebbc0]">{allDone ? "You completed the full IOS command path for this lab." : step.description}</p>{!allDone && <div className="mt-4 rounded-lg border border-[#f5b74b]/20 bg-[#f5b74b]/10 p-3"><div className="font-mono text-[10px] uppercase tracking-wider text-[#f5b74b]">Required context</div><div className="mt-2 flex flex-wrap gap-2 text-xs text-[#f4d998]"><span>{step.device}</span><span>·</span><span>{step.mode === "user" ? "user EXEC" : step.mode === "privileged" ? "privileged EXEC" : step.mode}</span></div>{hint && <div className="mt-3 border-t border-[#f5b74b]/20 pt-3 font-mono text-xs leading-5 text-[#f4d998]">Next exact command: <strong>{step.command}</strong></div>}</div>}</div></div>
+        <div className="mb-7 grid gap-4 xl:grid-cols-[1.05fr_.95fr]"><div className="panel-surface p-5"><div className="instrument-label text-[#f5b74b]">PACKET TRACE / OPERATIONAL CONTEXT</div><div className="mt-4 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#0e1720] p-4 font-mono text-center text-xs">{lab.devices.map((device, index) => <div key={device.name} className="flex min-w-0 flex-1 items-center gap-2"><button type="button" aria-pressed={activeDevice === device.name} aria-label={`Connect console to ${device.name}`} onClick={() => selectDevice(device.name)} className={`min-w-0 flex-1 rounded-lg border px-2 py-3 transition hover:border-[#63e6e2]/60 hover:bg-[#173038] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#63e6e2] ${activeDevice === device.name ? "border-[#63e6e2]/40 bg-[#173038]" : "border-white/10 bg-[#111c27]"}`}><div className="truncate text-[#63e6e2]">{device.name}</div><div className="mt-1 truncate text-[9px] text-[#718189]">{device.role}</div></button>{index < lab.devices.length - 1 && <div className="h-px w-5 shrink-0 bg-[#385159]" />}</div>)}</div><div className="mt-4 flex items-center gap-3 font-mono text-[10px] uppercase tracking-wider text-[#77858d]"><span className="h-px flex-1 bg-gradient-to-r from-[#63e6e2] to-transparent" /><span>{lab.topology}</span><span className="h-px flex-1 bg-gradient-to-l from-[#63e6e2] to-transparent" /></div></div><div className="panel-surface p-5"><div className="flex items-center justify-between"><div className="instrument-label text-[#63e6e2]">CURRENT PACKET TRACE</div><span className="status-pill"><span className="status-dot" /> {complete ? "COMPLETE" : `${stepIndex + 1}/${lab.steps.length}`}</span></div><div className="mt-3 font-display text-xl font-semibold text-white">{allDone ? "Evidence accepted." : step.title}</div><p className="mt-2 text-sm leading-6 text-[#aebbc0]">{allDone ? "You completed the full IOS command path for this lab." : step.description}</p>{!allDone && <div className="mt-4 rounded-lg border border-[#f5b74b]/20 bg-[#f5b74b]/10 p-3"><div className="font-mono text-[10px] uppercase tracking-wider text-[#f5b74b]">Required context</div><div className="mt-2 flex flex-wrap gap-2 text-xs text-[#f4d998]"><span>{step.device}</span><span>·</span><span>{step.mode === "user" ? "user EXEC" : step.mode === "privileged" ? "privileged EXEC" : step.mode}</span></div>{hint && <div className="mt-3 border-t border-[#f5b74b]/20 pt-3 font-mono text-xs leading-5 text-[#f4d998]">Next exact command: <strong>{step.command}</strong></div>}</div>}</div></div>
         <div className="terminal-shell"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#111b24] px-5 py-3"><div className="flex items-center gap-2"><div className="flex gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#f07178]" /><span className="h-2.5 w-2.5 rounded-full bg-[#f5b74b]" /><span className="h-2.5 w-2.5 rounded-full bg-[#63e6e2]" /></div><span className="ml-2 font-mono text-[10px] uppercase tracking-[.18em] text-[#74848d]">ios-sim / {activeDevice}</span></div><span className="font-mono text-[10px] uppercase tracking-wider text-[#667780]">{currentDeviceRole}</span></div><div className="terminal-output min-h-[380px]" aria-live="polite">{recent.map((line, index) => <div key={`${line}-${index}`} className={`${line.startsWith("%") ? "text-[#f07178]" : line.startsWith("Hint:") ? "text-[#f5b74b]" : line.startsWith("Cisco") || line.includes("·") || line.startsWith("Full IOS") ? "text-[#72848d]" : line.startsWith("✓") || line.includes("applied") || line.includes("enabled") || line.includes("entered") || line.includes("configured") || line.includes("visible") || line.includes("Success") ? "text-[#b5d8d4]" : "text-[#a4b2b7]"}`}>{line || "\u00a0"}</div>)}{!complete && <div className="mt-4 flex items-center gap-2"><span className="text-[#63e6e2]">{prompt}</span><input autoFocus value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submit()} className="min-w-0 flex-1 bg-transparent font-mono text-sm text-white outline-none placeholder:text-[#42535c]" placeholder="type the full Cisco IOS command..." aria-label="Cisco IOS command" /></div>}</div><div className="border-t border-white/10 bg-[#0e1720] px-5 py-3"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex gap-2"><Button variant="outline" size="sm" className="border-white/15 bg-transparent text-[#94a4aa] hover:bg-white/10 hover:text-white" onClick={() => setHint((value) => !value)}><CircleHelp className="mr-2 h-3.5 w-3.5" /> {hint ? "Hide hint" : "Need a nudge?"}</Button><Button variant="outline" size="sm" className="border-white/15 bg-transparent text-[#94a4aa] hover:bg-white/10 hover:text-white" onClick={() => { navigator.clipboard?.writeText(step.command); toast("Exact command copied"); }}><Copy className="mr-2 h-3.5 w-3.5" /> Copy command</Button></div><Button size="sm" className="bg-[#f5b74b] text-[#1c160b] hover:bg-[#ffca69]" onClick={runSuggested}><Play className="mr-2 h-3.5 w-3.5" /> Run suggested</Button></div></div></div>
         <div className="mt-6 grid gap-4 md:grid-cols-3"><div className="panel-surface p-4"><div className="instrument-label">ACTIVE DEVICE</div><div className="mt-2 font-mono text-sm text-[#63e6e2]">{activeDevice}</div><div className="mt-1 text-xs text-[#74838b]">{currentDeviceRole}</div></div><div className="panel-surface p-4"><div className="instrument-label">IOS PROMPT</div><div className="mt-2 font-mono text-sm text-[#f5b74b]">{prompt}</div><div className="mt-1 text-xs text-[#74838b]">Mode is derived from the command state.</div></div><div className="panel-surface p-4"><div className="instrument-label">LAB STANDARD</div><div className="mt-2 text-sm text-[#dce5e5]">Full IOS vocabulary</div><div className="mt-1 text-xs text-[#74838b]">No app-only command aliases.</div></div></div>
       </div></section>
