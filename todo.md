@@ -9,3 +9,15 @@
 - [x] Ensure reset restores both router states, history, prompt, device selection, and lesson progress.
 - [x] Verify manual R1/R2 configuration, static routes, final ping, and error handling.
 - [x] Accept and explain directly connected global and link-local transit pings.
+
+## Five-Lab CCNA Curriculum
+
+- [x] Create exactly five lab modules with a shared selector and clear progression.
+- [x] Lab 1: IPv4 and IPv6 addressing, MAC fundamentals, and basic CLI verification.
+- [x] Lab 2: Ethernet switching, MAC tables, VLANs, trunks, and inter-VLAN routing.
+- [x] Lab 3: IPv4/IPv6 static routing and OSPF/OSPFv3 fundamentals.
+- [x] Lab 4: DHCP, DNS concepts, NAT/PAT, NTP, and basic device services.
+- [x] Lab 5: ACLs, port security, wireless/security concepts, and integrated troubleshooting.
+- [x] Preserve existing Packet Observatory styling and the working CLI simulator foundation.
+- [ ] Add lab-specific objectives, hints, command validation, completion state, and reset behavior.
+- [x] Verify exactly five labs are visible and each can be selected without breaking existing behavior.
