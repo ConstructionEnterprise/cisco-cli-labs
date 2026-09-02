@@ -43,6 +43,14 @@
 - [x] Preserve Lab 1 state and behavior when switching curriculum modules.
 - [x] Verify the in-app Lab 2 flow and publish a new checkpoint.
 
+## Lab 2 Device Selector Repair
+
+- [ ] Make each Lab 2 device card a keyboard-accessible selectable console control.
+- [ ] Show selected-device state clearly in the rack and terminal header.
+- [ ] Preserve each device’s IOS mode, prompt, command history, and configuration when switching.
+- [ ] Keep shared Lab 2 progress and active objective stable across device switches.
+- [ ] Verify SW1 → SW2 → R1 switching from a clean reset.
+
 ## Lab 2 Flow Repair
 
 - [x] Derive Lab 2 progress from all virtual devices instead of the currently selected console.
