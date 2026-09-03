@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import NetworkSandbox from "@/components/NetworkSandbox";
 import { toast } from "sonner";
-import { Check, CircleHelp, Copy, Play, RotateCcw, TerminalSquare } from "lucide-react";
+import { boot, modePrompt, nextMode, type Mode, type Session } from "@/lib/ios-engine";
+import { Check, CircleHelp, Copy, Network, Play, RotateCcw, TerminalSquare } from "lucide-react";
 
 /** Packet Observatory design: dark field console, cyan signal, amber evidence, IBM Plex typography. */
 
 type DeviceName = string;
-type Mode = "user" | "privileged" | "config" | "vlan" | "interface" | "interface-range" | "subinterface" | "router" | "dhcp" | "line" | "acl";
 type Step = { title: string; description: string; device: DeviceName; mode: Mode; command: string; success: string };
 type Lab = { id: number; code: string; title: string; domain: string; blurb: string; topology: string; devices: { name: string; role: string }[]; steps: Step[] };
-type Session = { mode: Mode; context: string | null; history: string[] };
 
-const boot = (name: string, role: string): Session => ({ mode: "user", context: null, history: ["Cisco IOS Software, CCNA Lab Simulator", `${name} · ${role}`, "Full IOS syntax required. Enter one command, then press Enter."] });
 const s = (title: string, description: string, device: string, mode: Mode, command: string, success: string): Step => ({ title, description, device, mode, command, success });
 
 const labs: Lab[] = [
@@ -51,284 +50,125 @@ const labs: Lab[] = [
     ]
   },
   {
-    id: 2, code: "LAB 02", title: "Construction Enterprises: Factory to Foundation Switching, VLANs, Trunks, EtherChannel, STP, and Inter-VLAN Routing", domain: "NETWORK ACCESS", blurb: "Build the Factory to Foundation production-floor path from Construction Enterprises Headquarters using full Cisco IOS modes, named VLANs, LACP EtherChannel, Rapid PVST+, management SVIs, and router-on-a-stick gateways.", topology: "CE-HQ-ENG-PC1 ⇄ CE-HQ-DSW1 ⇄ LACP Port-channel1 ⇄ FTF-FAB-ACC1 ⇄ FTF-PROD-PC1 · CE-HQ-R1 provides VLAN gateways", devices: [{ name: "CE-HQ-DSW1", role: "Headquarters distribution switch" }, { name: "FTF-FAB-ACC1", role: "Factory to Foundation access switch" }, { name: "CE-HQ-R1", role: "Construction Enterprises Headquarters edge router" }, { name: "CE-HQ-ENG-PC1", role: "Headquarters engineering workstation" }, { name: "FTF-PROD-PC1", role: "Factory to Foundation production workstation" }],
+    id: 2, code: "LAB 02", title: "Switching, VLANs + Trunks", domain: "NETWORK ACCESS", blurb: "Switch the Construction Enterprises campus: create named VLANs, assign access ports, build a full LACP trunk, and route Factory to Foundation production traffic.", topology: "CE-HQ-DSW1 ⇄ FTF-FAB-ACC1 ⇄ CE-HQ-R1", devices: [{ name: "CE-HQ-DSW1", role: "Headquarters distribution switch" }, { name: "FTF-FAB-ACC1", role: "Factory access switch" }, { name: "CE-HQ-R1", role: "Headquarters edge router" }],
     steps: [
-      s("Enter privileged EXEC on CE-HQ-DSW1", "Prepare Construction Enterprises Headquarters distribution.", "CE-HQ-DSW1", "user", "enable", "The # prompt indicates privileged EXEC mode."),
-      s("Enter global configuration mode", "Prepare Construction Enterprises Headquarters distribution.", "CE-HQ-DSW1", "privileged", "configure terminal", "The (config)# prompt indicates global configuration mode."),
-      s("Set the headquarters distribution hostname", "Prepare Construction Enterprises Headquarters distribution.", "CE-HQ-DSW1", "config", "hostname CE-HQ-DSW1", "Hostname CE-HQ-DSW1 applied."),
-      s("Disable DNS lookup delays", "Prepare Construction Enterprises Headquarters distribution.", "CE-HQ-DSW1", "config", "no ip domain-lookup", "IP domain lookup disabled."),
-      s("Create VLAN 10", "Create the Headquarters engineering segment.", "CE-HQ-DSW1", "config", "vlan 10", "VLAN 10 created; the prompt is now (config-vlan)#."),
-      s("Name VLAN 10 CE-HQ-ENGINEERING", "Use the named Construction Enterprises VLAN identity.", "CE-HQ-DSW1", "vlan", "name CE-HQ-ENGINEERING", "VLAN 10 named CE-HQ-ENGINEERING."),
-      s("Leave VLAN 10 configuration", "Return to global configuration.", "CE-HQ-DSW1", "vlan", "exit", "Returned to global configuration mode."),
-      s("Create VLAN 20", "Create the Factory production segment.", "CE-HQ-DSW1", "config", "vlan 20", "VLAN 20 created; the prompt is now (config-vlan)#."),
-      s("Name VLAN 20 FTF-PRODUCTION", "Use the named Construction Enterprises VLAN identity.", "CE-HQ-DSW1", "vlan", "name FTF-PRODUCTION", "VLAN 20 named FTF-PRODUCTION."),
-      s("Leave VLAN 20 configuration", "Return to global configuration.", "CE-HQ-DSW1", "vlan", "exit", "Returned to global configuration mode."),
-      s("Create VLAN 99", "Create the network management segment.", "CE-HQ-DSW1", "config", "vlan 99", "VLAN 99 created; the prompt is now (config-vlan)#."),
-      s("Name VLAN 99 CE-NET-MANAGEMENT", "Use the named Construction Enterprises VLAN identity.", "CE-HQ-DSW1", "vlan", "name CE-NET-MANAGEMENT", "VLAN 99 named CE-NET-MANAGEMENT."),
-      s("Leave VLAN 99 configuration", "Return to global configuration.", "CE-HQ-DSW1", "vlan", "exit", "Returned to global configuration mode."),
-      s("Create VLAN 999", "Create the unused native segment.", "CE-HQ-DSW1", "config", "vlan 999", "VLAN 999 created; the prompt is now (config-vlan)#."),
-      s("Name VLAN 999 CE-NATIVE-BLACKHOLE", "Use the named Construction Enterprises VLAN identity.", "CE-HQ-DSW1", "vlan", "name CE-NATIVE-BLACKHOLE", "VLAN 999 named CE-NATIVE-BLACKHOLE."),
-      s("Leave VLAN 999 configuration", "Return to global configuration.", "CE-HQ-DSW1", "vlan", "exit", "Returned to global configuration mode."),
-      s("Select HQ engineering access port", "Configure the Headquarters engineering workstation edge.", "CE-HQ-DSW1", "config", "interface FastEthernet0/1", "FastEthernet0/1 selected."),
-      s("Describe CE-HQ-ENG-PC1", "Configure the Headquarters engineering workstation edge.", "CE-HQ-DSW1", "interface", "description CE-HQ-ENG-PC1", "Engineering endpoint description applied."),
-      s("Set HQ engineering access mode", "Configure the Headquarters engineering workstation edge.", "CE-HQ-DSW1", "interface", "switchport mode access", "Access mode applied."),
-      s("Assign Headquarters engineering VLAN", "Configure the Headquarters engineering workstation edge.", "CE-HQ-DSW1", "interface", "switchport access vlan 10", "Access VLAN 10 applied."),
-      s("Enable HQ engineering PortFast", "Configure the Headquarters engineering workstation edge.", "CE-HQ-DSW1", "interface", "spanning-tree portfast", "PortFast enabled."),
-      s("Enable HQ engineering BPDU Guard", "Configure the Headquarters engineering workstation edge.", "CE-HQ-DSW1", "interface", "spanning-tree bpduguard enable", "BPDU Guard enabled."),
-      s("Enable HQ engineering port", "Configure the Headquarters engineering workstation edge.", "CE-HQ-DSW1", "interface", "no shutdown", "Headquarters engineering access port is enabled."),
-      s("Leave HQ engineering interface", "Configure the Headquarters engineering workstation edge.", "CE-HQ-DSW1", "interface", "exit", "Returned to global configuration mode."),
-      s("Enter privileged EXEC on FTF-FAB-ACC1", "Prepare the Factory to Foundation production floor access switch.", "FTF-FAB-ACC1", "user", "enable", "The # prompt indicates privileged EXEC mode."),
-      s("Enter Factory access configuration mode", "Prepare the Factory to Foundation production floor access switch.", "FTF-FAB-ACC1", "privileged", "configure terminal", "The (config)# prompt indicates global configuration mode."),
-      s("Set the Factory access hostname", "Prepare the Factory to Foundation production floor access switch.", "FTF-FAB-ACC1", "config", "hostname FTF-FAB-ACC1", "Hostname FTF-FAB-ACC1 applied."),
-      s("Disable Factory DNS lookup delays", "Prepare the Factory to Foundation production floor access switch.", "FTF-FAB-ACC1", "config", "no ip domain-lookup", "IP domain lookup disabled."),
-      s("Create Factory VLAN 10", "Create the matching campus VLAN.", "FTF-FAB-ACC1", "config", "vlan 10", "VLAN 10 created on FTF-FAB-ACC1."),
-      s("Name Factory VLAN 10 CE-HQ-ENGINEERING", "Keep VLAN names consistent across the campus.", "FTF-FAB-ACC1", "vlan", "name CE-HQ-ENGINEERING", "VLAN 10 named CE-HQ-ENGINEERING."),
-      s("Leave Factory VLAN configuration", "Return to global configuration.", "FTF-FAB-ACC1", "vlan", "exit", "Returned to global configuration mode."),
-      s("Create Factory VLAN 20", "Create the matching campus VLAN.", "FTF-FAB-ACC1", "config", "vlan 20", "VLAN 20 created on FTF-FAB-ACC1."),
-      s("Name Factory VLAN 20 FTF-PRODUCTION", "Keep VLAN names consistent across the campus.", "FTF-FAB-ACC1", "vlan", "name FTF-PRODUCTION", "VLAN 20 named FTF-PRODUCTION."),
-      s("Leave Factory VLAN configuration", "Return to global configuration.", "FTF-FAB-ACC1", "vlan", "exit", "Returned to global configuration mode."),
-      s("Create Factory VLAN 99", "Create the matching campus VLAN.", "FTF-FAB-ACC1", "config", "vlan 99", "VLAN 99 created on FTF-FAB-ACC1."),
-      s("Name Factory VLAN 99 CE-NET-MANAGEMENT", "Keep VLAN names consistent across the campus.", "FTF-FAB-ACC1", "vlan", "name CE-NET-MANAGEMENT", "VLAN 99 named CE-NET-MANAGEMENT."),
-      s("Leave Factory VLAN configuration", "Return to global configuration.", "FTF-FAB-ACC1", "vlan", "exit", "Returned to global configuration mode."),
-      s("Create Factory VLAN 999", "Create the matching campus VLAN.", "FTF-FAB-ACC1", "config", "vlan 999", "VLAN 999 created on FTF-FAB-ACC1."),
-      s("Name Factory VLAN 999 CE-NATIVE-BLACKHOLE", "Keep VLAN names consistent across the campus.", "FTF-FAB-ACC1", "vlan", "name CE-NATIVE-BLACKHOLE", "VLAN 999 named CE-NATIVE-BLACKHOLE."),
-      s("Leave Factory VLAN configuration", "Return to global configuration.", "FTF-FAB-ACC1", "vlan", "exit", "Returned to global configuration mode."),
-      s("Select Factory production access port", "Configure the Factory to Foundation production workstation edge.", "FTF-FAB-ACC1", "config", "interface FastEthernet0/1", "FastEthernet0/1 selected."),
-      s("Describe FTF-PROD-PC1", "Configure the Factory to Foundation production workstation edge.", "FTF-FAB-ACC1", "interface", "description FTF-PROD-PC1", "Factory production endpoint description applied."),
-      s("Set Factory production access mode", "Configure the Factory to Foundation production workstation edge.", "FTF-FAB-ACC1", "interface", "switchport mode access", "Access mode applied."),
-      s("Assign Factory production VLAN", "Configure the Factory to Foundation production workstation edge.", "FTF-FAB-ACC1", "interface", "switchport access vlan 20", "Access VLAN 20 applied."),
-      s("Enable Factory production PortFast", "Configure the Factory to Foundation production workstation edge.", "FTF-FAB-ACC1", "interface", "spanning-tree portfast", "PortFast enabled."),
-      s("Enable Factory production BPDU Guard", "Configure the Factory to Foundation production workstation edge.", "FTF-FAB-ACC1", "interface", "spanning-tree bpduguard enable", "BPDU Guard enabled."),
-      s("Enable Factory production port", "Configure the Factory to Foundation production workstation edge.", "FTF-FAB-ACC1", "interface", "no shutdown", "Factory production access port is enabled."),
-      s("Leave Factory production interface", "Configure the Factory to Foundation production workstation edge.", "FTF-FAB-ACC1", "interface", "exit", "Returned to global configuration mode."),
-      s("Select Headquarters LACP members", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "config", "interface range GigabitEthernet0/2 - 3", "Interface range selected; the prompt is now (config-if-range)#."),
-      s("Configure Headquarters LACP member description", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "interface-range", "description Factory to Foundation LACP members", "LACP member description applied."),
-      s("Set Headquarters LACP members to trunk", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "interface-range", "switchport mode trunk", "Trunk mode applied to the member range."),
-      s("Set Headquarters native VLAN 999", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "interface-range", "switchport trunk native vlan 999", "Native VLAN 999 applied."),
-      s("Allow campus VLANs on Headquarters members", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "interface-range", "switchport trunk allowed vlan 10,20,99,999", "Allowed VLAN list applied."),
-      s("Enable Headquarters LACP active mode", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "interface-range", "channel-group 1 mode active", "LACP channel-group 1 configured in active mode."),
-      s("Enable Headquarters LACP members", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "interface-range", "no shutdown", "LACP member links are enabled."),
-      s("Leave Headquarters interface range", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "interface-range", "exit", "Returned to global configuration mode."),
-      s("Select Headquarters Port-channel1", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "config", "interface Port-channel1", "Port-channel1 selected."),
-      s("Describe Headquarters Port-channel1", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "interface", "description Construction Enterprises Factory to Foundation trunk", "Logical trunk description applied."),
-      s("Set Headquarters Port-channel1 trunk mode", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "interface", "switchport mode trunk", "Port-channel1 is a trunk."),
-      s("Set Headquarters Port-channel1 native VLAN", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "interface", "switchport trunk native vlan 999", "Native VLAN 999 applied to Port-channel1."),
-      s("Allow campus VLANs on Headquarters Port-channel1", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "interface", "switchport trunk allowed vlan 10,20,99,999", "Allowed VLAN list applied to Port-channel1."),
-      s("Enable Headquarters Port-channel1", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "interface", "no shutdown", "Port-channel1 is enabled."),
-      s("Leave Headquarters Port-channel1", "Build the LACP bundle for the headquarters side of the Factory to Foundation trunk.", "CE-HQ-DSW1", "interface", "exit", "Returned to global configuration mode."),
-      s("Select Factory LACP members", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "config", "interface range GigabitEthernet0/2 - 3", "Interface range selected; the prompt is now (config-if-range)#."),
-      s("Configure Factory LACP member description", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "interface-range", "description Factory to Foundation LACP members", "LACP member description applied."),
-      s("Set Factory LACP members to trunk", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "interface-range", "switchport mode trunk", "Trunk mode applied to the member range."),
-      s("Set Factory native VLAN 999", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "interface-range", "switchport trunk native vlan 999", "Native VLAN 999 applied."),
-      s("Allow campus VLANs on Factory members", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "interface-range", "switchport trunk allowed vlan 10,20,99,999", "Allowed VLAN list applied."),
-      s("Enable Factory LACP active mode", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "interface-range", "channel-group 1 mode active", "LACP channel-group 1 configured in active mode."),
-      s("Enable Factory LACP members", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "interface-range", "no shutdown", "LACP member links are enabled."),
-      s("Leave Factory interface range", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "interface-range", "exit", "Returned to global configuration mode."),
-      s("Select Factory Port-channel1", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "config", "interface Port-channel1", "Port-channel1 selected."),
-      s("Describe Factory Port-channel1", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "interface", "description Construction Enterprises Factory to Foundation trunk", "Logical trunk description applied."),
-      s("Set Factory Port-channel1 trunk mode", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "interface", "switchport mode trunk", "Port-channel1 is a trunk."),
-      s("Set Factory Port-channel1 native VLAN", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "interface", "switchport trunk native vlan 999", "Native VLAN 999 applied to Port-channel1."),
-      s("Allow campus VLANs on Factory Port-channel1", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "interface", "switchport trunk allowed vlan 10,20,99,999", "Allowed VLAN list applied to Port-channel1."),
-      s("Enable Factory Port-channel1", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "interface", "no shutdown", "Port-channel1 is enabled."),
-      s("Leave Factory Port-channel1", "Build the LACP bundle for the factory side of the Factory to Foundation trunk.", "FTF-FAB-ACC1", "interface", "exit", "Returned to global configuration mode."),
-      s("Select HQ-to-router trunk", "Configure the Headquarters distribution uplink to CE-HQ-R1.", "CE-HQ-DSW1", "config", "interface GigabitEthernet0/1", "GigabitEthernet0/1 selected."),
-      s("Describe HQ-to-router trunk", "Configure the Headquarters distribution uplink to CE-HQ-R1.", "CE-HQ-DSW1", "interface", "description 802.1Q trunk to CE-HQ-R1", "Router trunk description applied."),
-      s("Set HQ-to-router trunk mode", "Configure the Headquarters distribution uplink to CE-HQ-R1.", "CE-HQ-DSW1", "interface", "switchport mode trunk", "Trunk mode applied."),
-      s("Set HQ-to-router native VLAN", "Configure the Headquarters distribution uplink to CE-HQ-R1.", "CE-HQ-DSW1", "interface", "switchport trunk native vlan 999", "Native VLAN 999 applied."),
-      s("Allow campus VLANs to router", "Configure the Headquarters distribution uplink to CE-HQ-R1.", "CE-HQ-DSW1", "interface", "switchport trunk allowed vlan 10,20,99,999", "Allowed VLAN list applied."),
-      s("Enable HQ-to-router trunk", "Configure the Headquarters distribution uplink to CE-HQ-R1.", "CE-HQ-DSW1", "interface", "no shutdown", "HQ-to-router trunk is enabled."),
-      s("Leave HQ-to-router trunk", "Configure the Headquarters distribution uplink to CE-HQ-R1.", "CE-HQ-DSW1", "interface", "exit", "Returned to global configuration mode."),
-      s("Enable Rapid PVST+ on CE-HQ-DSW1", "Use Rapid PVST+ for the Construction Enterprises campus.", "CE-HQ-DSW1", "config", "spanning-tree mode rapid-pvst", "Spanning-tree mode set to rapid-pvst."),
-      s("Set Headquarters distribution STP root role on CE-HQ-DSW1", "Make CE-HQ-DSW1 the primary root for VLANs 10, 20, and 99.", "CE-HQ-DSW1", "config", "spanning-tree vlan 10,20,99 root primary", "Rapid PVST+ primary root role accepted; forwarding and blocking states recalculated."),
-      s("Enable Rapid PVST+ on FTF-FAB-ACC1", "Use Rapid PVST+ for the Construction Enterprises campus.", "FTF-FAB-ACC1", "config", "spanning-tree mode rapid-pvst", "Spanning-tree mode set to rapid-pvst."),
-      s("Set Factory access STP root role on FTF-FAB-ACC1", "Make FTF-FAB-ACC1 the secondary root for VLANs 10, 20, and 99.", "FTF-FAB-ACC1", "config", "spanning-tree vlan 10,20,99 root secondary", "Rapid PVST+ secondary root role accepted; forwarding and blocking states recalculated."),
-      s("Select CE-HQ-DSW1 management SVI", "Configure CE-NET-MANAGEMENT for device administration.", "CE-HQ-DSW1", "config", "interface Vlan99", "VLAN 99 management SVI selected."),
-      s("Describe CE-HQ-DSW1 management SVI", "Configure CE-NET-MANAGEMENT for device administration.", "CE-HQ-DSW1", "interface", "description CE-HQ-DSW1 management", "Management SVI description applied."),
-      s("Address CE-HQ-DSW1 management SVI", "Configure CE-NET-MANAGEMENT for device administration.", "CE-HQ-DSW1", "interface", "ip address 192.168.99.11 255.255.255.0", "Management address 192.168.99.11 applied."),
-      s("Enable CE-HQ-DSW1 management SVI", "Configure CE-NET-MANAGEMENT for device administration.", "CE-HQ-DSW1", "interface", "no shutdown", "Management SVI is enabled."),
-      s("Leave CE-HQ-DSW1 management SVI", "Configure CE-NET-MANAGEMENT for device administration.", "CE-HQ-DSW1", "interface", "exit", "Returned to global configuration mode."),
-      s("Set CE-HQ-DSW1 default gateway", "Configure CE-NET-MANAGEMENT for device administration.", "CE-HQ-DSW1", "config", "ip default-gateway 192.168.99.1", "Default gateway 192.168.99.1 applied."),
-      s("Return CE-HQ-DSW1 to privileged EXEC", "Prepare the switch for verification commands.", "CE-HQ-DSW1", "config", "end", "Returned to privileged EXEC mode."),
-      s("Select FTF-FAB-ACC1 management SVI", "Configure CE-NET-MANAGEMENT for device administration.", "FTF-FAB-ACC1", "config", "interface Vlan99", "VLAN 99 management SVI selected."),
-      s("Describe FTF-FAB-ACC1 management SVI", "Configure CE-NET-MANAGEMENT for device administration.", "FTF-FAB-ACC1", "interface", "description FTF-FAB-ACC1 management", "Management SVI description applied."),
-      s("Address FTF-FAB-ACC1 management SVI", "Configure CE-NET-MANAGEMENT for device administration.", "FTF-FAB-ACC1", "interface", "ip address 192.168.99.12 255.255.255.0", "Management address 192.168.99.12 applied."),
-      s("Enable FTF-FAB-ACC1 management SVI", "Configure CE-NET-MANAGEMENT for device administration.", "FTF-FAB-ACC1", "interface", "no shutdown", "Management SVI is enabled."),
-      s("Leave FTF-FAB-ACC1 management SVI", "Configure CE-NET-MANAGEMENT for device administration.", "FTF-FAB-ACC1", "interface", "exit", "Returned to global configuration mode."),
-      s("Set FTF-FAB-ACC1 default gateway", "Configure CE-NET-MANAGEMENT for device administration.", "FTF-FAB-ACC1", "config", "ip default-gateway 192.168.99.1", "Default gateway 192.168.99.1 applied."),
-      s("Return FTF-FAB-ACC1 to privileged EXEC", "Prepare the switch for verification commands.", "FTF-FAB-ACC1", "config", "end", "Returned to privileged EXEC mode."),
-      s("Enter privileged EXEC on CE-HQ-R1", "Prepare the CE-HQ-R1 router-on-a-stick parent interface.", "CE-HQ-R1", "user", "enable", "The # prompt indicates privileged EXEC mode."),
-      s("Enter CE-HQ-R1 configuration mode", "Prepare the CE-HQ-R1 router-on-a-stick parent interface.", "CE-HQ-R1", "privileged", "configure terminal", "The (config)# prompt indicates global configuration mode."),
-      s("Set CE-HQ-R1 hostname", "Prepare the CE-HQ-R1 router-on-a-stick parent interface.", "CE-HQ-R1", "config", "hostname CE-HQ-R1", "Hostname CE-HQ-R1 applied."),
-      s("Disable CE-HQ-R1 DNS lookup delays", "Prepare the CE-HQ-R1 router-on-a-stick parent interface.", "CE-HQ-R1", "config", "no ip domain-lookup", "IP domain lookup disabled."),
-      s("Enable IPv6 unicast routing", "Prepare the CE-HQ-R1 router-on-a-stick parent interface.", "CE-HQ-R1", "config", "ipv6 unicast-routing", "IPv6 forwarding is enabled globally."),
-      s("Select CE-HQ-R1 physical trunk", "Prepare the CE-HQ-R1 router-on-a-stick parent interface.", "CE-HQ-R1", "config", "interface GigabitEthernet0/0", "GigabitEthernet0/0 selected."),
-      s("Describe CE-HQ-R1 physical trunk", "Prepare the CE-HQ-R1 router-on-a-stick parent interface.", "CE-HQ-R1", "interface", "description 802.1Q trunk to CE-HQ-DSW1", "Physical trunk description applied."),
-      s("Remove physical trunk IPv4 address", "Prepare the CE-HQ-R1 router-on-a-stick parent interface.", "CE-HQ-R1", "interface", "no ip address", "Physical trunk has no IPv4 address; routing will use subinterfaces."),
-      s("Enable CE-HQ-R1 physical trunk", "Prepare the CE-HQ-R1 router-on-a-stick parent interface.", "CE-HQ-R1", "interface", "no shutdown", "Physical trunk interface is enabled."),
-      s("Leave CE-HQ-R1 physical trunk", "Prepare the CE-HQ-R1 router-on-a-stick parent interface.", "CE-HQ-R1", "interface", "exit", "Returned to global configuration mode."),
-      s("Select VLAN 10 router subinterface", "Create the CE-HQ-ENGINEERING gateway.", "CE-HQ-R1", "config", "interface GigabitEthernet0/0.10", "Subinterface selected; the prompt is now (config-subif)#."),
-      s("Describe VLAN 10 router subinterface", "Document the gateway role.", "CE-HQ-R1", "subinterface", "description CE-HQ-ENGINEERING gateway", "Subinterface description applied."),
-      s("Bind VLAN 10 dot1q encapsulation", "Map the subinterface to its VLAN.", "CE-HQ-R1", "subinterface", "encapsulation dot1q 10", "802.1Q VLAN 10 encapsulation applied."),
-      s("Assign VLAN 10 IPv4 gateway", "Apply the IPv4 default gateway.", "CE-HQ-R1", "subinterface", "ip address 192.168.10.1 255.255.255.0", "IPv4 gateway applied."),
-      s("Assign VLAN 10 IPv6 gateway", "Apply the IPv6 default gateway.", "CE-HQ-R1", "subinterface", "ipv6 address 2001:db8:10::1/64", "IPv6 gateway applied."),
-      s("Enable VLAN 10 router subinterface", "Bring the gateway subinterface up.", "CE-HQ-R1", "subinterface", "no shutdown", "Gateway subinterface is enabled."),
+      s("Enter privileged EXEC on HQ distribution", "Start with the headquarters switch.", "CE-HQ-DSW1", "user", "enable", "The # prompt indicates privileged EXEC mode."),
+      s("Enter switch configuration mode", "Open the full IOS configuration context.", "CE-HQ-DSW1", "privileged", "configure terminal", "The (config)# prompt indicates global configuration mode."),
+      s("Create engineering VLAN", "Enter the VLAN database context for headquarters engineering.", "CE-HQ-DSW1", "config", "vlan 10", "VLAN 10 created; the prompt is now (config-vlan)#."),
+      s("Name engineering VLAN", "Use the Construction Enterprises business name.", "CE-HQ-DSW1", "vlan", "name CE-HQ-ENGINEERING", "VLAN 10 named CE-HQ-ENGINEERING."),
+      s("Leave VLAN configuration", "Return to global configuration.", "CE-HQ-DSW1", "vlan", "exit", "Returned to global configuration mode."),
+      s("Create production VLAN", "Enter the Factory to Foundation production VLAN.", "CE-HQ-DSW1", "config", "vlan 20", "VLAN 20 created."),
+      s("Name production VLAN", "Use the production-floor business name.", "CE-HQ-DSW1", "vlan", "name FTF-PRODUCTION", "VLAN 20 named FTF-PRODUCTION."),
+      s("Leave VLAN configuration", "Return to global configuration.", "CE-HQ-DSW1", "vlan", "exit", "Returned to global configuration mode."),
+      s("Create management VLAN", "Reserve the management segment.", "CE-HQ-DSW1", "config", "vlan 99", "VLAN 99 created."),
+      s("Name management VLAN", "Use the network-management business name.", "CE-HQ-DSW1", "vlan", "name CE-NET-MANAGEMENT", "VLAN 99 named CE-NET-MANAGEMENT."),
+      s("Leave VLAN configuration", "Return to global configuration.", "CE-HQ-DSW1", "vlan", "exit", "Returned to global configuration mode."),
+      s("Create unused native VLAN", "Create the dedicated native VLAN for trunks.", "CE-HQ-DSW1", "config", "vlan 999", "VLAN 999 created."),
+      s("Name unused native VLAN", "Make the trunk intent visible in the configuration.", "CE-HQ-DSW1", "vlan", "name CE-NATIVE-BLACKHOLE", "VLAN 999 named CE-NATIVE-BLACKHOLE."),
+      s("Leave VLAN configuration", "Return to global configuration.", "CE-HQ-DSW1", "vlan", "exit", "Returned to global configuration mode."),
+      s("Select headquarters engineering port", "Configure the engineering workstation access port.", "CE-HQ-DSW1", "config", "interface FastEthernet0/1", "FastEthernet0/1 selected."),
+      s("Describe the engineering endpoint", "Document the connected business endpoint.", "CE-HQ-DSW1", "interface", "description CE-HQ-ENG-PC1", "Engineering endpoint description applied."),
+      s("Set access mode", "Make the port a non-trunk access port.", "CE-HQ-DSW1", "interface", "switchport mode access", "Access mode applied."),
+      s("Assign engineering VLAN", "Place the headquarters endpoint in VLAN 10.", "CE-HQ-DSW1", "interface", "switchport access vlan 10", "Access VLAN 10 applied."),
+      s("Enable PortFast", "Use PortFast only on this endpoint-facing port.", "CE-HQ-DSW1", "interface", "spanning-tree portfast", "PortFast enabled."),
+      s("Enable BPDU Guard", "Protect the endpoint edge from unexpected BPDUs.", "CE-HQ-DSW1", "interface", "spanning-tree bpduguard enable", "BPDU Guard enabled."),
+      s("Enable engineering port", "Bring the access port up.", "CE-HQ-DSW1", "interface", "no shutdown", "Engineering access port is enabled."),
+      s("Return to global configuration", "Leave the endpoint interface.", "CE-HQ-DSW1", "interface", "exit", "Returned to global configuration mode."),
+      s("Select LACP member links", "Select both physical links to the Factory access switch.", "CE-HQ-DSW1", "config", "interface range GigabitEthernet0/2 - 3", "Interface range selected; the prompt is now (config-if-range)#."),
+      s("Set member links to trunk", "Both physical members must carry the campus VLANs.", "CE-HQ-DSW1", "interface-range", "switchport mode trunk", "Trunk mode applied to the member range."),
+      s("Set trunk native VLAN", "Use VLAN 999 as the native VLAN.", "CE-HQ-DSW1", "interface-range", "switchport trunk native vlan 999", "Native VLAN 999 applied."),
+      s("Allow campus VLANs", "Restrict the trunk to the required VLAN list.", "CE-HQ-DSW1", "interface-range", "switchport trunk allowed vlan 10,20,99,999", "Allowed VLAN list applied."),
+      s("Enable LACP active mode", "Bundle the two physical links with LACP.", "CE-HQ-DSW1", "interface-range", "channel-group 1 mode active", "LACP channel-group 1 configured in active mode."),
+      s("Enable the member links", "Bring both LACP members up.", "CE-HQ-DSW1", "interface-range", "no shutdown", "LACP member links are enabled."),
+      s("Leave interface range", "Return to global configuration.", "CE-HQ-DSW1", "interface-range", "exit", "Returned to global configuration mode."),
+      s("Select Port-channel1", "Configure the logical LACP interface.", "CE-HQ-DSW1", "config", "interface Port-channel1", "Port-channel1 selected."),
+      s("Configure logical trunk", "Apply the trunk policy to the logical bundle.", "CE-HQ-DSW1", "interface", "switchport mode trunk", "Port-channel1 is a trunk."),
+      s("Set logical native VLAN", "Match the physical member policy.", "CE-HQ-DSW1", "interface", "switchport trunk native vlan 999", "Native VLAN 999 applied to Port-channel1."),
+      s("Set logical allowed VLANs", "Match the physical member policy.", "CE-HQ-DSW1", "interface", "switchport trunk allowed vlan 10,20,99,999", "Allowed VLAN list applied to Port-channel1."),
+      s("Enable logical bundle", "Bring the logical trunk up.", "CE-HQ-DSW1", "interface", "no shutdown", "Port-channel1 is enabled."),
+      s("Return to privileged EXEC", "Finish the headquarters distribution switch block.", "CE-HQ-DSW1", "interface", "end", "Returned to privileged EXEC mode."),
+      s("Prepare the Factory access switch", "Switch to the Factory to Foundation access device.", "FTF-FAB-ACC1", "user", "enable", "The # prompt indicates privileged EXEC mode."),
+      s("Enter Factory switch configuration", "Open the full IOS configuration context.", "FTF-FAB-ACC1", "privileged", "configure terminal", "The (config)# prompt indicates global configuration mode."),
+      s("Create Factory VLANs", "Create the same campus VLANs on the access switch.", "FTF-FAB-ACC1", "config", "vlan 10", "VLAN 10 created on the Factory access switch."),
+      s("Name Factory engineering VLAN", "Keep VLAN names consistent across the trunk.", "FTF-FAB-ACC1", "vlan", "name CE-HQ-ENGINEERING", "VLAN 10 name applied."),
+      s("Leave VLAN configuration", "Return to global configuration.", "FTF-FAB-ACC1", "vlan", "exit", "Returned to global configuration mode."),
+      s("Create Factory production VLAN", "Create the production segment.", "FTF-FAB-ACC1", "config", "vlan 20", "VLAN 20 created."),
+      s("Name Factory production VLAN", "Use the Factory to Foundation name.", "FTF-FAB-ACC1", "vlan", "name FTF-PRODUCTION", "VLAN 20 name applied."),
+      s("Leave VLAN configuration", "Return to global configuration.", "FTF-FAB-ACC1", "vlan", "exit", "Returned to global configuration mode."),
+      s("Create Factory management VLAN", "Create the management segment.", "FTF-FAB-ACC1", "config", "vlan 99", "VLAN 99 created."),
+      s("Name Factory management VLAN", "Keep the management name consistent.", "FTF-FAB-ACC1", "vlan", "name CE-NET-MANAGEMENT", "VLAN 99 name applied."),
+      s("Leave VLAN configuration", "Return to global configuration.", "FTF-FAB-ACC1", "vlan", "exit", "Returned to global configuration mode."),
+      s("Create Factory native VLAN", "Create the native VLAN locally.", "FTF-FAB-ACC1", "config", "vlan 999", "VLAN 999 created."),
+      s("Name Factory native VLAN", "Keep the native VLAN intent visible.", "FTF-FAB-ACC1", "vlan", "name CE-NATIVE-BLACKHOLE", "VLAN 999 name applied."),
+      s("Leave VLAN configuration", "Return to global configuration.", "FTF-FAB-ACC1", "vlan", "exit", "Returned to global configuration mode."),
+      s("Select production access port", "Configure the Factory production workstation.", "FTF-FAB-ACC1", "config", "interface FastEthernet0/1", "FastEthernet0/1 selected."),
+      s("Describe production endpoint", "Document the Factory endpoint.", "FTF-FAB-ACC1", "interface", "description FTF-PROD-PC1", "Production endpoint description applied."),
+      s("Set production access mode", "Make the port an access edge.", "FTF-FAB-ACC1", "interface", "switchport mode access", "Access mode applied."),
+      s("Assign production VLAN", "Place the Factory endpoint in VLAN 20.", "FTF-FAB-ACC1", "interface", "switchport access vlan 20", "Access VLAN 20 applied."),
+      s("Enable production PortFast", "Apply edge behavior to the endpoint port.", "FTF-FAB-ACC1", "interface", "spanning-tree portfast", "PortFast enabled."),
+      s("Enable production BPDU Guard", "Protect the Factory edge.", "FTF-FAB-ACC1", "interface", "spanning-tree bpduguard enable", "BPDU Guard enabled."),
+      s("Enable production port", "Bring the production access port up.", "FTF-FAB-ACC1", "interface", "no shutdown", "Production access port is enabled."),
+      s("Return to global configuration", "Leave the endpoint interface.", "FTF-FAB-ACC1", "interface", "exit", "Returned to global configuration mode."),
+      s("Select Factory LACP members", "Select the two links toward headquarters.", "FTF-FAB-ACC1", "config", "interface range GigabitEthernet0/2 - 3", "Interface range selected."),
+      s("Set Factory members to trunk", "Match the headquarters member policy.", "FTF-FAB-ACC1", "interface-range", "switchport mode trunk", "Trunk mode applied."),
+      s("Set Factory native VLAN", "Match native VLAN 999.", "FTF-FAB-ACC1", "interface-range", "switchport trunk native vlan 999", "Native VLAN 999 applied."),
+      s("Allow Factory campus VLANs", "Match the allowed VLAN list.", "FTF-FAB-ACC1", "interface-range", "switchport trunk allowed vlan 10,20,99,999", "Allowed VLAN list applied."),
+      s("Enable Factory LACP", "Form the matching LACP channel.", "FTF-FAB-ACC1", "interface-range", "channel-group 1 mode active", "LACP channel-group 1 configured in active mode."),
+      s("Enable Factory members", "Bring the physical members up.", "FTF-FAB-ACC1", "interface-range", "no shutdown", "Factory LACP members are enabled."),
+      s("Leave Factory interface range", "Return to global configuration.", "FTF-FAB-ACC1", "interface-range", "exit", "Returned to global configuration mode."),
+      s("Select Factory Port-channel1", "Configure the logical bundle.", "FTF-FAB-ACC1", "config", "interface Port-channel1", "Port-channel1 selected."),
+      s("Configure Factory logical trunk", "Match the headquarters trunk policy.", "FTF-FAB-ACC1", "interface", "switchport mode trunk", "Port-channel1 is a trunk."),
+      s("Set Factory logical native VLAN", "Match native VLAN 999.", "FTF-FAB-ACC1", "interface", "switchport trunk native vlan 999", "Native VLAN 999 applied."),
+      s("Set Factory logical allowed VLANs", "Match the campus VLAN list.", "FTF-FAB-ACC1", "interface", "switchport trunk allowed vlan 10,20,99,999", "Allowed VLAN list applied."),
+      s("Enable Factory logical bundle", "Bring Port-channel1 up.", "FTF-FAB-ACC1", "interface", "no shutdown", "Factory Port-channel1 is enabled."),
+      s("Return to privileged EXEC", "Finish the Factory access switch block.", "FTF-FAB-ACC1", "interface", "end", "Returned to privileged EXEC mode."),
+      s("Select R1 physical trunk", "Move to the headquarters router-on-a-stick interface.", "CE-HQ-R1", "user", "enable", "The # prompt indicates privileged EXEC mode."),
+      s("Enter R1 configuration", "Open the router configuration context.", "CE-HQ-R1", "privileged", "configure terminal", "The (config)# prompt indicates global configuration mode."),
+      s("Enable R1 IPv6 forwarding", "Enable dual-stack inter-VLAN routing.", "CE-HQ-R1", "config", "ipv6 unicast-routing", "IPv6 forwarding is enabled globally."),
+      s("Select R1 physical trunk", "Prepare the parent interface.", "CE-HQ-R1", "config", "interface GigabitEthernet0/0", "GigabitEthernet0/0 selected."),
+      s("Describe R1 trunk", "Document the headquarters switch connection.", "CE-HQ-R1", "interface", "description 802.1Q trunk to CE-HQ-DSW1", "Router trunk description applied."),
+      s("Enable R1 physical trunk", "Bring the parent interface up.", "CE-HQ-R1", "interface", "no shutdown", "Physical trunk interface is enabled."),
+      s("Return to global configuration", "Leave the physical interface.", "CE-HQ-R1", "interface", "exit", "Returned to global configuration mode."),
+      s("Select VLAN 10 subinterface", "Create the engineering gateway.", "CE-HQ-R1", "config", "interface GigabitEthernet0/0.10", "Subinterface selected; the prompt is now (config-subif)#."),
+      s("Bind VLAN 10 encapsulation", "Map the subinterface to the engineering VLAN.", "CE-HQ-R1", "subinterface", "encapsulation dot1q 10", "802.1Q VLAN 10 encapsulation applied."),
+      s("Address VLAN 10 gateway", "Apply the engineering default gateway.", "CE-HQ-R1", "subinterface", "ip address 192.168.10.1 255.255.255.0", "IPv4 gateway applied."),
+      s("Address VLAN 10 IPv6 gateway", "Apply the engineering IPv6 gateway.", "CE-HQ-R1", "subinterface", "ipv6 address 2001:db8:10::1/64", "IPv6 gateway applied."),
       s("Leave VLAN 10 subinterface", "Return to global configuration.", "CE-HQ-R1", "subinterface", "exit", "Returned to global configuration mode."),
-      s("Select VLAN 20 router subinterface", "Create the FTF-PRODUCTION gateway.", "CE-HQ-R1", "config", "interface GigabitEthernet0/0.20", "Subinterface selected; the prompt is now (config-subif)#."),
-      s("Describe VLAN 20 router subinterface", "Document the gateway role.", "CE-HQ-R1", "subinterface", "description FTF-PRODUCTION gateway", "Subinterface description applied."),
-      s("Bind VLAN 20 dot1q encapsulation", "Map the subinterface to its VLAN.", "CE-HQ-R1", "subinterface", "encapsulation dot1q 20", "802.1Q VLAN 20 encapsulation applied."),
-      s("Assign VLAN 20 IPv4 gateway", "Apply the IPv4 default gateway.", "CE-HQ-R1", "subinterface", "ip address 192.168.20.1 255.255.255.0", "IPv4 gateway applied."),
-      s("Assign VLAN 20 IPv6 gateway", "Apply the IPv6 default gateway.", "CE-HQ-R1", "subinterface", "ipv6 address 2001:db8:20::1/64", "IPv6 gateway applied."),
-      s("Enable VLAN 20 router subinterface", "Bring the gateway subinterface up.", "CE-HQ-R1", "subinterface", "no shutdown", "Gateway subinterface is enabled."),
+      s("Select VLAN 20 subinterface", "Create the Factory production gateway.", "CE-HQ-R1", "config", "interface GigabitEthernet0/0.20", "Subinterface selected."),
+      s("Bind VLAN 20 encapsulation", "Map the subinterface to production.", "CE-HQ-R1", "subinterface", "encapsulation dot1q 20", "802.1Q VLAN 20 encapsulation applied."),
+      s("Address VLAN 20 gateway", "Apply the production default gateway.", "CE-HQ-R1", "subinterface", "ip address 192.168.20.1 255.255.255.0", "IPv4 gateway applied."),
+      s("Address VLAN 20 IPv6 gateway", "Apply the production IPv6 gateway.", "CE-HQ-R1", "subinterface", "ipv6 address 2001:db8:20::1/64", "IPv6 gateway applied."),
       s("Leave VLAN 20 subinterface", "Return to global configuration.", "CE-HQ-R1", "subinterface", "exit", "Returned to global configuration mode."),
-      s("Select VLAN 99 router subinterface", "Create the CE-NET-MANAGEMENT gateway.", "CE-HQ-R1", "config", "interface GigabitEthernet0/0.99", "Subinterface selected; the prompt is now (config-subif)#."),
-      s("Describe VLAN 99 router subinterface", "Document the gateway role.", "CE-HQ-R1", "subinterface", "description CE-NET-MANAGEMENT gateway", "Subinterface description applied."),
-      s("Bind VLAN 99 dot1q encapsulation", "Map the subinterface to its VLAN.", "CE-HQ-R1", "subinterface", "encapsulation dot1q 99", "802.1Q VLAN 99 encapsulation applied."),
-      s("Assign VLAN 99 IPv4 gateway", "Apply the IPv4 default gateway.", "CE-HQ-R1", "subinterface", "ip address 192.168.99.1 255.255.255.0", "IPv4 gateway applied."),
-      s("Assign VLAN 99 IPv6 gateway", "Apply the IPv6 default gateway.", "CE-HQ-R1", "subinterface", "ipv6 address 2001:db8:99::1/64", "IPv6 gateway applied."),
-      s("Enable VLAN 99 router subinterface", "Bring the gateway subinterface up.", "CE-HQ-R1", "subinterface", "no shutdown", "Gateway subinterface is enabled."),
-      s("Leave VLAN 99 subinterface", "Return to global configuration.", "CE-HQ-R1", "subinterface", "exit", "Returned to global configuration mode."),
-      s("Select native VLAN subinterface", "Define the CE-NATIVE-BLACKHOLE native VLAN consistently.", "CE-HQ-R1", "config", "interface GigabitEthernet0/0.999", "Native subinterface selected; the prompt is now (config-subif)#."),
-      s("Describe native VLAN subinterface", "Document the native VLAN role.", "CE-HQ-R1", "subinterface", "description CE-NATIVE-BLACKHOLE native VLAN", "Native subinterface description applied."),
-      s("Bind native VLAN encapsulation", "Match the switch trunk native VLAN.", "CE-HQ-R1", "subinterface", "encapsulation dot1q 999 native", "Native VLAN 999 encapsulation applied."),
-      s("Remove native VLAN IPv4 address", "Keep the unused native VLAN unrouted.", "CE-HQ-R1", "subinterface", "no ip address", "Native subinterface has no IPv4 address."),
-      s("Enable native VLAN subinterface", "Keep the native VLAN subinterface administratively enabled.", "CE-HQ-R1", "subinterface", "no shutdown", "Native subinterface is enabled."),
-      s("Finish CE-HQ-R1 configuration", "Return to privileged EXEC for verification.", "CE-HQ-R1", "subinterface", "end", "Returned to privileged EXEC mode."),
-      s("Verify IPv4 interfaces", "Inspect IPv4 gateway and interface states.", "CE-HQ-R1", "privileged", "show ip interface brief", "IPv4 interface brief shows the VLAN gateways and active trunk path."),
-      s("Verify IPv6 interfaces", "Inspect IPv6 gateway states.", "CE-HQ-R1", "privileged", "show ipv6 interface brief", "IPv6 interface brief shows the VLAN 10, 20, and 99 gateways."),
-      s("Verify IPv4 routes", "Read connected VLAN networks.", "CE-HQ-R1", "privileged", "show ip route", "Connected IPv4 routes for VLANs 10, 20, and 99 are visible."),
-      s("Verify IPv6 routes", "Read connected IPv6 prefixes.", "CE-HQ-R1", "privileged", "show ipv6 route", "Connected IPv6 routes for VLANs 10, 20, and 99 are visible."),
-      s("Test Factory production IPv4 reachability", "Test the Factory production endpoint through VLAN 20.", "CE-HQ-R1", "privileged", "ping 192.168.20.10", "Success rate is 100 percent. Factory production is reachable through the VLAN 20 gateway."),
-      s("Test Factory production IPv6 reachability", "Test the IPv6 Factory production endpoint.", "CE-HQ-R1", "privileged", "ping ipv6 2001:db8:20::10", "Success rate is 100 percent. Factory production IPv6 reachability is confirmed."),
-      s("Verify VLAN database on CE-HQ-DSW1", "Confirm named VLANs on the switch.", "CE-HQ-DSW1", "privileged", "show vlan brief", "Named Construction Enterprises VLANs 10, 20, 99, and 999 are visible."),
-      s("Verify trunk state on CE-HQ-DSW1", "Confirm native and allowed VLAN policies.", "CE-HQ-DSW1", "privileged", "show interfaces trunk", "Trunks show native VLAN 999 and allowed VLANs 10,20,99,999."),
-      s("Verify LACP EtherChannel on CE-HQ-DSW1", "Confirm Port-channel1 and its members.", "CE-HQ-DSW1", "privileged", "show etherchannel summary", "Port-channel1 is bundled with LACP active members."),
-      s("Verify Rapid PVST+ on CE-HQ-DSW1", "Inspect root, designated, forwarding, and blocking state.", "CE-HQ-DSW1", "privileged", "show spanning-tree vlan 10", "Rapid PVST+ evidence shows the root role and forwarding/blocking port states."),
-      s("Verify learned MAC addresses on CE-HQ-DSW1", "Inspect endpoint and trunk learning.", "CE-HQ-DSW1", "privileged", "show mac address-table dynamic", "Dynamic MAC entries show the Headquarters engineering and Factory production path."),
-      s("Verify adjacent devices on CE-HQ-DSW1", "Confirm the named topology neighbors.", "CE-HQ-DSW1", "privileged", "show cdp neighbors", "CDP neighbors show the Construction Enterprises campus adjacency."),
-      s("Verify VLAN database on FTF-FAB-ACC1", "Confirm named VLANs on the switch.", "FTF-FAB-ACC1", "privileged", "show vlan brief", "Named Construction Enterprises VLANs 10, 20, 99, and 999 are visible."),
-      s("Verify trunk state on FTF-FAB-ACC1", "Confirm native and allowed VLAN policies.", "FTF-FAB-ACC1", "privileged", "show interfaces trunk", "Trunks show native VLAN 999 and allowed VLANs 10,20,99,999."),
-      s("Verify LACP EtherChannel on FTF-FAB-ACC1", "Confirm Port-channel1 and its members.", "FTF-FAB-ACC1", "privileged", "show etherchannel summary", "Port-channel1 is bundled with LACP active members."),
-      s("Verify Rapid PVST+ on FTF-FAB-ACC1", "Inspect root, designated, forwarding, and blocking state.", "FTF-FAB-ACC1", "privileged", "show spanning-tree vlan 10", "Rapid PVST+ evidence shows the root role and forwarding/blocking port states."),
-      s("Verify learned MAC addresses on FTF-FAB-ACC1", "Inspect endpoint and trunk learning.", "FTF-FAB-ACC1", "privileged", "show mac address-table dynamic", "Dynamic MAC entries show the Headquarters engineering and Factory production path."),
-      s("Verify adjacent devices on FTF-FAB-ACC1", "Confirm the named topology neighbors.", "FTF-FAB-ACC1", "privileged", "show cdp neighbors", "CDP neighbors show the Construction Enterprises campus adjacency."),
+      s("Select management subinterface", "Create the network-management gateway.", "CE-HQ-R1", "config", "interface GigabitEthernet0/0.99", "Subinterface selected."),
+      s("Bind management encapsulation", "Map the subinterface to VLAN 99.", "CE-HQ-R1", "subinterface", "encapsulation dot1q 99", "802.1Q VLAN 99 encapsulation applied."),
+      s("Address management gateway", "Apply the management IPv4 gateway.", "CE-HQ-R1", "subinterface", "ip address 192.168.99.1 255.255.255.0", "Management IPv4 gateway applied."),
+      s("Leave management subinterface", "Return to global configuration.", "CE-HQ-R1", "subinterface", "exit", "Returned to global configuration mode."),
+      s("Select native subinterface", "Define the native VLAN consistently.", "CE-HQ-R1", "config", "interface GigabitEthernet0/0.999", "Native subinterface selected."),
+      s("Bind native encapsulation", "Match the switch trunk native VLAN.", "CE-HQ-R1", "subinterface", "encapsulation dot1q 999 native", "Native VLAN 999 encapsulation applied."),
+      s("Finish R1 configuration", "Return to privileged EXEC for verification.", "CE-HQ-R1", "subinterface", "end", "Returned to privileged EXEC mode."),
+      s("Verify R1 interfaces", "Inspect the dual-stack gateway interfaces.", "CE-HQ-R1", "privileged", "show ip interface brief", "Subinterfaces and gateway states are visible."),
+      s("Verify Factory-to-Foundation reachability", "Test the production endpoint through the VLAN 20 gateway.", "CE-HQ-R1", "privileged", "ping 192.168.20.10", "Success rate is 100 percent. Factory-to-Foundation inter-VLAN reachability confirmed.")
     ]
   },
   {
-    id: 3, code: "LAB 03", title: "Routing + OSPF Deep Dive", domain: "IP CONNECTIVITY", blurb: "Build, verify, and troubleshoot a three-router Construction Enterprises path with IPv4/IPv6 addressing, static routes, OSPFv2, OSPFv3, loopbacks, passive interfaces, and end-to-end evidence.", topology: "CE-HQ-R1 ⇄ CE-MFG-R2 ⇄ FTF-R3 · dual-stack routed core", devices: [{ name: "CE-HQ-R1", role: "Headquarters edge router" }, { name: "CE-MFG-R2", role: "Manufacturing transit router" }, { name: "FTF-R3", role: "Factory to Foundation edge router" }],
+    id: 3, code: "LAB 03", title: "Routing + OSPF", domain: "IP CONNECTIVITY", blurb: "Route between Construction Enterprises sites with IPv4/IPv6 static routes, longest-prefix thinking, OSPFv2, and OSPFv3.", topology: "CE-HQ-R1 ⇄ CE-MFG-R2 ⇄ FTF-R3 · redundant paths", devices: [{ name: "CE-HQ-R1", role: "Headquarters router" }, { name: "CE-MFG-R2", role: "Manufacturing router" }, { name: "FTF-R3", role: "Factory router" }],
     steps: [
-      s("Enter CE-HQ-R1 privileged mode", "Begin the expanded routing exercise at Construction Enterprises Headquarters.", "CE-HQ-R1", "user", "enable", "Privileged EXEC mode entered."),
-      s("Enter CE-HQ-R1 configuration mode", "Open the full routing configuration context.", "CE-HQ-R1", "privileged", "configure terminal", "Global configuration mode entered."),
-      s("Set the HQ hostname", "Make the headquarters role visible in every prompt.", "CE-HQ-R1", "config", "hostname CE-HQ-R1", "Headquarters hostname applied."),
-      s("Install the manufacturing IPv4 route", "Add a static route toward the Manufacturing loopback prefix through CE-MFG-R2.", "CE-HQ-R1", "config", "ip route 10.20.0.0 255.255.255.0 10.12.0.2", "IPv4 static route to Manufacturing installed."),
-      s("Install the Factory IPv6 route", "Add an IPv6 route toward the Factory to Foundation loopback prefix.", "CE-HQ-R1", "config", "ipv6 route 2001:db8:30::/64 2001:db8:23::3", "IPv6 static route to Factory installed."),
-      s("Create the HQ loopback", "Use a stable loopback to represent the headquarters LAN and OSPF router identity source.", "CE-HQ-R1", "config", "interface Loopback0", "HQ Loopback0 selected."),
-      s("Address the HQ loopback with IPv4", "Apply the headquarters LAN prefix.", "CE-HQ-R1", "interface", "ip address 10.1.0.1 255.255.255.0", "HQ loopback IPv4 address applied."),
-      s("Address the HQ loopback with IPv6", "Apply the headquarters IPv6 LAN prefix.", "CE-HQ-R1", "interface", "ipv6 address 2001:db8:1::1/64", "HQ loopback IPv6 address applied."),
-      s("Enable the HQ loopback", "Keep the logical endpoint available for routing and verification.", "CE-HQ-R1", "interface", "no shutdown", "HQ loopback enabled."),
-      s("Leave the HQ loopback", "Return to global configuration before addressing the transit link.", "CE-HQ-R1", "interface", "exit", "Returned to global configuration mode."),
-      s("Select the HQ-to-Manufacturing link", "Configure the first routed hop in the three-router core.", "CE-HQ-R1", "config", "interface GigabitEthernet0/0", "HQ transit interface selected."),
-      s("Address the HQ transit link with IPv4", "Use the 10.12.0.0/24 point-to-point segment.", "CE-HQ-R1", "interface", "ip address 10.12.0.1 255.255.255.0", "HQ transit IPv4 address applied."),
-      s("Address the HQ transit link with IPv6", "Use the dual-stack 2001:db8:12::/64 segment.", "CE-HQ-R1", "interface", "ipv6 address 2001:db8:12::1/64", "HQ transit IPv6 address applied."),
-      s("Enable the HQ transit link", "Bring the routed interface administratively up.", "CE-HQ-R1", "interface", "no shutdown", "HQ transit interface enabled."),
-      s("Leave the HQ transit interface", "Return to global configuration for the control plane.", "CE-HQ-R1", "interface", "exit", "Returned to global configuration mode."),
-      s("Start OSPFv2 at HQ", "Create OSPF process 10 for the IPv4 control plane.", "CE-HQ-R1", "config", "router ospf 10", "OSPFv2 configuration mode entered."),
-      s("Set the HQ OSPF router ID", "Use a deterministic identity for adjacency and LSDB analysis.", "CE-HQ-R1", "router", "router-id 1.1.1.1", "HQ OSPF router ID set to 1.1.1.1."),
-      s("Advertise the HQ transit network", "Place the 10.12.0.0/24 link into area 0.", "CE-HQ-R1", "router", "network 10.12.0.0 0.0.0.255 area 0", "HQ transit network added to area 0."),
-      s("Advertise the HQ loopback network", "Place the 10.1.0.0/24 headquarters LAN into area 0.", "CE-HQ-R1", "router", "network 10.1.0.0 0.0.0.255 area 0", "HQ loopback network added to area 0."),
-      s("Make the HQ loopback passive", "Advertise the LAN without trying to form a neighbor on the loopback.", "CE-HQ-R1", "router", "passive-interface Loopback0", "HQ loopback set passive for OSPFv2."),
-      s("Leave HQ OSPF configuration", "Return to global configuration.", "CE-HQ-R1", "router", "exit", "Returned to global configuration mode."),
-      s("Select the HQ transit interface for OSPFv2", "Apply interface-level OSPF behavior to the routed link.", "CE-HQ-R1", "config", "interface GigabitEthernet0/0", "HQ transit interface selected for OSPF."),
-      s("Enable OSPFv2 on the HQ transit", "Place the IPv4 interface directly into area 0.", "CE-HQ-R1", "interface", "ip ospf 10 area 0", "OSPFv2 enabled on the HQ transit interface."),
-      s("Enable OSPFv3 on the HQ transit", "Place the IPv6 interface directly into area 0.", "CE-HQ-R1", "interface", "ipv6 ospf 10 area 0", "OSPFv3 enabled on the HQ transit interface."),
-      s("Leave the HQ transit interface", "Return to global configuration.", "CE-HQ-R1", "interface", "exit", "Returned to global configuration mode."),
-      s("Select the HQ loopback for OSPF", "Apply interface-level OSPF behavior to the stable LAN endpoint.", "CE-HQ-R1", "config", "interface Loopback0", "HQ loopback selected for OSPF."),
-      s("Enable OSPFv2 on the HQ loopback", "Advertise the loopback through the interface-level process.", "CE-HQ-R1", "interface", "ip ospf 10 area 0", "OSPFv2 enabled on the HQ loopback."),
-      s("Enable OSPFv3 on the HQ loopback", "Advertise the IPv6 loopback through OSPFv3 area 0.", "CE-HQ-R1", "interface", "ipv6 ospf 10 area 0", "OSPFv3 enabled on the HQ loopback."),
-      s("Finish the HQ build", "Return to privileged EXEC for evidence collection.", "CE-HQ-R1", "interface", "end", "Returned to privileged EXEC mode."),
-      s("Inspect HQ OSPF interfaces", "Review process participation before checking neighbors.", "CE-HQ-R1", "privileged", "show ip ospf interface brief", "HQ OSPF interface participation is visible."),
-      s("Verify HQ OSPFv2 neighbors", "Confirm that the IPv4 control-plane adjacency is FULL.", "CE-HQ-R1", "privileged", "show ip ospf neighbor", "HQ OSPFv2 neighbor state is FULL."),
-      s("Inspect HQ OSPF routes", "Separate learned OSPF paths from connected and static routes.", "CE-HQ-R1", "privileged", "show ip route ospf", "HQ learned OSPF routes are visible."),
-      s("Verify HQ OSPFv3 neighbors", "Confirm the IPv6 control-plane adjacency.", "CE-HQ-R1", "privileged", "show ipv6 ospf neighbor", "HQ OSPFv3 neighbor state is FULL."),
-      s("Inspect HQ IPv6 OSPF routes", "Confirm that IPv6 prefixes are learned through OSPFv3.", "CE-HQ-R1", "privileged", "show ipv6 route ospf", "HQ learned IPv6 OSPF routes are visible."),
-      s("Enter CE-MFG-R2 privileged mode", "Switch to the Manufacturing transit router and build the middle of the path.", "CE-MFG-R2", "user", "enable", "Privileged EXEC mode entered on CE-MFG-R2."),
-      s("Enter CE-MFG-R2 configuration mode", "Open the Manufacturing router configuration context.", "CE-MFG-R2", "privileged", "configure terminal", "Global configuration mode entered on CE-MFG-R2."),
-      s("Set the Manufacturing hostname", "Identify the middle router in every subsequent prompt.", "CE-MFG-R2", "config", "hostname CE-MFG-R2", "Manufacturing hostname applied."),
-      s("Select the HQ-facing interface", "Configure the 10.12.0.0/24 segment toward headquarters.", "CE-MFG-R2", "config", "interface GigabitEthernet0/0", "Manufacturing HQ-facing interface selected."),
-      s("Address the Manufacturing HQ-facing link with IPv4", "Apply the second IPv4 address on the HQ transit segment.", "CE-MFG-R2", "interface", "ip address 10.12.0.2 255.255.255.0", "Manufacturing HQ-facing IPv4 address applied."),
-      s("Address the Manufacturing HQ-facing link with IPv6", "Apply the second IPv6 address on the HQ transit segment.", "CE-MFG-R2", "interface", "ipv6 address 2001:db8:12::2/64", "Manufacturing HQ-facing IPv6 address applied."),
-      s("Enable the Manufacturing HQ-facing link", "Bring the first middle-router link up.", "CE-MFG-R2", "interface", "no shutdown", "Manufacturing HQ-facing interface enabled."),
-      s("Leave the HQ-facing interface", "Return to global configuration.", "CE-MFG-R2", "interface", "exit", "Returned to global configuration mode."),
-      s("Select the Factory-facing interface", "Configure the 10.23.0.0/24 segment toward Factory to Foundation.", "CE-MFG-R2", "config", "interface GigabitEthernet0/1", "Manufacturing Factory-facing interface selected."),
-      s("Address the Manufacturing Factory-facing link with IPv4", "Apply the middle-router address on the second transit segment.", "CE-MFG-R2", "interface", "ip address 10.23.0.2 255.255.255.0", "Manufacturing Factory-facing IPv4 address applied."),
-      s("Address the Manufacturing Factory-facing link with IPv6", "Apply the middle-router IPv6 address on the second transit segment.", "CE-MFG-R2", "interface", "ipv6 address 2001:db8:23::2/64", "Manufacturing Factory-facing IPv6 address applied."),
-      s("Enable the Manufacturing Factory-facing link", "Bring the second middle-router link up.", "CE-MFG-R2", "interface", "no shutdown", "Manufacturing Factory-facing interface enabled."),
-      s("Leave the Factory-facing interface", "Return to global configuration.", "CE-MFG-R2", "interface", "exit", "Returned to global configuration mode."),
-      s("Create the Manufacturing loopback", "Represent the Manufacturing site with a stable routed prefix.", "CE-MFG-R2", "config", "interface Loopback0", "Manufacturing Loopback0 selected."),
-      s("Address the Manufacturing loopback with IPv4", "Apply the 10.20.0.0/24 Manufacturing LAN prefix.", "CE-MFG-R2", "interface", "ip address 10.20.0.1 255.255.255.0", "Manufacturing loopback IPv4 address applied."),
-      s("Address the Manufacturing loopback with IPv6", "Apply the 2001:db8:20::/64 Manufacturing LAN prefix.", "CE-MFG-R2", "interface", "ipv6 address 2001:db8:20::1/64", "Manufacturing loopback IPv6 address applied."),
-      s("Enable the Manufacturing loopback", "Keep the middle-router endpoint available for route testing.", "CE-MFG-R2", "interface", "no shutdown", "Manufacturing loopback enabled."),
-      s("Leave the Manufacturing loopback", "Return to global configuration.", "CE-MFG-R2", "interface", "exit", "Returned to global configuration mode."),
-      s("Start OSPFv2 at Manufacturing", "Create the same single-area OSPF process in the middle of the path.", "CE-MFG-R2", "config", "router ospf 10", "Manufacturing OSPFv2 configuration mode entered."),
-      s("Set the Manufacturing OSPF router ID", "Use a deterministic identity for the second router.", "CE-MFG-R2", "router", "router-id 2.2.2.2", "Manufacturing OSPF router ID set to 2.2.2.2."),
-      s("Advertise the HQ-facing network", "Place the first transit link into area 0.", "CE-MFG-R2", "router", "network 10.12.0.0 0.0.0.255 area 0", "Manufacturing HQ-facing network added to area 0."),
-      s("Advertise the Factory-facing network", "Place the second transit link into area 0.", "CE-MFG-R2", "router", "network 10.23.0.0 0.0.0.255 area 0", "Manufacturing Factory-facing network added to area 0."),
-      s("Advertise the Manufacturing loopback", "Place the Manufacturing LAN into area 0.", "CE-MFG-R2", "router", "network 10.20.0.0 0.0.0.255 area 0", "Manufacturing loopback network added to area 0."),
-      s("Make the Manufacturing loopback passive", "Advertise the LAN without forming a neighbor on the loopback.", "CE-MFG-R2", "router", "passive-interface Loopback0", "Manufacturing loopback set passive for OSPFv2."),
-      s("Leave Manufacturing OSPF configuration", "Return to global configuration.", "CE-MFG-R2", "router", "exit", "Returned to global configuration mode."),
-      s("Select the Manufacturing HQ-facing interface for OSPF", "Apply both OSPF versions to the first transit link.", "CE-MFG-R2", "config", "interface GigabitEthernet0/0", "Manufacturing HQ-facing OSPF interface selected."),
-      s("Enable OSPFv2 toward HQ", "Place the IPv4 link into area 0 at the interface level.", "CE-MFG-R2", "interface", "ip ospf 10 area 0", "OSPFv2 enabled toward HQ."),
-      s("Enable OSPFv3 toward HQ", "Place the IPv6 link into area 0 at the interface level.", "CE-MFG-R2", "interface", "ipv6 ospf 10 area 0", "OSPFv3 enabled toward HQ."),
-      s("Leave the Manufacturing HQ-facing interface", "Return to global configuration.", "CE-MFG-R2", "interface", "exit", "Returned to global configuration mode."),
-      s("Select the Manufacturing Factory-facing interface for OSPF", "Apply both OSPF versions to the second transit link.", "CE-MFG-R2", "config", "interface GigabitEthernet0/1", "Manufacturing Factory-facing OSPF interface selected."),
-      s("Enable OSPFv2 toward Factory", "Place the IPv4 link into area 0 at the interface level.", "CE-MFG-R2", "interface", "ip ospf 10 area 0", "OSPFv2 enabled toward Factory."),
-      s("Enable OSPFv3 toward Factory", "Place the IPv6 link into area 0 at the interface level.", "CE-MFG-R2", "interface", "ipv6 ospf 10 area 0", "OSPFv3 enabled toward Factory."),
-      s("Leave the Manufacturing Factory-facing interface", "Return to global configuration.", "CE-MFG-R2", "interface", "exit", "Returned to global configuration mode."),
-      s("Select the Manufacturing loopback for OSPF", "Advertise both Manufacturing loopback address families.", "CE-MFG-R2", "config", "interface Loopback0", "Manufacturing loopback selected for OSPF."),
-      s("Enable OSPFv2 on the Manufacturing loopback", "Apply area 0 to the IPv4 loopback.", "CE-MFG-R2", "interface", "ip ospf 10 area 0", "OSPFv2 enabled on the Manufacturing loopback."),
-      s("Enable OSPFv3 on the Manufacturing loopback", "Apply area 0 to the IPv6 loopback.", "CE-MFG-R2", "interface", "ipv6 ospf 10 area 0", "OSPFv3 enabled on the Manufacturing loopback."),
-      s("Finish the Manufacturing build", "Return to privileged EXEC for adjacency and database inspection.", "CE-MFG-R2", "interface", "end", "Returned to privileged EXEC mode."),
-      s("Verify Manufacturing OSPFv2 neighbors", "Confirm that both routed adjacencies are forming as expected.", "CE-MFG-R2", "privileged", "show ip ospf neighbor", "Manufacturing OSPFv2 neighbors are visible."),
-      s("Inspect the Manufacturing routing table", "Compare connected, static, and OSPF-learned paths.", "CE-MFG-R2", "privileged", "show ip route", "Manufacturing IPv4 routing table is visible."),
-      s("Verify Manufacturing OSPFv3 neighbors", "Confirm IPv6 adjacencies on the middle router.", "CE-MFG-R2", "privileged", "show ipv6 ospf neighbor", "Manufacturing OSPFv3 neighbors are visible."),
-      s("Inspect the Manufacturing IPv6 routing table", "Confirm IPv6 path learning across both transit links.", "CE-MFG-R2", "privileged", "show ipv6 route", "Manufacturing IPv6 routing table is visible."),
-      s("Enter FTF-R3 privileged mode", "Switch to the Factory to Foundation edge router.", "FTF-R3", "user", "enable", "Privileged EXEC mode entered on FTF-R3."),
-      s("Enter FTF-R3 configuration mode", "Open the Factory router configuration context.", "FTF-R3", "privileged", "configure terminal", "Global configuration mode entered on FTF-R3."),
-      s("Set the Factory hostname", "Identify the Factory to Foundation edge in every prompt.", "FTF-R3", "config", "hostname FTF-R3", "Factory hostname applied."),
-      s("Select the Manufacturing-facing interface", "Configure the second 10.23.0.0/24 transit endpoint.", "FTF-R3", "config", "interface GigabitEthernet0/0", "Factory transit interface selected."),
-      s("Address the Factory transit link with IPv4", "Apply the Factory edge address on the Manufacturing transit segment.", "FTF-R3", "interface", "ip address 10.23.0.3 255.255.255.0", "Factory transit IPv4 address applied."),
-      s("Address the Factory transit link with IPv6", "Apply the Factory edge IPv6 address on the transit segment.", "FTF-R3", "interface", "ipv6 address 2001:db8:23::3/64", "Factory transit IPv6 address applied."),
-      s("Enable the Factory transit link", "Bring the Factory edge link up.", "FTF-R3", "interface", "no shutdown", "Factory transit interface enabled."),
-      s("Leave the Factory transit interface", "Return to global configuration.", "FTF-R3", "interface", "exit", "Returned to global configuration mode."),
-      s("Create the Factory loopback", "Represent the Factory to Foundation LAN with a stable endpoint.", "FTF-R3", "config", "interface Loopback0", "Factory Loopback0 selected."),
-      s("Address the Factory loopback with IPv4", "Apply the 10.30.0.0/24 Factory LAN prefix.", "FTF-R3", "interface", "ip address 10.30.0.1 255.255.255.0", "Factory loopback IPv4 address applied."),
-      s("Address the Factory loopback with IPv6", "Apply the 2001:db8:30::/64 Factory LAN prefix.", "FTF-R3", "interface", "ipv6 address 2001:db8:30::1/64", "Factory loopback IPv6 address applied."),
-      s("Enable the Factory loopback", "Keep the Factory endpoint available for end-to-end testing.", "FTF-R3", "interface", "no shutdown", "Factory loopback enabled."),
-      s("Leave the Factory loopback", "Return to global configuration.", "FTF-R3", "interface", "exit", "Returned to global configuration mode."),
-      s("Start OSPFv2 at Factory", "Create OSPF process 10 at the Factory edge.", "FTF-R3", "config", "router ospf 10", "Factory OSPFv2 configuration mode entered."),
-      s("Set the Factory OSPF router ID", "Use a deterministic identity for the third router.", "FTF-R3", "router", "router-id 3.3.3.3", "Factory OSPF router ID set to 3.3.3.3."),
-      s("Advertise the Factory transit network", "Place the 10.23.0.0/24 link into area 0.", "FTF-R3", "router", "network 10.23.0.0 0.0.0.255 area 0", "Factory transit network added to area 0."),
-      s("Advertise the Factory loopback network", "Place the 10.30.0.0/24 LAN into area 0.", "FTF-R3", "router", "network 10.30.0.0 0.0.0.255 area 0", "Factory loopback network added to area 0."),
-      s("Make the Factory loopback passive", "Advertise the LAN without forming a neighbor on the loopback.", "FTF-R3", "router", "passive-interface Loopback0", "Factory loopback set passive for OSPFv2."),
-      s("Leave Factory OSPF configuration", "Return to global configuration.", "FTF-R3", "router", "exit", "Returned to global configuration mode."),
-      s("Select the Factory transit interface for OSPF", "Apply both OSPF versions to the routed link.", "FTF-R3", "config", "interface GigabitEthernet0/0", "Factory OSPF interface selected."),
-      s("Enable OSPFv2 on the Factory transit", "Place the IPv4 transit link into area 0.", "FTF-R3", "interface", "ip ospf 10 area 0", "OSPFv2 enabled on the Factory transit."),
-      s("Enable OSPFv3 on the Factory transit", "Place the IPv6 transit link into area 0.", "FTF-R3", "interface", "ipv6 ospf 10 area 0", "OSPFv3 enabled on the Factory transit."),
-      s("Leave the Factory transit interface", "Return to global configuration.", "FTF-R3", "interface", "exit", "Returned to global configuration mode."),
-      s("Select the Factory loopback for OSPF", "Advertise both Factory loopback address families.", "FTF-R3", "config", "interface Loopback0", "Factory loopback selected for OSPF."),
-      s("Enable OSPFv2 on the Factory loopback", "Apply area 0 to the IPv4 loopback.", "FTF-R3", "interface", "ip ospf 10 area 0", "OSPFv2 enabled on the Factory loopback."),
-      s("Enable OSPFv3 on the Factory loopback", "Apply area 0 to the IPv6 loopback.", "FTF-R3", "interface", "ipv6 ospf 10 area 0", "OSPFv3 enabled on the Factory loopback."),
-      s("Finish the Factory build", "Return to privileged EXEC for final control-plane evidence.", "FTF-R3", "interface", "end", "Returned to privileged EXEC mode."),
-      s("Verify Factory OSPFv2 neighbors", "Confirm the Factory adjacency is FULL.", "FTF-R3", "privileged", "show ip ospf neighbor", "Factory OSPFv2 neighbor state is FULL."),
-      s("Inspect the Factory OSPF database", "Review the link-state database behind the learned route.", "FTF-R3", "privileged", "show ip ospf database", "Factory OSPF database is visible."),
-      s("Verify Factory OSPFv3 neighbors", "Confirm the IPv6 adjacency is established.", "FTF-R3", "privileged", "show ipv6 ospf neighbor", "Factory OSPFv3 neighbor state is FULL."),
-      s("Inspect Factory OSPF routes", "Confirm the Factory sees the remote LANs through OSPF.", "FTF-R3", "privileged", "show ip route ospf", "Factory learned OSPF routes are visible."),
-      s("Return to CE-HQ-R1", "Use the HQ console for final path-selection and reachability evidence.", "CE-HQ-R1", "privileged", "show ip route 10.30.0.0", "HQ route lookup for the Factory LAN is visible."),
-      s("Inspect the HQ IPv6 Factory route", "Verify the IPv6 route and next-hop decision.", "CE-HQ-R1", "privileged", "show ipv6 route 2001:db8:30::/64", "HQ IPv6 route lookup for the Factory LAN is visible."),
-      s("Trace the IPv4 path to Factory", "Use hop-by-hop evidence to explain the routed topology.", "CE-HQ-R1", "privileged", "traceroute 10.30.0.10", "IPv4 traceroute evidence collected across the routed core."),
-      s("Ping the Factory IPv4 endpoint", "Prove end-to-end IPv4 reachability from Headquarters.", "CE-HQ-R1", "privileged", "ping 10.30.0.10", "Success rate is 100 percent. The IPv4 path to Factory is reachable."),
-      s("Ping the Factory IPv6 loopback", "Prove end-to-end IPv6 reachability from Headquarters.", "CE-HQ-R1", "privileged", "ping ipv6 2001:db8:30::1", "Success rate is 100 percent. The IPv6 path to Factory is reachable."),
-      s("Save the HQ routing configuration", "Commit the completed routing state for the final challenge record.", "CE-HQ-R1", "privileged", "copy running-config startup-config", "Running configuration copied to startup configuration."),
-      s("Inspect the final HQ route table", "Close the lab by explaining connected, static, and OSPF path selection together.", "CE-HQ-R1", "privileged", "show ip route", "Final HQ route evidence accepted; the routing deep dive is complete.")
+      s("Enter CE-HQ-R1 privileged mode", "Begin the routing domain at headquarters.", "CE-HQ-R1", "user", "enable", "Privileged EXEC mode entered."),
+      s("Enter CE-HQ-R1 configuration mode", "Open the routing configuration context.", "CE-HQ-R1", "privileged", "configure terminal", "Global configuration mode entered."),
+      s("Install the manufacturing IPv4 route", "Use the directly connected CE-MFG-R2 next hop.", "CE-HQ-R1", "config", "ip route 10.20.0.0 255.255.255.0 10.12.0.2", "IPv4 static route installed."),
+      s("Install the factory IPv6 route", "Use the Factory to Foundation next hop.", "CE-HQ-R1", "config", "ipv6 route 2001:db8:30::/64 2001:db8:23::3", "IPv6 static route installed."),
+      s("Start OSPFv2", "Create the single-area OSPF process.", "CE-HQ-R1", "config", "router ospf 10", "OSPF configuration mode entered."),
+      s("Set the HQ router ID", "Make the OSPF identity deterministic.", "CE-HQ-R1", "router", "router-id 1.1.1.1", "OSPF router ID set to 1.1.1.1."),
+      s("Advertise the HQ transit network", "Place the headquarters link in area 0.", "CE-HQ-R1", "router", "network 10.12.0.0 0.0.0.255 area 0", "HQ transit network added to area 0."),
+      s("Leave OSPF configuration", "Return to global configuration.", "CE-HQ-R1", "router", "exit", "Returned to global configuration mode."),
+      s("Enable IPv6 routing at HQ", "Prepare the OSPFv3 interface.", "CE-HQ-R1", "config", "ipv6 unicast-routing", "IPv6 forwarding enabled."),
+      s("Select HQ transit interface", "Attach OSPFv3 to the transit link.", "CE-HQ-R1", "config", "interface GigabitEthernet0/0", "Transit interface selected."),
+      s("Enable OSPFv3 on HQ transit", "Place the interface in OSPFv3 area 0.", "CE-HQ-R1", "interface", "ipv6 ospf 10 area 0", "OSPFv3 enabled on the HQ transit interface."),
+      s("Return to privileged EXEC", "Prepare for neighbor verification.", "CE-HQ-R1", "interface", "end", "Returned to privileged EXEC mode."),
+      s("Verify OSPFv2 neighbors", "Inspect the control-plane adjacency.", "CE-HQ-R1", "privileged", "show ip ospf neighbor", "OSPF neighbor state is FULL."),
+      s("Verify the routing table", "Confirm longest-prefix route selection.", "CE-HQ-R1", "privileged", "show ip route", "Connected, static, and OSPF routes are visible."),
+      s("Verify OSPFv3 neighbors", "Confirm IPv6 adjacency evidence.", "CE-HQ-R1", "privileged", "show ipv6 ospf neighbor", "OSPFv3 neighbor state is FULL."),
+      s("Test the Factory route", "Prove the routed path to Factory to Foundation.", "CE-HQ-R1", "privileged", "ping 10.30.0.10", "Success rate is 100 percent. The routed path is reachable.")
     ]
   },
   {
@@ -400,137 +240,33 @@ const labs: Lab[] = [
   }
 ];
 
-function modePrompt(name: string, session: Session) {
-  if (session.mode === "user") return `${name}>`;
-  if (session.mode === "privileged") return `${name}#`;
-  if (session.mode === "config") return `${name}(config)#`;
-  if (session.mode === "vlan") return `${name}(config-vlan)#`;
-  if (session.mode === "interface-range") return `${name}(config-if-range)#`;
-  if (session.mode === "subinterface") return `${name}(config-subif)#`;
-  if (session.mode === "router") return `${name}(config-router)#`;
-  if (session.mode === "dhcp") return `${name}(config-dhcp)#`;
-  if (session.mode === "line") return `${name}(config-line)#`;
-  if (session.mode === "acl") return `${name}(config-ext-nacl)#`;
-  return `${name}(config-if)#`;
-}
 
 function initialSessions(lab: Lab): Record<string, Session> {
   return Object.fromEntries(lab.devices.map((device) => [device.name, boot(device.name, device.role)]));
 }
 
-type LabProgress = { stepIndex: number; sessions: Record<string, Session>; activeDevice: string };
-type PersistedAppState = { version: 1; selectedLab: number; labStates: Record<string, Partial<LabProgress>> };
-type AppState = { selectedLab: number; labStates: Record<number, LabProgress> };
-
-const STORAGE_KEY = "cisco-cli-labs-progress-v1";
-const MODES: Mode[] = ["user", "privileged", "config", "vlan", "interface", "interface-range", "subinterface", "router", "dhcp", "line", "acl"];
-
-function freshLabProgress(lab: Lab): LabProgress {
-  return { stepIndex: 0, sessions: initialSessions(lab), activeDevice: lab.steps[0]?.device ?? lab.devices[0]?.name ?? "" };
-}
-
-function isSession(value: unknown): value is Session {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<Session>;
-  return MODES.includes(candidate.mode as Mode) && (candidate.context === null || typeof candidate.context === "string") && Array.isArray(candidate.history) && candidate.history.every((line) => typeof line === "string");
-}
-
-function restoreLabProgress(lab: Lab, saved: Partial<LabProgress> | undefined): LabProgress {
-  const fresh = freshLabProgress(lab);
-  if (!saved || typeof saved !== "object") return fresh;
-  const rawStepIndex = typeof saved.stepIndex === "number" && Number.isFinite(saved.stepIndex) ? Math.floor(saved.stepIndex) : 0;
-  const stepIndex = Math.max(0, Math.min(rawStepIndex, lab.steps.length));
-  const sessions = { ...fresh.sessions };
-  if (saved.sessions && typeof saved.sessions === "object") {
-    for (const device of lab.devices) {
-      const candidate = (saved.sessions as Record<string, unknown>)[device.name];
-      if (isSession(candidate)) sessions[device.name] = candidate;
-    }
-  }
-  const activeDevice = typeof saved.activeDevice === "string" && lab.devices.some((device) => device.name === saved.activeDevice) ? saved.activeDevice : fresh.activeDevice;
-  return { stepIndex, sessions, activeDevice };
-}
-
-function loadPersistedAppState(): PersistedAppState | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<PersistedAppState>;
-    if (parsed.version !== 1 || typeof parsed.selectedLab !== "number" || !parsed.labStates || typeof parsed.labStates !== "object") return null;
-    return parsed as PersistedAppState;
-  } catch {
-    return null;
-  }
-}
-
-function createInitialAppState(): AppState {
-  const persisted = loadPersistedAppState();
-  const selectedLab = persisted && labs.some((lab) => lab.id === persisted.selectedLab) ? persisted.selectedLab : 1;
-  const labStates = Object.fromEntries(labs.map((lab) => [lab.id, restoreLabProgress(lab, persisted?.labStates[String(lab.id)])]));
-  return { selectedLab, labStates };
-}
-
-function nextMode(command: string, current: Mode): { mode: Mode; context: string | null } {
-  if (command === "enable") return { mode: "privileged", context: null };
-  if (command === "configure terminal") return { mode: "config", context: null };
-  if (command === "end") return { mode: "privileged", context: null };
-  if (command === "exit") {
-    if (current === "config") return { mode: "privileged", context: null };
-    return { mode: "config", context: null };
-  }
-  if (command.startsWith("vlan ")) return { mode: "vlan", context: command.slice(5) };
-  if (command.startsWith("interface range ")) return { mode: "interface-range", context: command.slice(16) };
-  if (command.startsWith("interface ")) return { mode: command.includes(".") ? "subinterface" : "interface", context: command.slice(10) };
-  if (command.startsWith("router ospf ")) return { mode: "router", context: command };
-  if (command.startsWith("ip dhcp pool ")) return { mode: "dhcp", context: command };
-  if (command.startsWith("line vty ")) return { mode: "line", context: command };
-  if (command.startsWith("ip access-list ")) return { mode: "acl", context: command };
-  return { mode: current, context: null };
-}
 
 export default function Home() {
-  const [appState, setAppState] = useState<AppState>(createInitialAppState);
-  const selectedLab = appState.selectedLab;
+  const [selectedLab, setSelectedLab] = useState(1);
+  const [sandboxOpen, setSandboxOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "sandbox");
   const lab = labs[selectedLab - 1];
-  const labProgress = appState.labStates[selectedLab] ?? freshLabProgress(lab);
-  const { stepIndex, sessions, activeDevice } = labProgress;
-  const fallbackDevice = lab.devices[0] ?? { name: "", role: "" };
+  const [stepIndex, setStepIndex] = useState(0);
+  const [sessions, setSessions] = useState<Record<string, Session>>(() => initialSessions(lab));
+  const [activeDevice, setActiveDevice] = useState(lab.steps[0].device);
   const [input, setInput] = useState("");
   const [hint, setHint] = useState(false);
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
   const step = lab.steps[Math.min(stepIndex, lab.steps.length - 1)];
-  const session = sessions[activeDevice] ?? sessions[fallbackDevice.name] ?? boot(fallbackDevice.name, fallbackDevice.role);
+  const session = sessions[activeDevice];
   const prompt = modePrompt(activeDevice, session);
   const complete = stepIndex >= lab.steps.length;
   const percent = Math.round((stepIndex / lab.steps.length) * 100);
 
-  function updateLabProgress(labId: number, updater: (progress: LabProgress) => LabProgress) {
-    setAppState((current) => {
-      const targetLab = labs.find((item) => item.id === labId);
-      if (!targetLab) return current;
-      const currentProgress = current.labStates[labId] ?? freshLabProgress(targetLab);
-      return { ...current, labStates: { ...current.labStates, [labId]: updater(currentProgress) } };
-    });
-  }
-  function selectDevice(deviceName: string) {
-    updateLabProgress(selectedLab, (current) => ({ ...current, activeDevice: deviceName }));
-    setInput(""); setHint(false);
-  }
-  function selectStep(deviceName: string, index: number) {
-    updateLabProgress(selectedLab, (current) => ({ ...current, activeDevice: deviceName, stepIndex: index <= current.stepIndex ? index : current.stepIndex }));
-    setInput(""); setHint(false);
-  }
   function selectLab(id: number) {
-    if (!labs.some((item) => item.id === id)) return;
-    setAppState((current) => ({ ...current, selectedLab: id }));
-    setInput(""); setHint(false); setPendingCommand(null);
+    const nextLab = labs[id - 1];
+    setSelectedLab(id); setStepIndex(0); setSessions(initialSessions(nextLab)); setActiveDevice(nextLab.steps[0].device); setInput(""); setHint(false);
   }
-  function reset() {
-    updateLabProgress(selectedLab, () => freshLabProgress(lab));
-    setInput(""); setHint(false); setPendingCommand(null);
-    toast("Lab reset", { description: `${lab.code} is ready at the first IOS prompt.` });
-  }
+  function reset() { setStepIndex(0); setSessions(initialSessions(lab)); setActiveDevice(lab.steps[0].device); setInput(""); setHint(false); toast("Lab reset", { description: `${lab.code} is ready at the first IOS prompt.` }); }
   function submit(value = input) {
     const raw = value.trim();
     if (!raw) return;
@@ -541,22 +277,20 @@ export default function Home() {
     const expectedMode = step.mode;
     const normalized = raw.replace(/\s+/g, " ");
     if (complete) {
-      updateLabProgress(selectedLab, (progress) => ({ ...progress, sessions: { ...progress.sessions, [activeDevice]: { ...current, history: [...updatedHistory, "Lab complete. Reset to run this sequence again."] } } }));
-      setInput(""); return;
+      setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, "Lab complete. Reset to run this sequence again."] } })); setInput(""); return;
     }
     if (activeDevice !== expectedDevice || current.mode !== expectedMode || normalized !== step.command) {
       const reason = activeDevice !== expectedDevice ? `Switch to ${expectedDevice}.` : current.mode !== expectedMode ? `Use the ${expectedMode === "user" ? "user EXEC" : expectedMode === "privileged" ? "privileged EXEC" : expectedMode} prompt.` : `Expected the full command: ${step.command}`;
-      updateLabProgress(selectedLab, (progress) => ({ ...progress, sessions: { ...progress.sessions, [activeDevice]: { ...current, history: [...updatedHistory, "% Invalid input detected at '^' marker.", `Hint: ${reason}`] } } }));
-      setInput(""); return;
+      setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, "% Invalid input detected at '^' marker.", `Hint: ${reason}`] } })); setInput(""); return;
     }
     const transition = nextMode(normalized, current.mode);
     const nextSession: Session = { ...current, mode: transition.mode, context: transition.context, history: [...updatedHistory, step.success] };
-    updateLabProgress(selectedLab, (progress) => ({ ...progress, sessions: { ...progress.sessions, [activeDevice]: nextSession }, stepIndex: progress.stepIndex + 1 }));
-    setInput(""); setHint(false);
+    setSessions((all) => ({ ...all, [activeDevice]: nextSession }));
+    setStepIndex((index) => index + 1); setInput(""); setHint(false);
   }
   function runSuggested() {
     if (complete) return;
-    if (activeDevice !== step.device) { setPendingCommand(step.command); selectDevice(step.device); return; }
+    if (activeDevice !== step.device) { setPendingCommand(step.command); setActiveDevice(step.device); setInput(""); setHint(false); return; }
     if (session.mode !== step.mode) { setInput(step.mode === "privileged" ? "enable" : step.mode === "config" ? "configure terminal" : step.mode === "user" ? "" : "exit"); setHint(true); return; }
     submit(step.command);
   }
@@ -564,32 +298,21 @@ export default function Home() {
   const currentDeviceRole = lab.devices.find((device) => device.name === activeDevice)?.role;
   const allDone = useMemo(() => complete, [complete]);
   useEffect(() => {
-    try {
-      const persisted: PersistedAppState = {
-        version: 1,
-        selectedLab: appState.selectedLab,
-        labStates: Object.fromEntries(Object.entries(appState.labStates).map(([id, progress]) => [String(id), progress])),
-      };
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
-    } catch {
-      // Persistence is best effort when browser storage is unavailable or full.
-    }
-  }, [appState]);
-  useEffect(() => {
     if (pendingCommand && activeDevice === step.device) {
       const command = pendingCommand;
       setPendingCommand(null);
       submit(command);
     }
   }, [activeDevice, pendingCommand, step.device]);
+  if (sandboxOpen) return <NetworkSandbox onExit={() => setSandboxOpen(false)} />;
 
   return <main className="min-h-screen overflow-hidden bg-[#0b1118] text-[#f2f5f5]">
     <header className="border-b border-white/10 bg-[#0b1118]/95 backdrop-blur-md"><div className="mx-auto flex max-w-[1500px] items-center justify-between px-5 py-4 lg:px-8"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#63e6e2]/40 bg-[#10252b]"><img src="/manus-storage/ipv6-trace-mark_f814341b.png" alt="Cisco CLI Labs mark" className="h-8 w-8 object-contain" /></div><div><div className="font-mono text-[11px] uppercase tracking-[.22em] text-[#63e6e2]">IPv6 CLI Lab</div><div className="font-display text-lg font-semibold tracking-tight">Packet Observatory</div></div></div><div className="hidden items-center gap-3 text-xs text-[#98a8b0] sm:flex"><span>CONSTRUCTION ENTERPRISES</span><span className="h-1.5 w-1.5 rounded-full bg-[#63e6e2] shadow-[0_0_10px_#63e6e2]" /><span className="font-mono">CISCO IOS TRAINING CONSOLE</span></div></div></header>
-    <nav className="border-b border-white/10 bg-[#0d151e] px-5 py-3 lg:px-8"><div className="mx-auto flex max-w-[1500px] items-center gap-2 overflow-x-auto"><span className="mr-2 shrink-0 font-mono text-[10px] uppercase tracking-[.16em] text-[#667780]">Curriculum</span>{labs.map((item) => <button key={item.id} onClick={() => selectLab(item.id)} className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-left transition ${selectedLab === item.id ? "border-[#63e6e2]/40 bg-[#173038] text-white" : "border-white/10 bg-[#101923] text-[#7f9098] hover:border-white/20 hover:text-white"}`}><span className="font-mono text-[10px] text-[#63e6e2]">{item.code}</span><span className="text-xs">{item.title}</span>{item.id === selectedLab && <span className="rounded bg-[#f5b74b]/10 px-1.5 py-0.5 font-mono text-[9px] text-[#f5b74b]">ACTIVE</span>}</button>)}</div></nav>
+    <nav className="border-b border-white/10 bg-[#0d151e] px-5 py-3 lg:px-8"><div className="mx-auto flex max-w-[1500px] items-center gap-2 overflow-x-auto"><span className="mr-2 shrink-0 font-mono text-[10px] uppercase tracking-[.16em] text-[#667780]">Curriculum</span><button type="button" onClick={() => setSandboxOpen(true)} className="flex shrink-0 items-center gap-2 rounded-lg border border-[#f5b74b]/40 bg-[#2a2112] px-3 py-2 text-left text-[#f4d998] transition hover:border-[#f5b74b]/70 hover:bg-[#3a2a16]"><Network className="h-3.5 w-3.5" /><span className="font-mono text-[10px] uppercase tracking-wider">Network Sandbox</span></button>{labs.map((item) => <button key={item.id} onClick={() => selectLab(item.id)} className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-left transition ${selectedLab === item.id ? "border-[#63e6e2]/40 bg-[#173038] text-white" : "border-white/10 bg-[#101923] text-[#7f9098] hover:border-white/20 hover:text-white"}`}><span className="font-mono text-[10px] text-[#63e6e2]">{item.code}</span><span className="text-xs">{item.title}</span>{item.id === selectedLab && <span className="rounded bg-[#f5b74b]/10 px-1.5 py-0.5 font-mono text-[9px] text-[#f5b74b]">ACTIVE</span>}</button>)}</div></nav>
     <div className="mx-auto grid max-w-[1500px] grid-cols-1 lg:grid-cols-[270px_1fr]">
-      <aside className="border-b border-white/10 bg-[#0d151e] lg:min-h-[calc(100vh-121px)] lg:border-b-0 lg:border-r"><div className="p-5 lg:sticky lg:top-0"><div className="mb-7 flex items-center justify-between"><div><div className="instrument-label">LAB PATH</div><div className="mt-1 text-sm text-[#9eacb2]">{lab.domain}</div></div><TerminalSquare className="h-4 w-4 text-[#f5b74b]" /></div><div className="mb-6 rounded-xl border border-white/10 bg-[#111c27] p-4"><div className="text-xs font-semibold text-white">{lab.title}</div><p className="mt-2 text-xs leading-5 text-[#8fa0a7]">{lab.blurb}</p><div className="mt-4 font-mono text-[10px] uppercase tracking-wider text-[#63e6e2]">{lab.topology}</div></div><nav className="space-y-1.5" aria-label="Lab command path">{lab.steps.slice(0, Math.min(lab.steps.length, 16)).map((item, index) => { const done = index < stepIndex; const current = index === stepIndex && !complete; return <button key={`${item.command}-${index}`} onClick={() => selectStep(item.device, index)} className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${current ? "bg-[#173038] text-white shadow-[inset_3px_0_0_#63e6e2]" : "text-[#82919a] hover:bg-white/[.04] hover:text-white"}`}><span className="w-5 font-mono text-[10px] text-[#667780]">{String(index + 1).padStart(2, "0")}</span>{done ? <Check className="h-3.5 w-3.5 text-[#63e6e2]" /> : <span className="h-3.5 w-3.5 rounded-full border border-[#53646d]" />}<span className="min-w-0 flex-1 truncate text-xs">{item.title}</span></button>; })}{lab.steps.length > 16 && <div className="px-3 py-2 font-mono text-[10px] text-[#667780]">+ {lab.steps.length - 16} more IOS commands below</div>}</nav><div className="mt-7 border-t border-white/10 pt-5"><div className="mb-2 flex justify-between font-mono text-[10px] uppercase tracking-wider text-[#77858d]"><span>Progress</span><span className="text-[#63e6e2]">{percent}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#63e6e2] transition-all duration-300" style={{ width: `${percent}%` }} /></div><p className="mt-3 text-xs leading-relaxed text-[#6d7b83]">Type the command. Read the prompt. Trust the evidence.</p></div></div></aside>
+      <aside className="border-b border-white/10 bg-[#0d151e] lg:min-h-[calc(100vh-121px)] lg:border-b-0 lg:border-r"><div className="p-5 lg:sticky lg:top-0"><div className="mb-7 flex items-center justify-between"><div><div className="instrument-label">LAB PATH</div><div className="mt-1 text-sm text-[#9eacb2]">{lab.domain}</div></div><TerminalSquare className="h-4 w-4 text-[#f5b74b]" /></div><div className="mb-6 rounded-xl border border-white/10 bg-[#111c27] p-4"><div className="text-xs font-semibold text-white">{lab.title}</div><p className="mt-2 text-xs leading-5 text-[#8fa0a7]">{lab.blurb}</p><div className="mt-4 font-mono text-[10px] uppercase tracking-wider text-[#63e6e2]">{lab.topology}</div></div><nav className="space-y-1.5" aria-label="Lab command path">{lab.steps.slice(0, Math.min(lab.steps.length, 16)).map((item, index) => { const done = index < stepIndex; const current = index === stepIndex && !complete; return <button key={`${item.command}-${index}`} onClick={() => { setActiveDevice(item.device); if (index <= stepIndex) setStepIndex(index); }} className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${current ? "bg-[#173038] text-white shadow-[inset_3px_0_0_#63e6e2]" : "text-[#82919a] hover:bg-white/[.04] hover:text-white"}`}><span className="w-5 font-mono text-[10px] text-[#667780]">{String(index + 1).padStart(2, "0")}</span>{done ? <Check className="h-3.5 w-3.5 text-[#63e6e2]" /> : <span className="h-3.5 w-3.5 rounded-full border border-[#53646d]" />}<span className="min-w-0 flex-1 truncate text-xs">{item.title}</span></button>; })}{lab.steps.length > 16 && <div className="px-3 py-2 font-mono text-[10px] text-[#667780]">+ {lab.steps.length - 16} more IOS commands below</div>}</nav><div className="mt-7 border-t border-white/10 pt-5"><div className="mb-2 flex justify-between font-mono text-[10px] uppercase tracking-wider text-[#77858d]"><span>Progress</span><span className="text-[#63e6e2]">{percent}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#63e6e2] transition-all duration-300" style={{ width: `${percent}%` }} /></div><p className="mt-3 text-xs leading-relaxed text-[#6d7b83]">Type the command. Read the prompt. Trust the evidence.</p></div></div></aside>
       <section className="relative min-w-0"><div className="absolute inset-0 opacity-25" style={{ backgroundImage: "url('/manus-storage/packet-observatory-texture_96a51270.jpg')", backgroundSize: "cover", backgroundPosition: "top right" }} /><div className="relative mx-auto max-w-[1240px] px-5 py-7 lg:px-10 lg:py-9"><div className="mb-6 flex flex-col justify-between gap-5 md:flex-row md:items-end"><div><div className="instrument-label text-[#f5b74b]">{lab.code} · {lab.domain}</div><h1 className="mt-2 max-w-3xl font-display text-3xl font-semibold tracking-[-.03em] text-white md:text-5xl">{lab.title}<br /><span className="text-[#63e6e2]">Practice the signal.</span></h1><p className="mt-3 max-w-2xl text-sm leading-6 text-[#b4c1c5]">{lab.blurb}</p></div><Button variant="outline" className="border-white/15 bg-[#101923]/70 text-[#aab8bd] hover:bg-white/10 hover:text-white" onClick={reset}><RotateCcw className="mr-2 h-4 w-4" /> Reset {lab.code}</Button></div>
-        <div className="mb-7 grid gap-4 xl:grid-cols-[1.05fr_.95fr]"><div className="panel-surface p-5"><div className="instrument-label text-[#f5b74b]">PACKET TRACE / OPERATIONAL CONTEXT</div><div className="mt-4 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#0e1720] p-4 font-mono text-center text-xs">{lab.devices.map((device, index) => <div key={device.name} className="flex min-w-0 flex-1 items-center gap-2"><button type="button" aria-pressed={activeDevice === device.name} aria-label={`Connect console to ${device.name}`} onClick={() => selectDevice(device.name)} className={`min-w-0 flex-1 rounded-lg border px-2 py-3 transition hover:border-[#63e6e2]/60 hover:bg-[#173038] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#63e6e2] ${activeDevice === device.name ? "border-[#63e6e2]/40 bg-[#173038]" : "border-white/10 bg-[#111c27]"}`}><div className="truncate text-[#63e6e2]">{device.name}</div><div className="mt-1 truncate text-[9px] text-[#718189]">{device.role}</div></button>{index < lab.devices.length - 1 && <div className="h-px w-5 shrink-0 bg-[#385159]" />}</div>)}</div><div className="mt-4 flex items-center gap-3 font-mono text-[10px] uppercase tracking-wider text-[#77858d]"><span className="h-px flex-1 bg-gradient-to-r from-[#63e6e2] to-transparent" /><span>{lab.topology}</span><span className="h-px flex-1 bg-gradient-to-l from-[#63e6e2] to-transparent" /></div></div><div className="panel-surface p-5"><div className="flex items-center justify-between"><div className="instrument-label text-[#63e6e2]">CURRENT PACKET TRACE</div><span className="status-pill"><span className="status-dot" /> {complete ? "COMPLETE" : `${stepIndex + 1}/${lab.steps.length}`}</span></div><div className="mt-3 font-display text-xl font-semibold text-white">{allDone ? "Evidence accepted." : step.title}</div><p className="mt-2 text-sm leading-6 text-[#aebbc0]">{allDone ? "You completed the full IOS command path for this lab." : step.description}</p>{!allDone && <div className="mt-4 rounded-lg border border-[#f5b74b]/20 bg-[#f5b74b]/10 p-3"><div className="font-mono text-[10px] uppercase tracking-wider text-[#f5b74b]">Required context</div><div className="mt-2 flex flex-wrap gap-2 text-xs text-[#f4d998]"><span>{step.device}</span><span>·</span><span>{step.mode === "user" ? "user EXEC" : step.mode === "privileged" ? "privileged EXEC" : step.mode}</span></div>{hint && <div className="mt-3 border-t border-[#f5b74b]/20 pt-3 font-mono text-xs leading-5 text-[#f4d998]">Next exact command: <strong>{step.command}</strong></div>}</div>}</div></div>
+        <div className="mb-7 grid gap-4 xl:grid-cols-[1.05fr_.95fr]"><div className="panel-surface p-5"><div className="instrument-label text-[#f5b74b]">PACKET TRACE / OPERATIONAL CONTEXT</div><div className="mt-4 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#0e1720] p-4 font-mono text-center text-xs">{lab.devices.map((device, index) => <div key={device.name} className="flex min-w-0 flex-1 items-center gap-2"><button type="button" aria-pressed={activeDevice === device.name} aria-label={`Connect console to ${device.name}`} onClick={() => { setActiveDevice(device.name); setInput(""); setHint(false); }} className={`min-w-0 flex-1 rounded-lg border px-2 py-3 transition hover:border-[#63e6e2]/60 hover:bg-[#173038] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#63e6e2] ${activeDevice === device.name ? "border-[#63e6e2]/40 bg-[#173038]" : "border-white/10 bg-[#111c27]"}`}><div className="truncate text-[#63e6e2]">{device.name}</div><div className="mt-1 truncate text-[9px] text-[#718189]">{device.role}</div></button>{index < lab.devices.length - 1 && <div className="h-px w-5 shrink-0 bg-[#385159]" />}</div>)}</div><div className="mt-4 flex items-center gap-3 font-mono text-[10px] uppercase tracking-wider text-[#77858d]"><span className="h-px flex-1 bg-gradient-to-r from-[#63e6e2] to-transparent" /><span>{lab.topology}</span><span className="h-px flex-1 bg-gradient-to-l from-[#63e6e2] to-transparent" /></div></div><div className="panel-surface p-5"><div className="flex items-center justify-between"><div className="instrument-label text-[#63e6e2]">CURRENT PACKET TRACE</div><span className="status-pill"><span className="status-dot" /> {complete ? "COMPLETE" : `${stepIndex + 1}/${lab.steps.length}`}</span></div><div className="mt-3 font-display text-xl font-semibold text-white">{allDone ? "Evidence accepted." : step.title}</div><p className="mt-2 text-sm leading-6 text-[#aebbc0]">{allDone ? "You completed the full IOS command path for this lab." : step.description}</p>{!allDone && <div className="mt-4 rounded-lg border border-[#f5b74b]/20 bg-[#f5b74b]/10 p-3"><div className="font-mono text-[10px] uppercase tracking-wider text-[#f5b74b]">Required context</div><div className="mt-2 flex flex-wrap gap-2 text-xs text-[#f4d998]"><span>{step.device}</span><span>·</span><span>{step.mode === "user" ? "user EXEC" : step.mode === "privileged" ? "privileged EXEC" : step.mode}</span></div>{hint && <div className="mt-3 border-t border-[#f5b74b]/20 pt-3 font-mono text-xs leading-5 text-[#f4d998]">Next exact command: <strong>{step.command}</strong></div>}</div>}</div></div>
         <div className="terminal-shell"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#111b24] px-5 py-3"><div className="flex items-center gap-2"><div className="flex gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-[#f07178]" /><span className="h-2.5 w-2.5 rounded-full bg-[#f5b74b]" /><span className="h-2.5 w-2.5 rounded-full bg-[#63e6e2]" /></div><span className="ml-2 font-mono text-[10px] uppercase tracking-[.18em] text-[#74848d]">ios-sim / {activeDevice}</span></div><span className="font-mono text-[10px] uppercase tracking-wider text-[#667780]">{currentDeviceRole}</span></div><div className="terminal-output min-h-[380px]" aria-live="polite">{recent.map((line, index) => <div key={`${line}-${index}`} className={`${line.startsWith("%") ? "text-[#f07178]" : line.startsWith("Hint:") ? "text-[#f5b74b]" : line.startsWith("Cisco") || line.includes("·") || line.startsWith("Full IOS") ? "text-[#72848d]" : line.startsWith("✓") || line.includes("applied") || line.includes("enabled") || line.includes("entered") || line.includes("configured") || line.includes("visible") || line.includes("Success") ? "text-[#b5d8d4]" : "text-[#a4b2b7]"}`}>{line || "\u00a0"}</div>)}{!complete && <div className="mt-4 flex items-center gap-2"><span className="text-[#63e6e2]">{prompt}</span><input autoFocus value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submit()} className="min-w-0 flex-1 bg-transparent font-mono text-sm text-white outline-none placeholder:text-[#42535c]" placeholder="type the full Cisco IOS command..." aria-label="Cisco IOS command" /></div>}</div><div className="border-t border-white/10 bg-[#0e1720] px-5 py-3"><div className="flex flex-wrap items-center justify-between gap-3"><div className="flex gap-2"><Button variant="outline" size="sm" className="border-white/15 bg-transparent text-[#94a4aa] hover:bg-white/10 hover:text-white" onClick={() => setHint((value) => !value)}><CircleHelp className="mr-2 h-3.5 w-3.5" /> {hint ? "Hide hint" : "Need a nudge?"}</Button><Button variant="outline" size="sm" className="border-white/15 bg-transparent text-[#94a4aa] hover:bg-white/10 hover:text-white" onClick={() => { navigator.clipboard?.writeText(step.command); toast("Exact command copied"); }}><Copy className="mr-2 h-3.5 w-3.5" /> Copy command</Button></div><Button size="sm" className="bg-[#f5b74b] text-[#1c160b] hover:bg-[#ffca69]" onClick={runSuggested}><Play className="mr-2 h-3.5 w-3.5" /> Run suggested</Button></div></div></div>
         <div className="mt-6 grid gap-4 md:grid-cols-3"><div className="panel-surface p-4"><div className="instrument-label">ACTIVE DEVICE</div><div className="mt-2 font-mono text-sm text-[#63e6e2]">{activeDevice}</div><div className="mt-1 text-xs text-[#74838b]">{currentDeviceRole}</div></div><div className="panel-surface p-4"><div className="instrument-label">IOS PROMPT</div><div className="mt-2 font-mono text-sm text-[#f5b74b]">{prompt}</div><div className="mt-1 text-xs text-[#74838b]">Mode is derived from the command state.</div></div><div className="panel-surface p-4"><div className="instrument-label">LAB STANDARD</div><div className="mt-2 text-sm text-[#dce5e5]">Full IOS vocabulary</div><div className="mt-1 text-xs text-[#74838b]">No app-only command aliases.</div></div></div>
       </div></section>
