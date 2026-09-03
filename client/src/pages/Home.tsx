@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import NetworkSandbox from "@/components/NetworkSandbox";
 import { toast } from "sonner";
-import { boot, modePrompt, nextMode, type Mode, type Session } from "@/lib/ios-engine";
+import { modePrompt, type Mode } from "@/lib/ios-engine";
+import { createCurriculumSimulation, executeCommand, type SimulationState } from "@/lib/network-simulation";
 import { Check, CircleHelp, Copy, Network, Play, RotateCcw, TerminalSquare } from "lucide-react";
 
 /** Packet Observatory design: dark field console, cyan signal, amber evidence, IBM Plex typography. */
@@ -12,6 +13,20 @@ type Step = { title: string; description: string; device: DeviceName; mode: Mode
 type Lab = { id: number; code: string; title: string; domain: string; blurb: string; topology: string; devices: { name: string; role: string }[]; steps: Step[] };
 
 const s = (title: string, description: string, device: string, mode: Mode, command: string, success: string): Step => ({ title, description, device, mode, command, success });
+
+const CURRICULUM_STORAGE_KEY = "cisco-cli-curriculum-v2";
+type CurriculumLabSnapshot = { stepIndex: number; activeDevice: string; simulation: SimulationState };
+type CurriculumSnapshot = { version: 2; selectedLab: number; labs: Record<string, CurriculumLabSnapshot> };
+function readCurriculumSnapshot(): CurriculumSnapshot | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(CURRICULUM_STORAGE_KEY); if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CurriculumSnapshot> & { stepIndex?: number; activeDevice?: string; simulation?: SimulationState };
+    if (parsed && parsed.labs && typeof parsed.selectedLab === "number") return { version: 2, selectedLab: parsed.selectedLab, labs: parsed.labs };
+    if (parsed && typeof parsed.selectedLab === "number" && parsed.simulation?.devices && parsed.simulation.sessions) return { version: 2, selectedLab: parsed.selectedLab, labs: { [String(parsed.selectedLab)]: { stepIndex: parsed.stepIndex ?? 0, activeDevice: parsed.activeDevice ?? "", simulation: parsed.simulation } } };
+    return null;
+  } catch { return null; }
+}
 
 const labs: Lab[] = [
   {
@@ -241,62 +256,74 @@ const labs: Lab[] = [
 ];
 
 
-function initialSessions(lab: Lab): Record<string, Session> {
-  return Object.fromEntries(lab.devices.map((device) => [device.name, boot(device.name, device.role)]));
-}
-
-
 export default function Home() {
-  const [selectedLab, setSelectedLab] = useState(1);
+  const savedCurriculum = readCurriculumSnapshot();
+  const restoredSelectedLab = savedCurriculum && savedCurriculum.selectedLab >= 1 && savedCurriculum.selectedLab <= labs.length ? savedCurriculum.selectedLab : 1;
+  const createLabSnapshot = (currentLab: Lab, stored?: CurriculumLabSnapshot): CurriculumLabSnapshot => stored && stored.simulation?.devices && stored.simulation.sessions ? { stepIndex: Math.max(0, Math.min(stored.stepIndex, currentLab.steps.length)), activeDevice: currentLab.devices.some((device) => device.name === stored.activeDevice) ? stored.activeDevice : currentLab.steps[0].device, simulation: stored.simulation } : { stepIndex: 0, activeDevice: currentLab.steps[0].device, simulation: createCurriculumSimulation(currentLab.devices, currentLab.title, currentLab.blurb) };
+  const initialLabStates = Object.fromEntries(labs.map((currentLab) => [String(currentLab.id), createLabSnapshot(currentLab, savedCurriculum?.labs[String(currentLab.id)])]));
+  const initialLab = initialLabStates[String(restoredSelectedLab)];
+  const [selectedLab, setSelectedLab] = useState(restoredSelectedLab);
+  const [labStates, setLabStates] = useState<Record<string, CurriculumLabSnapshot>>(initialLabStates);
   const [sandboxOpen, setSandboxOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "sandbox");
   const lab = labs[selectedLab - 1];
-  const [stepIndex, setStepIndex] = useState(0);
-  const [sessions, setSessions] = useState<Record<string, Session>>(() => initialSessions(lab));
-  const [activeDevice, setActiveDevice] = useState(lab.steps[0].device);
+  const [stepIndex, setStepIndex] = useState(initialLab.stepIndex);
+  const [simulation, setSimulation] = useState<SimulationState>(initialLab.simulation);
+  const [activeDevice, setActiveDevice] = useState(initialLab.activeDevice);
+  const activeDeviceId = Object.values(simulation.devices).find((device) => device.name === activeDevice)?.id;
+  const sessions = simulation.sessions;
+  const session = activeDeviceId ? sessions[activeDeviceId] : undefined;
   const [input, setInput] = useState("");
   const [hint, setHint] = useState(false);
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
   const step = lab.steps[Math.min(stepIndex, lab.steps.length - 1)];
-  const session = sessions[activeDevice];
-  const prompt = modePrompt(activeDevice, session);
+  const prompt = session ? modePrompt(activeDevice, session) : `${activeDevice}>`;
   const complete = stepIndex >= lab.steps.length;
   const percent = Math.round((stepIndex / lab.steps.length) * 100);
 
   function selectLab(id: number) {
     const nextLab = labs[id - 1];
-    setSelectedLab(id); setStepIndex(0); setSessions(initialSessions(nextLab)); setActiveDevice(nextLab.steps[0].device); setInput(""); setHint(false);
+    setLabStates((current) => ({ ...current, [String(selectedLab)]: { stepIndex, activeDevice, simulation } }));
+    const nextSnapshot = labStates[String(id)] ?? createLabSnapshot(nextLab);
+    setSelectedLab(id); setStepIndex(nextSnapshot.stepIndex); setSimulation(nextSnapshot.simulation); setActiveDevice(nextSnapshot.activeDevice); setInput(""); setHint(false);
   }
-  function reset() { setStepIndex(0); setSessions(initialSessions(lab)); setActiveDevice(lab.steps[0].device); setInput(""); setHint(false); toast("Lab reset", { description: `${lab.code} is ready at the first IOS prompt.` }); }
+  function reset() { const fresh = createCurriculumSimulation(lab.devices, lab.title, lab.blurb); setStepIndex(0); setSimulation(fresh); setActiveDevice(lab.steps[0].device); setLabStates((current) => ({ ...current, [String(selectedLab)]: { stepIndex: 0, activeDevice: lab.steps[0].device, simulation: fresh } })); setInput(""); setHint(false); toast("Lab reset", { description: `${lab.code} is ready at the first IOS prompt.` }); }
   function submit(value = input) {
     const raw = value.trim();
-    if (!raw) return;
-    const current = sessions[activeDevice];
-    const visiblePrompt = modePrompt(activeDevice, current);
-    const updatedHistory = [...current.history, `${visiblePrompt} ${raw}`];
+    if (!raw || !activeDeviceId || !session) return;
+    const visiblePrompt = modePrompt(activeDevice, session);
     const expectedDevice = step.device;
     const expectedMode = step.mode;
     const normalized = raw.replace(/\s+/g, " ");
     if (complete) {
-      setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, "Lab complete. Reset to run this sequence again."] } })); setInput(""); return;
+      setSimulation((current) => ({ ...current, sessions: { ...current.sessions, [activeDeviceId]: { ...current.sessions[activeDeviceId], history: [...current.sessions[activeDeviceId].history, `${visiblePrompt} ${raw}`, "Lab complete. Reset to run this sequence again."] } } })); setInput(""); return;
     }
-    if (activeDevice !== expectedDevice || current.mode !== expectedMode || normalized !== step.command) {
-      const reason = activeDevice !== expectedDevice ? `Switch to ${expectedDevice}.` : current.mode !== expectedMode ? `Use the ${expectedMode === "user" ? "user EXEC" : expectedMode === "privileged" ? "privileged EXEC" : expectedMode} prompt.` : `Expected the full command: ${step.command}`;
-      setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, "% Invalid input detected at '^' marker.", `Hint: ${reason}`] } })); setInput(""); return;
+    if (activeDevice !== expectedDevice) {
+      setSimulation((current) => ({ ...current, sessions: { ...current.sessions, [activeDeviceId]: { ...current.sessions[activeDeviceId], history: [...current.sessions[activeDeviceId].history, `${visiblePrompt} ${raw}`, "% Invalid input detected at '^' marker.", `Hint: Switch to ${expectedDevice}.`] } } })); setInput(""); return;
     }
-    const transition = nextMode(normalized, current.mode);
-    const nextSession: Session = { ...current, mode: transition.mode, context: transition.context, history: [...updatedHistory, step.success] };
-    setSessions((all) => ({ ...all, [activeDevice]: nextSession }));
-    setStepIndex((index) => index + 1); setInput(""); setHint(false);
+    const result = executeCommand(simulation, activeDeviceId, raw);
+    let nextState = result.state;
+    if (session.mode !== expectedMode || normalized !== step.command) {
+      nextState = { ...nextState, sessions: { ...nextState.sessions, [activeDeviceId]: { ...nextState.sessions[activeDeviceId], history: [...nextState.sessions[activeDeviceId].history, `Hint: ${session.mode !== expectedMode ? `Use the ${expectedMode === "user" ? "user EXEC" : expectedMode === "privileged" ? "privileged EXEC" : expectedMode} prompt.` : `Expected the full command: ${step.command}`}`] } } };
+    }
+    setSimulation(nextState); setInput("");
+    if (result.accepted && session.mode === expectedMode && normalized === step.command) { setStepIndex((index) => index + 1); setHint(false); }
   }
   function runSuggested() {
-    if (complete) return;
+    if (complete || !session) return;
     if (activeDevice !== step.device) { setPendingCommand(step.command); setActiveDevice(step.device); setInput(""); setHint(false); return; }
-    if (session.mode !== step.mode) { setInput(step.mode === "privileged" ? "enable" : step.mode === "config" ? "configure terminal" : step.mode === "user" ? "" : "exit"); setHint(true); return; }
+    if (session.mode !== step.mode) {
+      const command = session.mode === "user" ? "enable" : session.mode === "privileged" ? "configure terminal" : step.command;
+      if (command) submit(command);
+      setHint(true); return;
+    }
     submit(step.command);
   }
-  const recent = session.history.slice(-12);
+  const recent = session?.history.slice(-12) ?? [];
   const currentDeviceRole = lab.devices.find((device) => device.name === activeDevice)?.role;
   const allDone = useMemo(() => complete, [complete]);
+  useEffect(() => {
+    try { const current = { stepIndex, activeDevice, simulation }; window.localStorage.setItem(CURRICULUM_STORAGE_KEY, JSON.stringify({ version: 2, selectedLab, labs: { ...labStates, [String(selectedLab)]: current } } satisfies CurriculumSnapshot)); } catch { /* best effort */ }
+  }, [selectedLab, stepIndex, activeDevice, simulation]);
   useEffect(() => {
     if (pendingCommand && activeDevice === step.device) {
       const command = pendingCommand;

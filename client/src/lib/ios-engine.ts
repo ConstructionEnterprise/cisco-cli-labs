@@ -6,6 +6,8 @@ export type Session = {
   mode: Mode;
   context: string | null;
   history: string[];
+  runningConfig: string[];
+  startupConfig: string[];
 };
 
 export function boot(name: string, role: string): Session {
@@ -17,6 +19,8 @@ export function boot(name: string, role: string): Session {
       `${name} · ${role}`,
       "Full IOS vocabulary · enter one command, then press Enter.",
     ],
+    runningConfig: [],
+    startupConfig: [],
   };
 }
 
@@ -38,21 +42,23 @@ export function modePrompt(name: string, session: Session): string {
   return `${name}(config-if)#`;
 }
 
-export function nextMode(command: string, current: Mode): { mode: Mode; context: string | null } {
-  if (command === "enable") return { mode: "privileged", context: null };
-  if (command === "configure terminal") return { mode: "config", context: null };
-  if (command === "end") return { mode: "privileged", context: null };
-  if (command === "exit") {
+export function nextMode(command: string, current: Mode, currentContext: string | null = null): { mode: Mode; context: string | null } {
+  const trimmed = command.trim().replace(/\s+/g, " ");
+  const normalized = normalizeCommand(trimmed);
+  if (normalized === "enable") return { mode: "privileged", context: null };
+  if (normalized === "configure terminal") return { mode: "config", context: null };
+  if (normalized === "end") return { mode: "privileged", context: null };
+  if (normalized === "exit") {
     if (current === "config") return { mode: "privileged", context: null };
     if (current === "privileged" || current === "user") return { mode: current, context: null };
     return { mode: "config", context: null };
   }
-  if (command.startsWith("vlan ")) return { mode: "vlan", context: command.slice(5) };
-  if (command.startsWith("interface range ")) return { mode: "interface-range", context: command.slice(16) };
-  if (command.startsWith("interface ")) return { mode: command.includes(".") ? "subinterface" : "interface", context: command.slice(10) };
-  if (command.startsWith("router ospf ")) return { mode: "router", context: command };
-  if (command.startsWith("ip dhcp pool ")) return { mode: "dhcp", context: command };
-  if (command.startsWith("line vty ")) return { mode: "line", context: command };
-  if (command.startsWith("ip access-list ")) return { mode: "acl", context: command };
-  return { mode: current, context: null };
+  if (normalized.startsWith("vlan ")) return { mode: "vlan", context: trimmed.slice(5) };
+  if (normalized.startsWith("interface range ")) return { mode: "interface-range", context: trimmed.slice(16) };
+  if (normalized.startsWith("interface ")) return { mode: normalized.includes(".") ? "subinterface" : "interface", context: trimmed.slice(10) };
+  if (normalized.startsWith("router ospf ")) return { mode: "router", context: trimmed };
+  if (normalized.startsWith("ip dhcp pool ")) return { mode: "dhcp", context: trimmed };
+  if (normalized.startsWith("line vty ")) return { mode: "line", context: trimmed };
+  if (normalized.startsWith("ip access-list ")) return { mode: "acl", context: trimmed };
+  return { mode: current, context: currentContext };
 }

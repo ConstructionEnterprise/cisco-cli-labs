@@ -46,12 +46,16 @@ Lab 3 builds and verifies IPv4 and IPv6 paths across all three routers. It inclu
 │   ├── public/                    # Static public assets
 │   └── src/
 │       ├── App.tsx                # Application shell and routes
-│       ├── components/            # Error boundary and reusable UI primitives
+│       ├── components/            # Network Sandbox, error boundary, and UI primitives
 │       ├── contexts/              # Theme context
 │       ├── hooks/                 # Reusable React hooks
 │       ├── pages/
-│       │   ├── Home.tsx           # Lab data, simulator state, terminal, and UI
+│       │   ├── Home.tsx           # Curriculum lab data, guided UI, and shared-engine sessions
 │       │   └── NotFound.tsx        # Fallback route
+│       ├── lib/
+│       │   ├── ios-engine.ts      # Canonical IOS modes, prompts, normalization, and sessions
+│       │   ├── network-simulation.ts # Typed topology, parser, derived state, and reachability
+│       │   └── network-simulation.test.ts # Deterministic simulation tests
 │       ├── const.ts                # Client constants
 │       ├── index.css               # Global styling
 │       └── main.tsx                # React entry point
@@ -64,11 +68,12 @@ Lab 3 builds and verifies IPv4 and IPv6 paths across all three routers. It inclu
 ├── todo.md                        # Completed and pending work items
 ├── template.json                   # Project template metadata
 ├── vite.config.ts                 # Vite configuration
+├── vitest.config.ts               # Deterministic simulation test configuration
 ├── tsconfig.json                  # TypeScript configuration
 └── package.json                   # Scripts and dependencies
 ```
 
-The current simulator is intentionally compact: the lab definitions and most command-state behavior live in `client/src/pages/Home.tsx`. The frontend owns the virtual IOS sessions and learning state. The Express server serves the compiled frontend and provides the production fallback for client-side routes; there is no database or external API required for the simulator itself.
+The simulator has a shared frontend-only engine. `client/src/lib/ios-engine.ts` owns canonical IOS mode transitions, prompt formatting, normalization, and per-device sessions. `client/src/lib/network-simulation.ts` owns typed devices, interfaces, links, VLANs, EtherChannels, routes, derived operational state, graph reachability, command execution, and verification output. `Home.tsx` and `NetworkSandbox.tsx` call that engine rather than embedding separate parser logic. The Express server serves the compiled frontend and provides the production fallback for client-side routes; there is no database or external API required for the simulator itself.
 
 ## Technology stack
 
@@ -103,6 +108,7 @@ Open the printed URL in a browser. Select a lab from the curriculum bar, choose 
 | `pnpm dev` | Start the Vite development server |
 | `pnpm check` | Run the TypeScript compiler without emitting files |
 | `pnpm build` | Build the frontend and bundle the production Express server |
+| `pnpm test` | Run deterministic simulation tests with Vitest |
 | `pnpm start` | Start the compiled production server with `NODE_ENV=production` |
 | `pnpm preview` | Preview the Vite production build |
 | `pnpm format` | Format the project with Prettier |
@@ -111,6 +117,7 @@ A typical verification sequence is:
 
 ```bash
 pnpm check
+pnpm test
 pnpm build
 ```
 
@@ -127,15 +134,15 @@ The server uses the `PORT` environment variable when provided and otherwise list
 
 ## Simulator behavior and limitations
 
-The project is a focused educational simulator, not a full IOS implementation. It validates the guided commands and their required device and mode contexts rather than attempting to implement every Cisco command. The virtual devices maintain independent sessions, prompts, modes, and command histories during a lab run.
+The project is a focused educational simulator, not a full IOS implementation. It supports a deterministic subset of IOS commands and derives modeled evidence from the current browser topology; it does not attempt to implement every Cisco command or reproduce a production IOS data plane. The virtual devices maintain independent sessions, prompts, modes, running configurations, startup configurations, and command histories.
 
-The simulator does not persist learner progress between browser sessions, authenticate users, connect to real network devices, or provide a real packet-forwarding data plane. Reachability and verification commands produce modeled training evidence associated with the current objective.
+The curriculum and free Network Sandbox persist their current browser-local state with `localStorage`, including lab progress, topology nodes and positions, links, device configuration, IOS sessions, command history, and saved scenarios. This persistence is local to the browser profile; it is not user authentication, cloud synchronization, or a multi-user backend. Reachability and verification commands produce modeled educational evidence associated with the current topology and configuration.
 
 The curriculum includes conceptual coverage that is not always modeled as a complete operational subsystem. This is deliberate: the project distinguishes topics learners should understand from CLI tasks it simulates directly.
 
 ## Contributing and extending a lab
 
-To extend a lab, add or revise `s(...)` step definitions in `client/src/pages/Home.tsx`. Each step contains a title, explanation, expected device, required IOS mode, exact command, and success message:
+To extend a curriculum lab, add or revise `s(...)` step definitions in `client/src/pages/Home.tsx`. Each step contains a title, explanation, expected device, required IOS mode, exact command, and success message:
 
 ```ts
 s(
@@ -148,9 +155,11 @@ s(
 )
 ```
 
-When adding a command that changes IOS context, update `nextMode()` in the same file so the simulator produces the appropriate prompt and preserves the expected state. Keep device names, topology labels, addressing plans, and verification messages consistent with `ccna-curriculum.md`.
+When adding a command that changes IOS context, update `nextMode()` in `client/src/lib/ios-engine.ts` and implement its state mutation or derived output in `client/src/lib/network-simulation.ts`. Do not add a second parser in a React component. Keep device names, topology labels, addressing plans, and verification messages consistent with `ccna-curriculum.md`.
 
-After making changes, run the TypeScript check and production build. Then manually test the relevant lab from a clean reset, including device switching, incorrect-command handling, hints, suggested commands, and final completion.
+To extend the free sandbox, add typed topology or template behavior to `network-simulation.ts` and expose it through typed selectors and actions in `NetworkSandbox.tsx`. Add a deterministic test in `network-simulation.test.ts` for every new state transition or reachability rule.
+
+After making changes, run `pnpm check`, `pnpm test`, and `pnpm build`. Then manually test the relevant lab or sandbox from a clean reset, including device switching, incorrect-command handling, hints, suggested commands, persistence, cable validation, broken-path behavior, and final completion.
 
 ## Educational references
 
