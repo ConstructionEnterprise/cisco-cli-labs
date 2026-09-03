@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import NetworkSandbox from "@/components/NetworkSandbox";
 import { toast } from "sonner";
-import { Check, CircleHelp, Copy, Play, RotateCcw, TerminalSquare } from "lucide-react";
+import { boot, modePrompt, nextMode, type Mode, type Session } from "@/lib/ios-engine";
+import { Check, CircleHelp, Copy, Network, Play, RotateCcw, TerminalSquare } from "lucide-react";
 
 /** Packet Observatory design: dark field console, cyan signal, amber evidence, IBM Plex typography. */
 
 type DeviceName = string;
-type Mode = "user" | "privileged" | "config" | "vlan" | "interface" | "interface-range" | "subinterface" | "router" | "dhcp" | "line" | "acl";
 type Step = { title: string; description: string; device: DeviceName; mode: Mode; command: string; success: string };
 type Lab = { id: number; code: string; title: string; domain: string; blurb: string; topology: string; devices: { name: string; role: string }[]; steps: Step[] };
-type Session = { mode: Mode; context: string | null; history: string[] };
 
-const boot = (name: string, role: string): Session => ({ mode: "user", context: null, history: ["Cisco IOS Software, CCNA Lab Simulator", `${name} · ${role}`, "Full IOS syntax required. Enter one command, then press Enter."] });
 const s = (title: string, description: string, device: string, mode: Mode, command: string, success: string): Step => ({ title, description, device, mode, command, success });
 
 const labs: Lab[] = [
@@ -241,44 +240,15 @@ const labs: Lab[] = [
   }
 ];
 
-function modePrompt(name: string, session: Session) {
-  if (session.mode === "user") return `${name}>`;
-  if (session.mode === "privileged") return `${name}#`;
-  if (session.mode === "config") return `${name}(config)#`;
-  if (session.mode === "vlan") return `${name}(config-vlan)#`;
-  if (session.mode === "interface-range") return `${name}(config-if-range)#`;
-  if (session.mode === "subinterface") return `${name}(config-subif)#`;
-  if (session.mode === "router") return `${name}(config-router)#`;
-  if (session.mode === "dhcp") return `${name}(config-dhcp)#`;
-  if (session.mode === "line") return `${name}(config-line)#`;
-  if (session.mode === "acl") return `${name}(config-ext-nacl)#`;
-  return `${name}(config-if)#`;
-}
 
 function initialSessions(lab: Lab): Record<string, Session> {
   return Object.fromEntries(lab.devices.map((device) => [device.name, boot(device.name, device.role)]));
 }
 
-function nextMode(command: string, current: Mode): { mode: Mode; context: string | null } {
-  if (command === "enable") return { mode: "privileged", context: null };
-  if (command === "configure terminal") return { mode: "config", context: null };
-  if (command === "end") return { mode: "privileged", context: null };
-  if (command === "exit") {
-    if (current === "config") return { mode: "privileged", context: null };
-    return { mode: "config", context: null };
-  }
-  if (command.startsWith("vlan ")) return { mode: "vlan", context: command.slice(5) };
-  if (command.startsWith("interface range ")) return { mode: "interface-range", context: command.slice(16) };
-  if (command.startsWith("interface ")) return { mode: command.includes(".") ? "subinterface" : "interface", context: command.slice(10) };
-  if (command.startsWith("router ospf ")) return { mode: "router", context: command };
-  if (command.startsWith("ip dhcp pool ")) return { mode: "dhcp", context: command };
-  if (command.startsWith("line vty ")) return { mode: "line", context: command };
-  if (command.startsWith("ip access-list ")) return { mode: "acl", context: command };
-  return { mode: current, context: null };
-}
 
 export default function Home() {
   const [selectedLab, setSelectedLab] = useState(1);
+  const [sandboxOpen, setSandboxOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "sandbox");
   const lab = labs[selectedLab - 1];
   const [stepIndex, setStepIndex] = useState(0);
   const [sessions, setSessions] = useState<Record<string, Session>>(() => initialSessions(lab));
@@ -334,10 +304,11 @@ export default function Home() {
       submit(command);
     }
   }, [activeDevice, pendingCommand, step.device]);
+  if (sandboxOpen) return <NetworkSandbox onExit={() => setSandboxOpen(false)} />;
 
   return <main className="min-h-screen overflow-hidden bg-[#0b1118] text-[#f2f5f5]">
     <header className="border-b border-white/10 bg-[#0b1118]/95 backdrop-blur-md"><div className="mx-auto flex max-w-[1500px] items-center justify-between px-5 py-4 lg:px-8"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[#63e6e2]/40 bg-[#10252b]"><img src="/manus-storage/ipv6-trace-mark_f814341b.png" alt="Cisco CLI Labs mark" className="h-8 w-8 object-contain" /></div><div><div className="font-mono text-[11px] uppercase tracking-[.22em] text-[#63e6e2]">IPv6 CLI Lab</div><div className="font-display text-lg font-semibold tracking-tight">Packet Observatory</div></div></div><div className="hidden items-center gap-3 text-xs text-[#98a8b0] sm:flex"><span>CONSTRUCTION ENTERPRISES</span><span className="h-1.5 w-1.5 rounded-full bg-[#63e6e2] shadow-[0_0_10px_#63e6e2]" /><span className="font-mono">CISCO IOS TRAINING CONSOLE</span></div></div></header>
-    <nav className="border-b border-white/10 bg-[#0d151e] px-5 py-3 lg:px-8"><div className="mx-auto flex max-w-[1500px] items-center gap-2 overflow-x-auto"><span className="mr-2 shrink-0 font-mono text-[10px] uppercase tracking-[.16em] text-[#667780]">Curriculum</span>{labs.map((item) => <button key={item.id} onClick={() => selectLab(item.id)} className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-left transition ${selectedLab === item.id ? "border-[#63e6e2]/40 bg-[#173038] text-white" : "border-white/10 bg-[#101923] text-[#7f9098] hover:border-white/20 hover:text-white"}`}><span className="font-mono text-[10px] text-[#63e6e2]">{item.code}</span><span className="text-xs">{item.title}</span>{item.id === selectedLab && <span className="rounded bg-[#f5b74b]/10 px-1.5 py-0.5 font-mono text-[9px] text-[#f5b74b]">ACTIVE</span>}</button>)}</div></nav>
+    <nav className="border-b border-white/10 bg-[#0d151e] px-5 py-3 lg:px-8"><div className="mx-auto flex max-w-[1500px] items-center gap-2 overflow-x-auto"><span className="mr-2 shrink-0 font-mono text-[10px] uppercase tracking-[.16em] text-[#667780]">Curriculum</span><button type="button" onClick={() => setSandboxOpen(true)} className="flex shrink-0 items-center gap-2 rounded-lg border border-[#f5b74b]/40 bg-[#2a2112] px-3 py-2 text-left text-[#f4d998] transition hover:border-[#f5b74b]/70 hover:bg-[#3a2a16]"><Network className="h-3.5 w-3.5" /><span className="font-mono text-[10px] uppercase tracking-wider">Network Sandbox</span></button>{labs.map((item) => <button key={item.id} onClick={() => selectLab(item.id)} className={`flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-left transition ${selectedLab === item.id ? "border-[#63e6e2]/40 bg-[#173038] text-white" : "border-white/10 bg-[#101923] text-[#7f9098] hover:border-white/20 hover:text-white"}`}><span className="font-mono text-[10px] text-[#63e6e2]">{item.code}</span><span className="text-xs">{item.title}</span>{item.id === selectedLab && <span className="rounded bg-[#f5b74b]/10 px-1.5 py-0.5 font-mono text-[9px] text-[#f5b74b]">ACTIVE</span>}</button>)}</div></nav>
     <div className="mx-auto grid max-w-[1500px] grid-cols-1 lg:grid-cols-[270px_1fr]">
       <aside className="border-b border-white/10 bg-[#0d151e] lg:min-h-[calc(100vh-121px)] lg:border-b-0 lg:border-r"><div className="p-5 lg:sticky lg:top-0"><div className="mb-7 flex items-center justify-between"><div><div className="instrument-label">LAB PATH</div><div className="mt-1 text-sm text-[#9eacb2]">{lab.domain}</div></div><TerminalSquare className="h-4 w-4 text-[#f5b74b]" /></div><div className="mb-6 rounded-xl border border-white/10 bg-[#111c27] p-4"><div className="text-xs font-semibold text-white">{lab.title}</div><p className="mt-2 text-xs leading-5 text-[#8fa0a7]">{lab.blurb}</p><div className="mt-4 font-mono text-[10px] uppercase tracking-wider text-[#63e6e2]">{lab.topology}</div></div><nav className="space-y-1.5" aria-label="Lab command path">{lab.steps.slice(0, Math.min(lab.steps.length, 16)).map((item, index) => { const done = index < stepIndex; const current = index === stepIndex && !complete; return <button key={`${item.command}-${index}`} onClick={() => { setActiveDevice(item.device); if (index <= stepIndex) setStepIndex(index); }} className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${current ? "bg-[#173038] text-white shadow-[inset_3px_0_0_#63e6e2]" : "text-[#82919a] hover:bg-white/[.04] hover:text-white"}`}><span className="w-5 font-mono text-[10px] text-[#667780]">{String(index + 1).padStart(2, "0")}</span>{done ? <Check className="h-3.5 w-3.5 text-[#63e6e2]" /> : <span className="h-3.5 w-3.5 rounded-full border border-[#53646d]" />}<span className="min-w-0 flex-1 truncate text-xs">{item.title}</span></button>; })}{lab.steps.length > 16 && <div className="px-3 py-2 font-mono text-[10px] text-[#667780]">+ {lab.steps.length - 16} more IOS commands below</div>}</nav><div className="mt-7 border-t border-white/10 pt-5"><div className="mb-2 flex justify-between font-mono text-[10px] uppercase tracking-wider text-[#77858d]"><span>Progress</span><span className="text-[#63e6e2]">{percent}%</span></div><div className="h-1.5 overflow-hidden rounded-full bg-white/10"><div className="h-full rounded-full bg-[#63e6e2] transition-all duration-300" style={{ width: `${percent}%` }} /></div><p className="mt-3 text-xs leading-relaxed text-[#6d7b83]">Type the command. Read the prompt. Trust the evidence.</p></div></div></aside>
       <section className="relative min-w-0"><div className="absolute inset-0 opacity-25" style={{ backgroundImage: "url('/manus-storage/packet-observatory-texture_96a51270.jpg')", backgroundSize: "cover", backgroundPosition: "top right" }} /><div className="relative mx-auto max-w-[1240px] px-5 py-7 lg:px-10 lg:py-9"><div className="mb-6 flex flex-col justify-between gap-5 md:flex-row md:items-end"><div><div className="instrument-label text-[#f5b74b]">{lab.code} · {lab.domain}</div><h1 className="mt-2 max-w-3xl font-display text-3xl font-semibold tracking-[-.03em] text-white md:text-5xl">{lab.title}<br /><span className="text-[#63e6e2]">Practice the signal.</span></h1><p className="mt-3 max-w-2xl text-sm leading-6 text-[#b4c1c5]">{lab.blurb}</p></div><Button variant="outline" className="border-white/15 bg-[#101923]/70 text-[#aab8bd] hover:bg-white/10 hover:text-white" onClick={reset}><RotateCcw className="mr-2 h-4 w-4" /> Reset {lab.code}</Button></div>
