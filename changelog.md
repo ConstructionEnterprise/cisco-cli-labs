@@ -2,6 +2,21 @@
 
 All notable changes to the CCNA CLI Simulator will be documented in this file.
 
+## [0.9.0] - Operations Sandbox Foundation
+### Added
+- **Operations Sandbox Module**: Added a separate field-operations environment alongside the Labs and Network Sandbox.
+- **Scenario Command Ribbon**: Added a compact operations scenario ribbon with active, available, and planned scenario states.
+- **Procedural Server-Room Scene**: Added browser-native Three.js geometry for a rack, 24-port LC patch panel, tool bench, FI-3000 FiberInspector, and Quick Clean tool without external assets or GLTF files.
+- **Quarterly Endface Inspection**: Added the first operational workflow: inspect all 24 LC connectors, identify contaminated endfaces, clean them with the modeled Quick Clean tool, reinspect, and export the completed inspection log.
+- **Mission Brief Layout**: Added operational progress, tool state, connector counts, contamination counts, cleaning counts, modeled feedback, and export readiness.
+- **Operations Schematic**: Added a dependency-free 2D SVG drawing layer showing the selected tool, OM4 fiber path, and LC/UPC connector state.
+- **Inspection Export**: Added CSV export for connector IDs, inspection scores, inspected state, and cleaning state.
+
+### Accuracy Notes
+- The Operations Sandbox models field procedures and diagnostic state; it does not claim official Fluke hardware or software emulation.
+- Tool results are derived from simulated connector state and are not measurements from live fiber or network hardware.
+- Additional commissioning, monitoring, diagnosis, repair, and audit scenarios remain planned and are intentionally labeled as such in the scenario ribbon.
+
 ## [0.8.0] - Explicit Interface Activation Practice
 ### Added
 - **Guided `no shutdown` Objectives**: Labs and sandbox exercises now include explicit activation steps for eligible physical interfaces, VLAN SVIs, and port-channels when an interface workflow does not already contain `no shutdown`.

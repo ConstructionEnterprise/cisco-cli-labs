@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import NetworkSandbox from "@/components/NetworkSandbox";
+import OperationsSandbox from "@/components/OperationsSandbox";
 import { toast } from "sonner";
 import { applyCommand, boot, isCiscoCommand, modePrompt, normalizeCommand, type Mode, type Session } from "@/lib/ios-engine";
-import { Check, ChevronDown, CircleHelp, Copy, Network, Play, RotateCcw, TerminalSquare } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, Copy, Network, Play, RotateCcw, TerminalSquare, Wrench } from "lucide-react";
 import { LAB_REGISTRY, type LabConfig } from "@/labs/labDefinitions";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -59,6 +60,7 @@ export default function Home() {
   // State now uses the lab ID (string) from the registry
   const [selectedLabId, setSelectedLabId] = useState("lab-1");
   const [sandboxOpen, setSandboxOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "sandbox");
+  const [operationsOpen, setOperationsOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "operations");
   
   // Derive the current lab config from the registry
   const lab = LAB_REGISTRY[selectedLabId] || LAB_REGISTRY["lab-1"];
@@ -158,6 +160,7 @@ export default function Home() {
     }
   }, [activeDevice, pendingCommand, step.targetDevice]);
 
+  if (operationsOpen) return <OperationsSandbox onExit={() => setOperationsOpen(false)} />;
   if (sandboxOpen) return <NetworkSandbox onExit={() => setSandboxOpen(false)} labId={selectedLabId} />;
 
   return (
@@ -184,6 +187,9 @@ export default function Home() {
       <nav className="border-b border-white/10 bg-[#0d151e] px-5 py-3 lg:px-8">
         <div className="mx-auto flex max-w-[1500px] items-center gap-2 overflow-x-auto pb-1">
           <span className="mr-2 shrink-0 font-mono text-[10px] uppercase tracking-[.16em] text-[#667780]">Curriculum</span>
+          <button type="button" onClick={() => { setOperationsOpen(true); setSandboxOpen(false); }} className="flex shrink-0 items-center gap-2 rounded-lg border border-[#63e6e2]/35 bg-[#173038] px-3 py-2 text-left text-[#b9eeee] transition hover:border-[#63e6e2]/70 hover:bg-[#1b4148]">
+            <Wrench className="h-3.5 w-3.5" /><span className="font-mono text-[10px] uppercase tracking-wider">Operations Sandbox</span>
+          </button>
           <button type="button" onClick={() => setSandboxOpen(true)} className="flex shrink-0 items-center gap-2 rounded-lg border border-[#f5b74b]/40 bg-[#2a2112] px-3 py-2 text-left text-[#f4d998] transition hover:border-[#f5b74b]/70 hover:bg-[#3a2a16]">
             <Network className="h-3.5 w-3.5" /><span className="font-mono text-[10px] uppercase tracking-wider">Network Sandbox</span>
           </button>

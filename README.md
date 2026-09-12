@@ -36,6 +36,21 @@ The sandbox is designed as a state-driven network workspace rather than a static
 *   **Explicit interface activation practice:** Networked physical interfaces, VLAN SVIs, and port-channels remain administratively down until the learner enters `no shutdown`. Guided labs include that command as an explicit objective so the Logical Diagram visibly reflects the transition from down to up.
 
 The simulator does not automatically bring interfaces online for convenience. Learners must use the same activation workflow expected on Cisco IOS: enter the correct interface context, issue `no shutdown`, and verify the resulting state.
+
+## Operations Sandbox
+
+The Operations Sandbox is a separate field-operations training environment alongside the Labs and Network Sandbox. It models operational work rather than CLI configuration: inspect, baseline, restore, and document physical infrastructure.
+
+Current foundation:
+
+* **Scenario ribbon:** Operations scenarios are selected from a compact command ribbon instead of large static cards. Available, planned, and active scenario states are visible without hiding the operational curriculum.
+* **Procedural 3D environment:** The current Quarterly Endface Inspection scenario renders a server-room field view, rack, 24-port LC patch panel, tool bench, FI-3000 FiberInspector, and Quick Clean tool using browser-native Three.js geometry only.
+* **Guided inspection workflow:** Select the FI-3000, inspect LC connectors, identify contaminated endfaces, select Quick Clean, clean only previously inspected contaminated connectors, and reinspect them.
+* **Mission Brief:** The left panel tracks the active objective, tool, inspected count, contamination count, cleaning count, progress, feedback, and report export readiness.
+* **Operations Schematic:** The right panel provides a true 2D, dependency-free SVG drawing of the selected tool, OM4 fiber path, and LC/UPC connector. It follows the active tool and connector state rather than displaying a static illustration.
+* **Inspection export:** A completed inspection can be exported as a CSV record containing connector IDs, inspection scores, inspection state, and cleaning state.
+
+The Operations Sandbox currently uses modeled diagnostic state. It does not claim to be official Fluke hardware or software, and its results are intentionally derived from the simulated connector and link data.
 *   **Capability-aware inspection:** Device inspectors expose only the tabs supported by the selected device, with honest empty states for protocol tables that are not yet populated.
 
 Physical cabling is not represented as a fictitious IOS command. Interface configuration, VLAN assignment, trunking, EtherChannel, shutdown state, DHCP pool configuration, DNS records, PoE commands, and OSPF configuration are performed through the IOS console. Packet particles and Cisco-style ping output reflect modeled path transitions; they are not a claim of real network reachability or full transport behavior.
@@ -76,7 +91,11 @@ The simulator follows the **Observe → Configure → Verify** loop. Depending o
 ├── client/
 │   ├── src/
 │   │   ├── components/
-│   │   │   └── NetworkSandbox.tsx  # The Core Engine (UI + Logic)
+│   │   │   ├── NetworkSandbox.tsx  # Build/configure/verify topology workspace
+│   │   │   ├── OperationsSandbox.tsx # Field-operations scenario shell
+│   │   │   ├── OperationsViewport.tsx # Procedural 3D operations scene
+│   │   │   ├── OperationsSchematicPanel.tsx # 2D tool/cable/connector diagram
+│   │   │   └── ThreeSandboxViewport.tsx # Network 3D physical viewport
 │   │   ├── labs/
 │   │   │   └── labDefinitions.ts    # Single Source of Truth (LAB_REGISTRY)
 │   │   ├── pages/
