@@ -1,5 +1,18 @@
 # Changelog
 
+## [2026-09-16] - Curriculum Navigation and Sandbox Startup Layout
+### Added
+- **Master Tranche Navigation**: Added Master Tranche One through Master Tranche Five buttons to the Curriculum ribbon. Each master menu contains nested Tranche One–Five menus; Master Tranche One routes to the existing guided labs, while Master Tranches Two–Five expose disabled generic `Placeholder Lab` entries for future curriculum work.
+- **Top-of-Page Startup**: Restored the browser viewport to the top when the application boots, when a lab changes, and when entering or leaving a sandbox view.
+
+### Changed
+- **Network Sandbox Defaults**: Workspace and Devices panels now start collapsed, and device inspection content does not open until the user selects a device.
+- **Compact IOS Console Dock**: The Network Sandbox IOS CLI now boots as the first device’s active console in an expanded compact dock with a 150px default height. The dock remains resizable and supports user-controlled minimize, restore, and close actions.
+
+### Accuracy and Scope Notes
+- Placeholder labs are navigation stubs only; they do not reuse existing lab definitions or provide executable guided objectives.
+- These layout changes affect presentation and startup state only; IOS command validation, topology modeling, session recovery, and sandbox state semantics remain unchanged.
+
 ## [2026-09-15] - Guided Protocol Visualization and CLI Workspace
 ### Added
 - **Shared Guided Packet Traces**: Added a reusable `GuidedPacketTrace` component for tranche labs. Protocol-specific profiles now visualize deterministic point-to-point exchanges for DHCP DORA, IPv4 and IPv6 neighbor discovery, VLANs, trunks, STP, EtherChannel, router-on-a-stick, routing, OSPFv2/v3, NAT/PAT, ACLs, SSH, port security, CIDR/VLSM, multicast, and broadcast workflows.

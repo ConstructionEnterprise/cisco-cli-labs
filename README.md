@@ -24,6 +24,12 @@ The guided IOS console is optimized for keeping the next command and the evidenc
 
 These behaviors preserve the Observe -> Configure -> Verify loop while reducing unnecessary page scrolling during command entry.
 
+### Startup and Curriculum Navigation
+
+The application returns the browser viewport to the top when it boots, when a guided lab is selected, and when the user enters or exits a sandbox view. The Curriculum ribbon provides five master tranche menus. **Master Tranche One** exposes the existing guided labs through nested Tranche One–Five menus; Master Tranches Two–Five establish the same curriculum hierarchy with disabled `Placeholder Lab` entries until those future lab sets are implemented.
+
+The Network Sandbox opens with its workspace and Devices panel collapsed, while retaining the first device as the IOS console target. The IOS console remains visible in a compact expanded dock at a 150px default height, and can be minimized, restored, resized, or closed by the user. Device selection and other expandable controls are user-driven rather than automatically opening additional inspection content.
+
 ## Firewall and Traffic Fabric
 
 The application includes a reusable simulated internet traffic layer shared by the Network Sandbox and Operations Sandbox. It models protocol flows, TCP/UDP ports, DNS, HTTP/HTTPS, ICMP, DHCP, VPN metadata, VLAN context, NAT metadata, TLS certificate trust, SSL inspection stages, policy decisions, and packet animation stages without claiming live internet reachability.
@@ -144,6 +150,8 @@ The simulator follows the **Observe → Configure → Verify** loop. Depending o
 | **Lab 3 — Routing & OSPF** | IP Connectivity | Dual-stack routing, OSPFv2/v3, router IDs, and neighbor states |
 | **Lab 4 — Services** | IP Services | DHCP, NAT/PAT, NTP, DNS, and SSH management |
 | **Lab 5 — Security** | Security | ACLs, port security, DHCP snooping, and hardening |
+
+The ribbon organizes these guided paths under the master tranche hierarchy while keeping the Network Sandbox, Operations Sandbox, and modeled Data tools available as separate top-level controls.
 
 ## Project Structure
 
