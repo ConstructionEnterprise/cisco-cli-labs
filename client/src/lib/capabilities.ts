@@ -5,7 +5,7 @@ export type DeviceCapability = "vlan" | "trunk" | "etherchannel" | "poe" | "mac-
 export const CAPABILITY_MATRIX: Record<EcosystemDeviceKind, DeviceCapability[]> = {
   switch: ["vlan", "trunk", "etherchannel", "poe", "mac-table", "stp"],
   router: ["ip", "routing", "ospf", "dhcp", "dhcp-relay", "dns", "acl", "nat"],
-  firewall: ["acl", "nat", "vpn", "inspection"],
+  firewall: ["ip", "routing", "acl", "nat", "inspection"],
   server: ["dhcp", "dns", "http", "ftp"],
   "access-point": ["ssid", "wpa2", "wpa3", "poe", "vlan-mapping", "dhcp-client"],
   pc: ["dhcp-client", "dns-client"],
@@ -18,7 +18,7 @@ export const CAPABILITY_MATRIX: Record<EcosystemDeviceKind, DeviceCapability[]> 
 // Capability ownership describes the device roadmap; this set describes what
 // the current simulator release actually models.
 export const IMPLEMENTED_CAPABILITIES = new Set<DeviceCapability>([
-  "vlan", "trunk", "etherchannel", "poe", "mac-table", "stp", "ip", "routing", "ospf", "dhcp", "dns", "dns-client",
+  "vlan", "trunk", "etherchannel", "poe", "mac-table", "stp", "ip", "routing", "ospf", "acl", "nat", "inspection", "dhcp", "dns", "dns-client",
 ]);
 
 export function commandCapability(command: string): DeviceCapability | null {
@@ -29,12 +29,16 @@ export function commandCapability(command: string): DeviceCapability | null {
   if (/^show mac address-table/.test(command)) return "mac-table";
   if (/^(router ospf|ipv6 router ospf|show ip ospf|show ipv6 ospf)/.test(command)) return "ospf";
   if (/^(ip route|ipv6 route|show ip route|show ipv6 route)/.test(command)) return "routing";
+  if (/^route (?:outside|inside|dmz) /.test(command)) return "routing";
   if (/^ip address dhcp$/.test(command)) return "dhcp-client";
   if (/^(ip address|ipv6 address|show ip interface|show ipv6 interface)/.test(command)) return "ip";
   if (/^(ip access|access-list|show access-lists)/.test(command)) return "acl";
+  if (/^(access-group|show access-list)/.test(command)) return "acl";
   if (/^(ip dns|ip host|show hosts)/.test(command)) return "dns";
   if (/^nslookup /.test(command)) return "dns-client";
   if (/^(ip nat|show ip nat)/.test(command)) return "nat";
+  if (/^(object network|subnet |nat \(inside,outside\)|show xlate)/.test(command)) return "nat";
+  if (/^(nameif|security-level|show conn|show interface ip brief)/.test(command)) return "inspection";
   if (/^power inline /.test(command)) return "poe";
   if (/^(ip dhcp|show ip dhcp)/.test(command)) return "dhcp";
   return null;

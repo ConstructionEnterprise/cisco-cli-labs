@@ -6,6 +6,34 @@
 
 The simulator is presented as a Construction Enterprises training console. It models a focused set of command contexts, device states, and verification outputs to provide a repeatable, low-stakes environment for mastering the Cisco CLI.
 
+## Guided Packet Visualization
+
+Every tranche lab can present a compact, protocol-aware packet trace alongside the command objective. The shared `GuidedPacketTrace` component keeps the animation visible in a fixed-height frame so packet movement never pushes the IOS console out of view. Frames are initially shown in standby, then activate as the learner enters meaningful configuration or verification commands.
+
+The traces are instructional models, not live packet captures. Each frame identifies the participating devices, direction, traffic kind, Layer 2 destination, Layer 3 destination, and the protocol event being demonstrated. Profiles cover common CCNA flows including DHCP DORA, IPv4 and IPv6 neighbor discovery, VLAN and trunk traffic, STP control traffic, EtherChannel, router-on-a-stick, static routing, OSPFv2/v3, NAT/PAT, ACL decisions, SSH, port security, CIDR/VLSM, multicast, and broadcast behavior. Tranche labs are separate from the Network Sandbox and Operations Sandbox: they provide guided command practice, while the two sandboxes provide open topology construction and physical field-work simulation.
+
+## CLI Learning Workspace
+
+The guided IOS console is optimized for keeping the next command and the evidence visible together:
+
+* **Three-line live viewport:** The terminal shows the latest three rendered command/result lines. An invalid command consumes two lines, making mistakes visible without allowing old output to crowd out the current task.
+* **Scrolling startup context:** The Cisco IOS banner and device identity enter the same scrolling history as later commands instead of remaining as a permanent block.
+* **Command History:** The terminal header opens a full per-device command history overlay without changing the console height.
+* **Collapsible lab header:** The tranche identifier and lab title remain available in a compact bar while the larger description can be collapsed to make room for the packet trace and CLI.
+* **Fixed visual rhythm:** Packet traces use a stable viewport height and compact spacing so activating a new frame does not move the console underneath it.
+
+These behaviors preserve the Observe -> Configure -> Verify loop while reducing unnecessary page scrolling during command entry.
+
+## Firewall and Traffic Fabric
+
+The application includes a reusable simulated internet traffic layer shared by the Network Sandbox and Operations Sandbox. It models protocol flows, TCP/UDP ports, DNS, HTTP/HTTPS, ICMP, DHCP, VPN metadata, VLAN context, NAT metadata, TLS certificate trust, SSL inspection stages, policy decisions, and packet animation stages without claiming live internet reachability.
+
+The Firewall and Edge Security Foundations sandbox uses a dedicated hardware firewall, ISP modem, provider router, inside access switch, trusted PC, and DMZ web server. Its ASA-style workflow covers outside/inside/DMZ interfaces, nameif, security levels, interface addressing, object network, dynamic PAT, named extended ACLs, access-group, default routing, and verification with interface, ACL, translation, and connection tables.
+
+When a modeled flow crosses the firewall, the ASA decision engine reads the configured interface zones, security levels, ordered ACL entries, access-group bindings, and object PAT configuration. A denied flow stops before packet animation and reports the reason; an allowed inside-to-outside flow records the modeled translated source address. This is deterministic simulator state, not live packet inspection.
+
+The CCNA learning boundary is explicit: ACLs, NAT/PAT, zones, security levels, stateful versus stateless filtering, routing, VPN concepts, IDS/IPS concepts, PKI, and TLS inspection are taught together, while the traffic fabric provides actual deterministic modeled flows. It does not decrypt arbitrary live browser traffic.
+
 ## 📐 The "Cockpit" Design
 
 The simulator uses a high-efficiency 3-column professional layout designed for maximum learner focus:
@@ -16,6 +44,12 @@ The simulator uses a high-efficiency 3-column professional layout designed for m
 *   **Bottom Dock (IOS Console):** A shared terminal engine that handles mode transitions (`user` $\rightarrow$ `privileged` $\rightarrow$ `config`) and validates commands against the lab registry.
 
 The 3D workspace is intentionally procedural and browser-native. Device bodies, rack details, port markers, dimensions, and cable curves are generated from the network model without requiring external CAD assets.
+
+## Session Recovery
+
+Guided labs, network sandbox exercises, and Operations Sandbox workflows save progress locally per scenario. A browser refresh resumes the active lab with its IOS configuration sessions, topology edits, objective progress, selected device, tool selections, measurements, and operational feedback intact. Each scenario uses an isolated snapshot so switching labs cannot overwrite another exercise.
+
+The Restart Mission control is an intentional full reset. It clears the active scenario snapshot and restores the initial topology, device sessions, objective state, selections, packet animations, and feedback. This recovery is browser-local; clearing site data, private browsing cleanup, or changing browser profiles removes it.
 
 ## Physical Sandbox Capabilities
 
@@ -46,14 +80,38 @@ Current foundation:
 * **Scenario ribbon:** Operations scenarios are selected from a compact command ribbon instead of large static cards. Available, planned, and active scenario states are visible without hiding the operational curriculum.
 * **Procedural 3D environment:** The current Quarterly Endface Inspection scenario renders a server-room field view, rack, 24-port LC patch panel, tool bench, FI-3000 FiberInspector, and Quick Clean tool using browser-native Three.js geometry only.
 * **Guided inspection workflow:** Select the FI-3000, inspect LC connectors, identify contaminated endfaces, select Quick Clean, clean only previously inspected contaminated connectors, and reinspect them.
+* **Fiber backbone certification:** The Certify New Fiber Backbone scenario renders CE-PATCH-A and CE-PATCH-B, an OM4 multimode link, LC/UPC endpoints, and a procedural CertiFiber Pro/OLTS. The learner must select the tool, choose opposite-panel endpoints, run the test, compare measured loss to the loss budget, and export the result.
+* **Creeping degradation monitoring:** The Detect Creeping Degradation scenario renders the same fiber path with an Optical Power Meter. The learner selects opposite-panel endpoints, captures a known-good baseline, runs a current loss measurement, compares the delta to the warning threshold, determines a Healthy, Marginal, or Failed state, and exports the diagnostic report.
 * **Mission Brief:** The left panel tracks the active objective, tool, inspected count, contamination count, cleaning count, progress, feedback, and report export readiness.
-* **Operations Schematic:** The right panel provides a true 2D, dependency-free SVG drawing of the selected tool, OM4 fiber path, and LC/UPC connector. It follows the active tool and connector state rather than displaying a static illustration.
+* **Operations Schematic:** The right panel provides true 2D, dependency-free SVG drawings of the selected tool, OM4 fiber path, LC/UPC connector endpoints, certification status, and degradation measurements. It follows active tool, endpoint, and test state rather than displaying a static illustration.
 * **Inspection export:** A completed inspection can be exported as a CSV record containing connector IDs, inspection scores, inspection state, and cleaning state.
+* **Certification export:** A completed backbone test can be exported as a CE-branded CSV report containing endpoints, fiber specifications, loss budget, measured loss, result, and test-session ID.
+* **Degradation export:** A completed monitoring run can be exported as a CE-branded CSV report containing endpoints, baseline loss, current loss, delta, warning threshold, health status, and test-session ID.
+* **Splice loss acceptance:** The diagnosis scenario models stripping, cleaning, cleaving, loading, fusion, sleeve installation, heat-shrinking, OTDR verification at 47 meters, final OLTS certification, and a physical-state report.
+* **MPO polarity failure:** The diagnosis and repair scenario models a 12-fiber Method A/Method B mismatch, per-fiber PASS/FAIL mapping, repatching, final MultiFiber certification, QSFP+ uplink recovery, and MPO report export.
 
-The Operations Sandbox currently uses modeled diagnostic state. It does not claim to be official Fluke hardware or software, and its results are intentionally derived from the simulated connector and link data.
-*   **Capability-aware inspection:** Device inspectors expose only the tabs supported by the selected device, with honest empty states for protocol tables that are not yet populated.
+The Operations Sandbox currently uses modeled diagnostic state. It does not claim to be official Fluke hardware or software, and its results are intentionally derived from the simulated connector and link data. The development server uses Vite's runner config loader so the local Desktop workspace can start reliably on a selected port such as `3001`.
+* **Capability-aware inspection:** Device inspectors expose only the tabs supported by the selected device, with honest empty states for protocol tables that are not yet populated.
 
 Physical cabling is not represented as a fictitious IOS command. Interface configuration, VLAN assignment, trunking, EtherChannel, shutdown state, DHCP pool configuration, DNS records, PoE commands, and OSPF configuration are performed through the IOS console. Packet particles and Cisco-style ping output reflect modeled path transitions; they are not a claim of real network reachability or full transport behavior.
+
+### Fiber Operations Accuracy Boundary
+
+The fiber scenarios are procedural training simulations, not live Fluke instrument emulators. Splice loss, OTDR events, OLTS results, MPO polarity mapping, and QSFP+ link state are derived from the scenario state machine. The splice workflow calculates modeled loss from preparation and fusion properties; the MPO workflow models per-fiber polarity status and certification prerequisites. These values are intentionally deterministic so learners can repeat the same workflow and compare outcomes.
+
+## Splice Loss Acceptance Simulator
+
+The Splice Loss Acceptance scenario is a state-driven physical-process simulator. The workflow is:
+
+`Stripper -> Wipes -> Cleaver -> Fusion Splicer -> Sleeve Oven -> OTDR -> OLTS`
+
+The simulator tracks stripping, cleaning, cleave angle, fiber loading, core offset, arc power, fusion duration, sleeve installation, and heat-shrink state. Measured splice loss is deterministically derived from these physical properties. The modeled event occurs at `47 m`, uses a `0.30 dB` acceptance threshold, and enforces a strict fail-then-repair sequence where poor preparation leads to a failed OTDR trace, requiring the technician to repeat the physical process before final certification.
+
+## MPO Polarity Failure Simulator
+
+The MPO scenario models a data-center-style 12-fiber trunk with Method A installed polarity and Method B required polarity. MultiFiber diagnosis identifies the reversed fibers via a per-fiber mapping grid, repatching changes the polarity to Method B, and final certification verifies all 12 fibers. The QSFP+ uplink changes from `DOWN` to `UP` only after successful MPO certification. The simulator validates connector compatibility, ensuring only MPO-12 endpoints are used for diagnosis and certification.
+
+These operational scenarios use browser-native procedural geometry and dependency-free SVG schematics. They are designed to teach repeatable field workflows and evidence collection, not to claim live optical power, OTDR, OLTS, or QSFP hardware behavior.
 
 ## 🚀 Technical Architecture
 
@@ -62,11 +120,14 @@ The app has moved from a page-based logic to an engine-based logic:
 *   **`client/src/labs/labDefinitions.ts`**: The **Single Source of Truth**. Contains the `LAB_REGISTRY` which defines all devices, links, and step-by-step validation logic.
 *   **`client/src/components/NetworkSandbox.tsx`**: The **Main Engine**. Handles the visual canvas, drag-and-drop logic, cabling, and the integration between the terminal and the mission rail.
 *   **`client/src/components/ThreeSandboxViewport.tsx`**: The **Physical Viewport**. Renders procedural 3D devices, ports, cables, filtering, selection, and state-aware link presentation.
+*   **`client/src/components/GuidedPacketTrace.tsx`**: The **Shared Protocol Visualization**. Renders deterministic, lab-specific packet frames for guided tranche objectives.
 *   **`client/src/components/TabbedInspector.tsx`**: The **Capability-Aware Inspector**. Renders device-specific Summary, Interfaces, IP, VLAN, MAC, ARP, Routing, DHCP, and DNS views from session state.
 *   **`client/src/pages/Home.tsx`**: The **Hub**. Manages lab selection and coordinates the transition into the sandbox workspace.
 *   **`client/src/lib/network-ecosystem.ts`**: The device, port, cable, connector, dimensions, and tag catalog used by the sandbox.
 *   **`client/src/lib/network-topology.ts`**: Shared topology selection and port-reference types.
 *   **`client/src/lib/capabilities.ts`**: Device capability matrix and command capability gates.
+*   **`client/src/lib/traffic-engine.ts`**: Reusable deterministic internet-traffic metadata and flow lifecycle model.
+*   **`client/src/lib/asa-engine.ts`**: ASA-style zone, ACL, NAT/PAT, and connection decision logic for the firewall sandbox.
 
 ## Learning Model
 

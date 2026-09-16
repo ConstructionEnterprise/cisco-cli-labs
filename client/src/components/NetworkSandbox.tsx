@@ -2,14 +2,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { applyCommand, boot, isCiscoCommand, modePrompt, normalizeCommand, type DhcpClientState, type DhcpLease, type Mode, type Session } from "@/lib/ios-engine";
-import { Cable, Check, Copy, Eraser, Hand, Magnet, Monitor, MousePointer2, Network, PanelBottom, PanelLeftClose, PanelRightClose, Plus, Router, Save, Server, Share2, Shield, SquareTerminal, SwitchCamera, Trash2, Wifi, X, BookOpen, GripVertical } from "lucide-react";
+import { Cable, Check, Copy, Eraser, Hand, Magnet, Monitor, MousePointer2, Network, PanelBottom, PanelLeftClose, PanelRightClose, Plus, Router, Save, Server, Share2, Shield, SquareTerminal, SwitchCamera, Trash2, Wifi, X, BookOpen, GripVertical, Minimize2, Maximize2 } from "lucide-react";
 import { LAB_REGISTRY, SANDBOX_TEMPLATES, type LabConfig } from "@/labs/labDefinitions";
 import { NETWORK_CABLES, NETWORK_DEVICES, ecosystemDevice, ecosystemPort, type EcosystemDeviceKind } from "@/lib/network-ecosystem";
 import type { PortRef, SelectionRef, TrafficPacket } from "@/lib/network-topology";
 import ThreeSandboxViewport from "@/components/ThreeSandboxViewport";
 import LogicalDiagramViewport from "@/components/LogicalDiagramViewport";
 import TabbedInspector from "@/components/TabbedInspector";
+import NetworkDeviceSchematic from "@/components/NetworkDeviceSchematic";
 import { supportsCommand } from "@/lib/capabilities";
+import { createSimulatedFlow, flowToPackets } from "@/lib/traffic-engine";
+import { evaluateAsaTraffic } from "@/lib/asa-engine";
 
 type DeviceKind = EcosystemDeviceKind;
 type Tool = "select" | "pan" | "cable" | "erase";
@@ -51,6 +54,28 @@ type PersistedSandbox = {
 };
 
 const STORAGE_KEY = "ipv6-cli-lab-network-sandbox-v3";
+const MISSION_STORAGE_PREFIX = "ipv6-cli-lab-mission-v1:";
+
+type PersistedMission = {
+  persisted: PersistedSandbox;
+  stepIndex: number;
+  selectedId: string | null;
+  lastFeedback: string;
+};
+
+function missionStorageKey(labId: string): string {
+  return MISSION_STORAGE_PREFIX + labId;
+}
+
+function loadMission(labId: string): PersistedMission | null {
+  try {
+    const raw = window.localStorage.getItem(missionStorageKey(labId));
+    return raw ? JSON.parse(raw) as PersistedMission : null;
+  } catch {
+    return null;
+  }
+}
+
 const CANVAS_WIDTH = 1120;
 const CANVAS_HEIGHT = 610;
 
@@ -417,6 +442,11 @@ function portAllowsVlan(node: SandboxNode, port: string, vlan: number, sessions:
 }
 
 function clientVlan(clientId: string, topology: Topology, sessions: Record<string, Session>): number {
+  const sourceNode = topology.nodes.find((node) => node.id === clientId);
+  if (sourceNode?.kind === "switch") {
+    const svi = Object.entries(sessions[clientId]?.interfaces || {}).find(([name, state]) => /^vlan \d+$/.test(name) && !state.shutdown && state.ipv4.length > 0);
+    if (svi) return Number(svi[0].slice("vlan ".length));
+  }
   const accessLink = topology.links.find((link) => link.from === clientId || link.to === clientId);
   if (!accessLink) return 1;
   const switchId = topology.nodes.find((node) => node.id === (accessLink.from === clientId ? accessLink.to : accessLink.from) && node.kind === "switch")?.id;
@@ -549,7 +579,7 @@ function negotiatePoe(switchNode: SandboxNode, port: string, topology: Topology,
 export default function NetworkSandbox({ onExit, labId = "lab-1" }: { onExit: () => void; labId?: string }) {
   const [activeLabId, setActiveLabId] = useState(labId);
   const config = LAB_REGISTRY[activeLabId] || LAB_REGISTRY["lab-1"];
-  const [persisted, setPersisted] = useState<PersistedSandbox>(() => initialPersisted(labId));
+  const [persisted, setPersisted] = useState<PersistedSandbox>(() => loadMission(labId)?.persisted ?? initialPersisted(labId));
   const { topology, savedTopologies, sessions } = persisted;
   const [tool, setTool] = useState<Tool>("select");
   const [snapToGrid, setSnapToGrid] = useState(true);
@@ -559,7 +589,7 @@ export default function NetworkSandbox({ onExit, labId = "lab-1" }: { onExit: ()
   const [workspaceCollapsed, setWorkspaceCollapsed] = useState(false);
   const [missionCollapsed, setMissionCollapsed] = useState(false);
   const [viewportMode, setViewportMode] = useState<"schematic" | "logical" | "3d">("schematic");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => loadMission(labId)?.selectedId ?? null);
   const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
   const [cableStart, setCableStart] = useState<string | null>(null);
   const [connectionStart, setConnectionStart] = useState<PortRef | null>(null);
@@ -570,13 +600,15 @@ export default function NetworkSandbox({ onExit, labId = "lab-1" }: { onExit: ()
   const [activeFilters, setActiveFilters] = useState<string[]>([]);
   const [selection, setSelection] = useState<SelectionRef[]>([]);
   const [showTerminal, setShowTerminal] = useState(true);
+  const [terminalMinimized, setTerminalMinimized] = useState(false);
+  const [terminalHeight, setTerminalHeight] = useState(260);
   const [terminalInput, setTerminalInput] = useState("");
   const [notice, setNotice] = useState("Canvas ready");
-  const [stepIndex, setStepIndex] = useState(0);
-  const [lastFeedback, setLastFeedback] = useState<string>("Welcome to the lab. Start with the first objective.");
+  const [stepIndex, setStepIndex] = useState(() => loadMission(labId)?.stepIndex ?? 0);
+  const [lastFeedback, setLastFeedback] = useState<string>(() => loadMission(labId)?.lastFeedback ?? "Welcome to the lab. Start with the first objective.");
   const canvasRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
-  const resizeRef = useRef<{ side: "workspace" | "mission"; startX: number; startWidth: number } | null>(null);
+  const resizeRef = useRef<{ side: "workspace" | "mission"; startX: number; startWidth: number } | { side: "terminal"; startY: number; startHeight: number } | null>(null);
 
   const selectedNode = topology.nodes.find((node) => node.id === selectedId) ?? null;
   const selectedSession = selectedNode ? sessions[selectedNode.id] : null;
@@ -598,15 +630,13 @@ export default function NetworkSandbox({ onExit, labId = "lab-1" }: { onExit: ()
   // Reset the complete mission session whenever the active scenario changes.
   useEffect(() => {
     const freshState = initialPersisted(activeLabId);
+    const savedMission = loadMission(activeLabId);
+    const nextState = savedMission?.persisted ?? freshState;
 
-    if (config.type === "guided" || config.type === "sandbox") {
-      localStorage.removeItem(STORAGE_KEY);
-    }
-
-    setPersisted(freshState);
-    setStepIndex(0);
-    setLastFeedback("Welcome to the lab. Start with the first objective.");
-    setSelectedId(freshState.topology.nodes[0]?.id ?? null);
+    setPersisted(nextState);
+    setStepIndex(savedMission?.stepIndex ?? 0);
+    setLastFeedback(savedMission?.lastFeedback ?? "Welcome to the lab. Start with the first objective.");
+    setSelectedId(savedMission?.selectedId ?? nextState.topology.nodes[0]?.id ?? null);
     setSelectedLinkId(null);
     setCableStart(null);
     setConnectionStart(null);
@@ -620,15 +650,17 @@ export default function NetworkSandbox({ onExit, labId = "lab-1" }: { onExit: ()
   }, [activeLabId, config]);
 
   useEffect(() => {
-    // Only save to localStorage if it's a user-created topology (not a guided lab)
-    // This prevents ghost lab states from persisting across lab switches
-    if (persisted.topology.name === "Untitled Construction Network") {
+    if (config.type === "guided" || config.type === "sandbox") {
+      window.localStorage.setItem(missionStorageKey(activeLabId), JSON.stringify({
+        persisted,
+        stepIndex,
+        selectedId,
+        lastFeedback
+      } satisfies PersistedMission));
+    } else if (persisted.topology.name === "Untitled Construction Network") {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(persisted));
-    } else {
-      // For guided/sandbox labs, ensure we don't save state
-      window.localStorage.removeItem(STORAGE_KEY);
     }
-  }, [persisted]);
+  }, [activeLabId, config.type, lastFeedback, persisted, selectedId, stepIndex]);
 
   useEffect(() => {
     const move = (event: PointerEvent) => {
@@ -640,6 +672,11 @@ export default function NetworkSandbox({ onExit, labId = "lab-1" }: { onExit: ()
       if (resizeRef.current?.side === "mission") {
         const delta = event.clientX - resizeRef.current.startX;
         setMissionWidth(Math.max(260, Math.min(480, resizeRef.current.startWidth - delta)));
+        return;
+      }
+      if (resizeRef.current?.side === "terminal") {
+        const delta = resizeRef.current.startY - event.clientY;
+        setTerminalHeight(Math.max(150, Math.min(560, resizeRef.current.startHeight + delta)));
         return;
       }
       if (!dragRef.current || !canvasRef.current) return;
@@ -817,16 +854,48 @@ ${linksCode}
     }
     const sourceName = topology.nodes.find((node) => node.id === sourceId)?.name || sourceId;
     const requestPath = resolution.path;
-    const replyPath = [...requestPath].reverse();
-    const burst = Array.from({ length: 5 }, (_, index) => {
-      const sequence = index + 1;
-      const requestDelay = index * 0.22;
-      const replyDelay = requestDelay + requestPath.length * 1.55;
-      return [
-        { id: `icmp-request-${Date.now()}-${sequence}`, source: sourceName, destination: resolution.destination.name, path: requestPath, color: "#63e6e2", sequence, direction: "request" as const, startDelay: requestDelay },
-        { id: `icmp-reply-${Date.now()}-${sequence}`, source: resolution.destination.name, destination: sourceName, path: replyPath, color: "#f5b74b", sequence, direction: "reply" as const, startDelay: replyDelay },
-      ];
-    }).flat();
+    const sourceIp = topology.nodes.find((node) => node.id === sourceId)?.ipv4 || "0.0.0.0";
+    let flow = createSimulatedFlow({
+      protocol: "icmp",
+      source: sourceName,
+      destination: resolution.destination.name,
+      sourceIp,
+      destinationIp: destination,
+    });
+    const firewall = topology.nodes.find((node) => node.kind === "firewall");
+    const firewallIndex = firewall ? requestPath.indexOf(firewall.id) : -1;
+    if (firewall && firewallIndex > 0 && firewallIndex < requestPath.length - 1) {
+      const beforeFirewall = requestPath[firewallIndex - 1];
+      const afterFirewall = requestPath[firewallIndex + 1];
+      const ingressLink = topology.links.find((link) => (link.from === beforeFirewall && link.to === firewall.id) || (link.to === beforeFirewall && link.from === firewall.id));
+      const egressLink = topology.links.find((link) => (link.from === firewall.id && link.to === afterFirewall) || (link.to === firewall.id && link.from === afterFirewall));
+      const firewallSession = firewall ? sessions[firewall.id] : undefined;
+      const ingressInterface = ingressLink ? (ingressLink.to === firewall.id ? ingressLink.toPort : ingressLink.fromPort) : undefined;
+      const egressInterface = egressLink ? (egressLink.from === firewall.id ? egressLink.fromPort : egressLink.toPort) : undefined;
+      const ingressZone = ingressInterface ? firewallSession?.interfaces[ingressInterface]?.nameif : undefined;
+      const egressZone = egressInterface ? firewallSession?.interfaces[egressInterface]?.nameif : undefined;
+      if (firewallSession && ingressZone && egressZone) {
+        const decision = evaluateAsaTraffic(firewallSession, flow, ingressZone, egressZone);
+        flow = decision.flow;
+        setNotice(decision.reason);
+        if (!decision.allowed) {
+          setLastFeedback(`✕ ${decision.reason}`);
+          return false;
+        }
+      }
+    }
+    const burst = flowToPackets(flow, requestPath, "#63e6e2", 5);
+   /*
+   const legacyBurst = Array.from({ length: 5 }, (_, index) => {
+     const sequence = index + 1;
+     const requestDelay = index * 0.22;
+     const replyDelay = requestDelay + requestPath.length * 1.55;
+     return [
+       { id: `icmp-request-${Date.now()}-${sequence}`, source: sourceName, destination: resolution.destination.name, path: requestPath, color: "#63e6e2", sequence, direction: "request" as const, startDelay: requestDelay },
+       { id: `icmp-reply-${Date.now()}-${sequence}`, source: resolution.destination.name, destination: sourceName, path: replyPath, color: "#f5b74b", sequence, direction: "reply" as const, startDelay: replyDelay },
+     ];
+   }).flat();
+   */
     setPackets((current) => [...current, ...burst]);
     return true;
   }
@@ -880,6 +949,25 @@ ${linksCode}
   function resetCanvas() {
     selectTemplate(SANDBOX_TEMPLATES["blank"]);
     setNotice("Blank canvas ready");
+  }
+
+  function resetMission() {
+    const freshState = initialPersisted(activeLabId);
+    window.localStorage.removeItem(missionStorageKey(activeLabId));
+    setPersisted(freshState);
+    setStepIndex(0);
+    setLastFeedback("Welcome to the lab. Start with the first objective.");
+    setSelectedId(freshState.topology.nodes[0]?.id ?? null);
+    setSelectedLinkId(null);
+    setCableStart(null);
+    setConnectionStart(null);
+    setSelectedPort(null);
+    setSelection([]);
+    setPackets([]);
+    setTool("select");
+    setTerminalInput("");
+    dragRef.current = null;
+    setNotice(freshState.topology.name + " reset");
   }
 
    function submitTerminal(value = terminalInput) {
@@ -1278,7 +1366,7 @@ ${linksCode}
         </section>
 
                 {/* Right Panel: Lab Instructions */}
-        <aside className={`relative border-l border-white/10 bg-[#0d151e] lg:min-h-[calc(100vh-118px)] ${missionCollapsed ? "p-2" : "p-4"}`}>
+        <aside className={`relative border-l border-white/10 bg-[#0d151e] lg:sticky lg:top-4 lg:max-h-[calc(100vh-7.5rem)] lg:self-start lg:overflow-y-auto lg:overscroll-contain lg:min-h-[calc(100vh-118px)] ${missionCollapsed ? "p-2" : "p-4"}`}>
           <div className="mb-5 flex items-center justify-between">
             <div className={missionCollapsed ? "hidden" : ""}>
               <div className="instrument-label">MISSION BRIEF</div>
@@ -1338,13 +1426,6 @@ ${linksCode}
                     </div>
                   </div>
 
-                  {/* Feedback Area */}
-                  <div className="rounded-xl border border-white/10 bg-[#111c27] p-4">
-                    <div className="instrument-label mb-2">OPERATIONAL FEEDBACK</div>
-                    <div className={`text-xs leading-5 ${lastFeedback?.startsWith('✓') ? "text-[#b5d8d4]" : lastFeedback?.startsWith('✕') ? "text-[#f07178]" : "text-[#8fa0a7]"}`}>
-                      {lastFeedback}
-                    </div>
-                  </div>
                 </>
               ) : (
                 /* MISSION COMPLETE STATE */
@@ -1356,7 +1437,7 @@ ${linksCode}
                   </div>
                   <div className="text-lg font-bold text-white">Mission Accomplished!</div>
                   <p className="mt-2 text-xs text-[#8fa0a7] px-4">All guided objectives for this scenario have been completed successfully.</p>
-                  <Button size="sm" className="mt-6 bg-[#63e6e2] text-[#0b121a] hover:bg-[#4bc2be]" onClick={() => setStepIndex(0)}>
+                  <Button size="sm" className="mt-6 bg-[#63e6e2] text-[#0b121a] hover:bg-[#4bc2be]" onClick={resetMission}>
                     Restart Mission
                   </Button>
                 </div>
@@ -1367,25 +1448,32 @@ ${linksCode}
               <div className="text-xs text-[#667a82]">No guided steps for this sandbox. Free-play mode enabled.</div>
             </div>
           )}
+          {selectedNode && selectedSession && <div className="mt-5"><NetworkDeviceSchematic node={selectedNode} session={selectedSession} selectedPort={selectedPort} /></div>}
           </div>
           {!missionCollapsed && <button type="button" onPointerDown={(event) => { event.preventDefault(); resizeRef.current = { side: "mission", startX: event.clientX, startWidth: missionWidth }; }} className="absolute -left-2 top-0 z-30 hidden h-full w-4 cursor-col-resize items-center justify-center text-[#3b555c] hover:text-[#f5b74b] lg:flex" aria-label="Resize mission brief panel"><GripVertical className="h-5 w-5" /></button>}
         </aside>
       </div>
 
       {showTerminal && selectedNode && selectedSession && (
-        <section className="sticky bottom-0 z-20 border-t border-[#63e6e2]/25 bg-[#0b121a]/95 px-4 py-3 shadow-[0_-20px_50px_rgba(0,0,0,.45)] backdrop-blur lg:px-8">
-          <div className="mx-auto max-w-[1500px]">
+        <section className={`sticky bottom-0 z-20 flex flex-col border-t border-[#63e6e2]/25 bg-[#0b121a]/95 px-4 py-3 shadow-[0_-20px_50px_rgba(0,0,0,.45)] backdrop-blur lg:px-8 ${terminalMinimized ? "h-12" : ""}`} style={terminalMinimized ? undefined : { height: `${terminalHeight}px` }}>
+          <button type="button" onPointerDown={(event) => { event.preventDefault(); resizeRef.current = { side: "terminal", startY: event.clientY, startHeight: terminalHeight }; }} className="absolute -top-3 inset-x-0 z-30 mx-auto flex h-6 w-24 cursor-row-resize items-center justify-center rounded-t border border-white/10 bg-[#101a23] text-[#536b73] hover:text-[#63e6e2]" aria-label="Resize IOS console"><GripVertical className="h-4 w-4 rotate-90" /></button>
+          <div className="mx-auto flex min-h-0 w-full max-w-[1500px] flex-1 flex-col">
             <div className="flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2">
                 <SquareTerminal className="h-4 w-4 shrink-0 text-[#63e6e2]" />
                 <span className="font-mono text-[10px] uppercase tracking-[.16em] text-[#738890]">IOS-SIM / {selectedNode.name}</span>
                 <span className="hidden truncate text-[10px] text-[#53666e] sm:block">{selectedRole}</span>
               </div>
-              <button type="button" className="text-[#70838b] hover:text-white" onClick={() => setShowTerminal(false)} aria-label="Close IOS console">
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button type="button" className="text-[#70838b] hover:text-white" onClick={() => setTerminalMinimized((value) => !value)} aria-label={terminalMinimized ? "Restore IOS console" : "Minimize IOS console"}>
+                  {terminalMinimized ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
+                </button>
+                <button type="button" className="text-[#70838b] hover:text-white" onClick={() => setShowTerminal(false)} aria-label="Close IOS console">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-            <div className="mt-2 flex max-h-40 flex-col gap-1 overflow-auto rounded-lg border border-white/10 bg-[#080e14] p-3 font-mono text-[11px] leading-5">
+            {!terminalMinimized && <div className="mt-2 flex min-h-0 flex-1 flex-col gap-1 overflow-auto rounded-lg border border-white/10 bg-[#080e14] p-3 font-mono text-[11px] leading-5">
               <div className="text-[#637b83]">Full IOS vocabulary · shared console engine · enter one command, then press Enter.</div>
               {selectedSession.history.slice(-7).map((line, index) => (
                 <div key={`${line}-${index}`} className={line.startsWith("%") ? "text-[#f07178]" : line.startsWith("Hint:") ? "text-[#f5b74b]" : line.startsWith("✓") ? "text-[#b5d4d4]" : "text-[#9fb1b5]"}>{line || "\u00a0"}</div>
@@ -1402,7 +1490,7 @@ ${linksCode}
                   aria-label="IOS command" 
                 />
               </div>
-            </div>
+            </div>}
           </div>
         </section>
       )}

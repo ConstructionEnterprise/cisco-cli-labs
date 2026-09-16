@@ -17,4 +17,16 @@ export type TrafficPacket = {
   sequence: number;
   direction: "request" | "reply";
   startDelay?: number;
+  flowId?: string;
+  protocol?: "icmp" | "tcp" | "udp" | "dns" | "http" | "https" | "dhcp" | "vpn";
+  sourcePort?: number;
+  destinationPort?: number;
+  vlan?: number;
+  stage?: "generated" | "forwarded" | "inspected" | "translated" | "delivered" | "denied";
+  tls?: {
+    serverName: string;
+    certificateTrusted: boolean;
+    decryptable: boolean;
+    inspected?: boolean;
+  };
 };

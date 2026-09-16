@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import NetworkSandbox from "@/components/NetworkSandbox";
 import OperationsSandbox from "@/components/OperationsSandbox";
+import TrafficDataPanel from "@/components/TrafficDataPanel";
+import GuidedPacketTrace, { getGuidedTraceProfile } from "@/components/GuidedPacketTrace";
 import { toast } from "sonner";
 import { applyCommand, boot, isCiscoCommand, modePrompt, normalizeCommand, type Mode, type Session } from "@/lib/ios-engine";
-import { Check, ChevronDown, CircleHelp, Copy, Network, Play, RotateCcw, TerminalSquare, Wrench } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, CircleHelp, Copy, Database, History, Network, Play, RotateCcw, TerminalSquare, Wrench } from "lucide-react";
 import { LAB_REGISTRY, type LabConfig } from "@/labs/labDefinitions";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -61,6 +63,7 @@ export default function Home() {
   const [selectedLabId, setSelectedLabId] = useState("lab-1");
   const [sandboxOpen, setSandboxOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "sandbox");
   const [operationsOpen, setOperationsOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "operations");
+  const [trafficDataOpen, setTrafficDataOpen] = useState(false);
   
   // Derive the current lab config from the registry
   const lab = LAB_REGISTRY[selectedLabId] || LAB_REGISTRY["lab-1"];
@@ -71,12 +74,17 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [hint, setHint] = useState(false);
   const [pendingCommand, setPendingCommand] = useState<string | null>(null);
+  const [traceRun, setTraceRun] = useState(0);
+  const [labHeaderOpen, setLabHeaderOpen] = useState(true);
+  const [commandHistoryOpen, setCommandHistoryOpen] = useState(false);
+  const [commandHistory, setCommandHistory] = useState<Record<string, string[]>>({});
 
   const step = lab.steps[Math.min(stepIndex, lab.steps.length - 1)];
   const session = sessions[activeDevice];
   const prompt = session ? modePrompt(activeDevice, session) : "";
   const complete = stepIndex >= lab.steps.length;
   const percent = Math.round((stepIndex / lab.steps.length) * 100);
+  const guidedTrace = useMemo(() => getGuidedTraceProfile(selectedLabId, lab.topology.devices.map((device: any) => device.name || device.id)), [selectedLabId, lab]);
 
   function selectLab(id: string) {
     setSelectedLabId(id); 
@@ -86,6 +94,10 @@ export default function Home() {
     setActiveDevice(nextLab.topology.devices[0]?.name || nextLab.topology.devices[0]?.id); 
     setInput(""); 
     setHint(false);
+    setTraceRun(0);
+    setLabHeaderOpen(true);
+    setCommandHistoryOpen(false);
+    setCommandHistory({});
   }
 
   function reset() { 
@@ -94,6 +106,9 @@ export default function Home() {
     setActiveDevice(lab.topology.devices[0]?.name || lab.topology.devices[0]?.id); 
     setInput(""); 
     setHint(false); 
+    setTraceRun(0);
+    setCommandHistoryOpen(false);
+    setCommandHistory({});
     toast("Lab reset", { description: `${lab.title} is ready at the first IOS prompt.` }); 
   }
 
@@ -105,6 +120,7 @@ export default function Home() {
     const current = sessions[activeDevice];
     const visiblePrompt = modePrompt(activeDevice, current);
     const updatedHistory = [...current.history, `${visiblePrompt} ${raw}`];
+    setCommandHistory((all) => ({ ...all, [activeDevice]: [...(all[activeDevice] || []), `${visiblePrompt} ${raw}`] }));
     
     const expectedDevice = step.targetDevice;
     const expectedMode = step.requiredMode;
@@ -118,7 +134,7 @@ export default function Home() {
 
     if (activeDevice !== expectedDevice || current.mode !== expectedMode || !isCiscoCommand(normalized, current.mode) || normalized !== normalizeCommand(step.expectedCommand)) {
       const reason = activeDevice !== expectedDevice ? `Switch to ${expectedDevice}.` : current.mode !== expectedMode ? `Use the ${expectedMode === "user" ? "user EXEC" : expectedMode === "privileged" ? "privileged EXEC" : expectedMode} prompt.` : !isCiscoCommand(normalized, current.mode) ? `That command is not valid in Cisco IOS ${current.mode} mode.` : `Expected the full command: ${step.expectedCommand}`;
-      setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, "% Invalid input detected at '^' marker.", `Hint: ${reason}`] } })); 
+      setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, `% Invalid input detected at '^' marker. Hint: ${reason}`] } }));
       setInput(""); 
       return;
     }
@@ -127,6 +143,7 @@ export default function Home() {
     
     setSessions((all) => ({ ...all, [activeDevice]: nextSession }));
     setStepIndex((index) => index + 1); 
+    if (lab.type === "guided" && !["enable", "configure terminal", "exit", "end"].includes(normalized)) setTraceRun((run) => run + 1);
     setInput(""); 
     setHint(false);
   }
@@ -148,7 +165,8 @@ export default function Home() {
     submit(step.expectedCommand);
   }
 
-  const recent = session ? session.history.slice(-12) : [];
+  const recent = session ? session.history.slice(-3) : [];
+  const activeCommandHistory = commandHistory[activeDevice] || [];
   const allDone = useMemo(() => complete, [complete]);
   const labsForTranche = (tranche: 1 | 2 | 3 | 4 | 5) => Object.entries(LAB_REGISTRY).filter(([id, item]) => id !== "blank" && (item.tranche ?? 1) === tranche);
 
@@ -198,6 +216,15 @@ export default function Home() {
           <TrancheMenu name="Tranche Three" labs={labsForTranche(3)} selectedLabId={selectedLabId} onSelectLab={selectLab} />
           <TrancheMenu name="Tranche Four" labs={labsForTranche(4)} selectedLabId={selectedLabId} onSelectLab={selectLab} />
           <TrancheMenu name="Tranche Five" labs={labsForTranche(5)} selectedLabId={selectedLabId} onSelectLab={selectLab} />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button type="button" className="flex shrink-0 items-center gap-2 rounded-lg border border-[#63e6e2]/35 bg-[#173038] px-3 py-2 text-left text-white transition hover:border-[#63e6e2]/65 hover:bg-[#1b4148]"><Database className="h-3.5 w-3.5 text-[#63e6e2]" /><span className="font-mono text-[10px] uppercase tracking-wider text-[#63e6e2]">Data</span><ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#63e6e2]" /></button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-72 border-[#29424a] bg-[#101923] p-2 text-[#edf4f3]">
+              <div className="px-2 pb-2 pt-1"><div className="font-mono text-[10px] uppercase tracking-[.16em] text-[#63e6e2]">Data</div><div className="mt-1 text-[11px] text-[#778a92]">Inspect reusable modeled network data.</div></div>
+              <DropdownMenuItem onSelect={() => setTrafficDataOpen(true)} className="cursor-pointer gap-3 px-2.5 py-3 text-[#9aabb1] focus:bg-[#173038] focus:text-white"><Database className="h-4 w-4 text-[#63e6e2]" /><span className="text-xs">Internet Traffic Data</span></DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </nav>
 
@@ -247,21 +274,29 @@ export default function Home() {
         <section className="relative min-w-0">
           <div className="absolute inset-0 opacity-25" style={{ backgroundImage: "url('/manus-storage/packet-observatory-texture_96a51270.jpg')", backgroundSize: "cover", backgroundPosition: "top right" }} />
           <div className="relative mx-auto max-w-[1240px] px-5 py-7 lg:px-10 lg:py-9">
-            <div className="mb-6 flex flex-col justify-between gap-5 md:flex-row md:items-end">
-              <div>
+            <div className="mb-6 rounded-xl border border-white/10 bg-[#0d151e]/80 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="instrument-label text-[#f5b74b]">{selectedLabId.toUpperCase()} · {lab.title}</div>
-                <h1 className="mt-2 max-w-3xl font-display text-3xl font-semibold tracking-[-.03em] text-white md:text-5xl">{lab.title}<br /><span className="text-[#63e6e2]">Practice the signal.</span></h1>
-                <p className="mt-3 max-w-2xl text-sm leading-6 text-[#b4c1c5]">{lab.description}</p>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" className="border-white/15 bg-[#101923]/70 text-[#aab8bd] hover:bg-white/10 hover:text-white" onClick={reset}>
+                    <RotateCcw className="mr-2 h-3.5 w-3.5" /> Reset
+                  </Button>
+                  <Button variant="outline" size="sm" aria-expanded={labHeaderOpen} aria-controls="guided-lab-header" className="border-[#63e6e2]/25 bg-[#101923]/70 font-mono text-[10px] uppercase tracking-wider text-[#b9eeee] hover:bg-[#173038] hover:text-white" onClick={() => setLabHeaderOpen((open) => !open)}>
+                    {labHeaderOpen ? "Collapse header" : "Expand header"}
+                    {labHeaderOpen ? <ChevronUp className="ml-2 h-3.5 w-3.5" /> : <ChevronDown className="ml-2 h-3.5 w-3.5" />}
+                  </Button>
+                </div>
               </div>
-              <Button variant="outline" className="border-white/15 bg-[#101923]/70 text-[#aab8bd] hover:bg-white/10 hover:text-white" onClick={reset}>
-                <RotateCcw className="mr-2 h-4 w-4" /> Reset {selectedLabId.toUpperCase()}
-              </Button>
+              {labHeaderOpen && <div id="guided-lab-header" className="mt-3">
+                <h1 className="max-w-3xl font-display text-3xl font-semibold tracking-[-.03em] text-white md:text-5xl">{lab.title}<br /><span className="text-[#63e6e2]">Practice the signal.</span></h1>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-[#b4c1c5]">{lab.description}</p>
+              </div>}
             </div>
 
-            <div className="mb-7 grid gap-4 xl:grid-cols-[1.05fr_.95fr]">
-              <div className="panel-surface p-5">
+            <div className="mb-6 grid gap-3 xl:grid-cols-[1.05fr_.95fr]">
+              <div className="panel-surface p-4">
                 <div className="instrument-label text-[#f5b74b]">PACKET TRACE / OPERATIONAL CONTEXT</div>
-                <div className="mt-4 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#0e1720] p-4 font-mono text-center text-xs">
+                <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#0e1720] p-3 font-mono text-center text-xs">
                   {lab.topology.devices.map((device: any, index: number) => (
                     <div key={device.id || index} className="flex min-w-0 flex-1 items-center gap-2">
                       <button type="button" onClick={() => { setActiveDevice(device.name || device.id); setInput(""); setHint(false); }} className={`min-w-0 flex-1 rounded-lg border px-2 py-3 transition hover:border-[#63e6e2]/60 hover:bg-[#173038] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#63e6e2] ${activeDevice === (device.name || device.id) ? "border-[#63e6e2]/40 bg-[#173038]" : "border-white/10 bg-[#111c27]"}`}>
@@ -271,14 +306,15 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
-                <div className="mt-4 flex items-center justify-between font-mono text-[10px] uppercase tracking-wider text-[#77858d]">
+                <div className="mt-3 flex items-center justify-between font-mono text-[10px] uppercase tracking-wider text-[#77858d]">
                   <span className="h-px flex-1 bg-gradient-to-r from-[#63e6e2] to-transparent" />
                   <span className="mx-4">{lab.topology.devices.map((d: any) => d.name || d.id).join(" ⇄ ")}</span>
                   <span className="h-px flex-1 bg-gradient-to-l from-[#63e6e2] to-transparent" />
                 </div>
+                {lab.type === "guided" && <GuidedPacketTrace profile={guidedTrace} run={traceRun} leftLabel={lab.topology.devices[0]?.name || "SOURCE"} rightLabel={lab.topology.devices[lab.topology.devices.length - 1]?.name || "DESTINATION"} />}
               </div>
 
-              <div className="panel-surface p-5">
+              <div className="panel-surface p-4">
                 <div className="flex items-center justify-between">
                   <div className="instrument-label text-[#63e6e2]">CURRENT PACKET TRACE</div>
                   <span className="status-pill"><span className="status-dot" /> {complete ? "COMPLETE" : `${stepIndex + 1}/${lab.steps.length}`}</span>
@@ -287,7 +323,7 @@ export default function Home() {
                 {!allDone ? (
                   <>
                     {/* THE "HOW" - The exact command to type */}
-                    <div className="mt-4">
+                    <div className="mt-3">
                       <div className="text-[10px] font-mono uppercase text-[#84969d] mb-1">Command to enter:</div>
                       <div className="font-mono text-lg font-bold text-[#63e6e2] bg-black/40 p-3 rounded border border-[#63e6e2]/20">
                         {step.expectedCommand}
@@ -295,13 +331,13 @@ export default function Home() {
                     </div>
 
                     {/* The "What" */}
-                    <div className="mt-4 font-display text-xl font-semibold text-white">{step.label}</div>
+                    <div className="mt-3 font-display text-xl font-semibold text-white">{step.label}</div>
 
                     {/* The "Why" (Instructional Description) */}
                     <p className="mt-2 text-sm leading-6 text-[#aebbc0]">{step.description}</p>
 
                     {/* Context */}
-                    <div className="mt-4 rounded-lg border border-[#f5b74b]/20 bg-[#f5b74b]/10 p-3">
+                    <div className="mt-3 rounded-lg border border-[#f5b74b]/20 bg-[#f5b74b]/10 p-3">
                       <div className="font-mono text-[10px] uppercase tracking-wider text-[#f5b74b]">Required context</div>
                       <div className="mt-2 flex flex-wrap gap-2 text-xs text-[#f4d998]">
                         <span>{step.targetDevice}</span><span>·</span><span>{step.requiredMode}</span>
@@ -318,14 +354,26 @@ export default function Home() {
             </div>
 
             <div className="terminal-shell">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#111b24] px-5 py-3">
+              <div className="relative flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#111b24] px-5 py-3">
                 <div className="flex items-center gap-2">
                   <div className="flex gap-1.5">
                     <span className="h-2.5 w-2.5 rounded-full bg-[#f07178]" /><span className="h-2.5 w-2.5 rounded-full bg-[#f5b74b]" /><span className="h-2.5 w-2.5 rounded-full bg-[#63e6e2]" />
                   </div>
                   <span className="ml-2 font-mono text-[10px] uppercase tracking-[.18em] text-[#74848d]">ios-sim / {activeDevice}</span>
                 </div>
-                <div className="font-mono text-[10px] uppercase tracking-wider text-[#667780]">{prompt}</div>
+                <div className="flex items-center gap-3">
+                  <div className="font-mono text-[10px] uppercase tracking-wider text-[#667780]">{prompt}</div>
+                  <button type="button" aria-expanded={commandHistoryOpen} onClick={() => setCommandHistoryOpen((open) => !open)} className="flex items-center gap-1.5 rounded border border-[#63e6e2]/25 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-[#b9eeee] transition hover:border-[#63e6e2]/60 hover:bg-[#173038]">
+                    <History className="h-3.5 w-3.5" /> Command History
+                  </button>
+                </div>
+                {commandHistoryOpen && <div className="absolute right-4 top-full z-30 mt-2 max-h-80 w-[min(28rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-[#63e6e2]/30 bg-[#101923] p-3 shadow-2xl">
+                  <div className="mb-2 flex items-center justify-between border-b border-white/10 pb-2">
+                    <span className="font-mono text-[10px] uppercase tracking-[.16em] text-[#63e6e2]">Command History · {activeDevice}</span>
+                    <span className="font-mono text-[10px] text-[#778a92]">{activeCommandHistory.length}</span>
+                  </div>
+                  {activeCommandHistory.length ? activeCommandHistory.map((command, index) => <div key={`${command}-${index}`} className="flex gap-3 border-b border-white/[.06] py-1.5 font-mono text-[10px] text-[#b5c2c6]"><span className="w-5 shrink-0 text-right text-[#667780]">{index + 1}</span><span>{command}</span></div>) : <div className="py-3 text-xs text-[#778a92]">No commands entered on this device yet.</div>}
+                </div>}
               </div>
               <div className="terminal-output min-h-[380px]" aria-live="polite">
                 {recent.map((line, index) => (
@@ -373,6 +421,7 @@ export default function Home() {
         </section>
       </div>
       <footer className="mx-auto max-w-[1500px] border-t border-white/10 px-5 py-5 font-mono text-[10px] uppercase tracking-wider text-[#687780] lg:px-10">Construction Enterprises · Factory to Foundation · Browser-based IOS training simulator · Documentation addresses only</footer>
+      {trafficDataOpen && <TrafficDataPanel onClose={() => setTrafficDataOpen(false)} />}
     </main>
   );
 }

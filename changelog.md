@@ -1,6 +1,106 @@
 # Changelog
 
-All notable changes to the CCNA CLI Simulator will be documented in this file.
+## [2026-09-15] - Guided Protocol Visualization and CLI Workspace
+### Added
+- **Shared Guided Packet Traces**: Added a reusable `GuidedPacketTrace` component for tranche labs. Protocol-specific profiles now visualize deterministic point-to-point exchanges for DHCP DORA, IPv4 and IPv6 neighbor discovery, VLANs, trunks, STP, EtherChannel, router-on-a-stick, routing, OSPFv2/v3, NAT/PAT, ACLs, SSH, port security, CIDR/VLSM, multicast, and broadcast workflows.
+- **Standby Trace Presentation**: Guided traces are visible by default in a standby state and begin cycling through frames after the learner enters a meaningful lab command.
+- **Command History Overlay**: Added a per-device Command History control to the IOS console header. The overlay exposes the complete command sequence without changing the terminal layout.
+- **Collapsible Guided Headers**: Added compact and expanded header states so lab descriptions can be collapsed when the packet trace and CLI need more room.
+
+### Changed
+- **Fixed Trace Height**: Standardized the guided packet trace viewport at a compact fixed height so frame changes no longer move the IOS console vertically.
+- **Three-Line CLI Viewport**: The live terminal now retains only the newest three rendered command/result lines. Startup banners scroll away naturally with command entry.
+- **Invalid Command Display**: Invalid submissions render the entered command plus one combined IOS error/hint line, consuming two of the three visible lines.
+- **Tranche Scope Clarity**: Documented the distinction between guided tranche labs, the open Network Sandbox, and the physical-process Operations Sandbox. The shared packet animation layer applies to tranche labs without changing the sandbox roles.
+
+### Accuracy Notes
+- Guided packet traces are deterministic instructional visualizations, not live packet captures or external network traffic.
+- The frame metadata is designed to expose CCNA-relevant Layer 2, Layer 3, and protocol behavior while remaining independent of live browser networking.
+
+## [2026-09-14] - Sandbox Session Recovery
+### Fixed
+- **Per-Lab Refresh Recovery**: Guided labs and sandbox exercises now persist their IOS sessions, topology edits, objective progress, selected device, and operational feedback under an isolated per-lab browser snapshot.
+- **Operations Refresh Recovery**: Fiber operations scenarios now persist their selected workflow, tools, inspection results, measurements, endpoints, and notices across refresh.
+- **Scenario Isolation**: Switching between labs no longer overwrites or deletes another lab's in-progress state.
+- **Mission Restart Semantics**: Restart Mission now clears the active lab snapshot and resets the complete session, including configuration state, selections, packets, and feedback.
+- **Firewall Capability Consistency**: ACL and NAT are now marked as implemented capabilities, so valid security commands are no longer rejected by the device capability gate.
+
+### Added
+- **Firewall and Edge Security Foundations**: Added a dedicated ASA-style Network Sandbox scenario with a hardware firewall, ISP modem, provider router, inside switch, trusted PC, and DMZ web server.
+- **ASA Command Contexts**: Added nameif, security-level, object network, object NAT/PAT, access-group, ASA interface naming, default routes, and firewall verification commands.
+- **Simulated Internet Traffic Fabric**: Added a dependency-free reusable flow engine for ICMP, TCP, UDP, DNS, HTTP, HTTPS, DHCP, and VPN metadata, TLS inspection state, certificate trust decisions, NAT metadata, policy decisions, and packet animation stages.
+- **Operations Traffic Test**: Operations Sandbox can now generate deterministic HTTPS flows that pass through simulated TLS inspection and record their lifecycle.
+- **ASA Traffic Decision Engine**: Connected modeled traffic to the firewall session state. Flows now evaluate configured zones, security levels, ordered ACL rules, access-group bindings, and object PAT before packet animation, with explicit denial reasons and translated-source metadata.
+
+### Reliability Notes
+- Recovery is browser-local and does not claim server-side persistence or cross-device synchronization.
+- Clearing site storage, private browsing expiration, or changing browser profiles removes the saved snapshots.
+- Simulated traffic is deterministic application state, not live internet traffic.
+
+## [2026-09-13] - High-Fidelity Fiber Diagnosis
+### Added
+- **High-Fidelity Splice Simulator**: Upgraded Splice Loss Acceptance from a demo to a physical process simulator.
+    - Implemented procedural workflow: `Stripper` $\rightarrow$ `Wipes` $\rightarrow$ `Cleaver` $\rightarrow$ `Fusion Splicer` $\rightarrow$ `Sleeve Oven` $\rightarrow$ `OTDR` $\rightarrow$ `OLTS`.
+    - Added deterministic loss model based on cleave angle, contamination, core offset, arc power, fusion duration, and sleeve state.
+    - Implemented "Fail-then-Repair" loop ensuring first attempts fail and require genuine repair sequence.
+    - Added professional OTDR event table and penalty breakdown in the schematic panel.
+- **MPO Topology Types**: Added explicit `MPO-12` endpoint type to the fiber endpoint model.
+    - Implemented connector compatibility validation for MultiFiber Pro tool.
+    - Updated MPO scenario to use `MPO-12` endpoints.
+- **Build Robustness**: Added quoting to `esbuild` build script in `package.json` to prevent failures on Windows paths with spaces.
+- **Diagnostic Tooling**: Added dedicated SVG drawings and procedural 3D meshes for the optical meter, OTDR, MultiFiber Pro, fusion splicer, and sleeve oven.
+- **Diagnostic Reports**: Added modeled CSV exports for splice acceptance and MPO polarity results.
+
+### Fixed
+- **Router-on-a-Stick Evidence Sequence**: Removed the duplicate `show ip interface brief` evidence pass because it is already the guided lab's final verification command.
+- **EtherChannel Traffic Sandbox**: Expanded the scenario to require CE-SW2 configuration, both switch-side LACP members, both Port-channel trunks, VLAN 10 access ports for both PCs, active interfaces, and an SW1 VLAN 10 SVI before the modeled ping.
+- **Router-on-a-Stick Context**: Added an explicit parent-interface `exit` objective before requiring Global Configuration mode for `interface g0/0.10`, matching Cisco IOS command context.
+- Fixed stale state closures in `fuseFiber` and `runOTDRTrace` using functional state updates.
+- Fixed MPO viewport rendering fall-through by making `onSelectEndpoint` optional.
+- Fixed schematic tool fallback where MultiFiber Pro rendered as a Quick Clean pen.
+- Fixed TS2367 type error in `workflowStatus` comparison.
+- Fixed non-deterministic MPO failures by hardcoding failures to Fibers 1 & 12.
+
+### Accuracy Notes
+- These operations scenarios are deterministic instructional models, not live OTDR, OLTS, fusion-splicer, or MPO tester emulations.
+- The splice-loss formula is derived from modeled cleave, contamination, core-offset, and sleeve conditions; it is not a manufacturer calibration model.
+- MPO testing models per-fiber polarity state and uplink recovery, while the shared endpoint catalog remains a simplified training abstraction.
+
+---
+
+## [0.11.0] - Fiber Degradation Monitoring
+### Added
+- **Detect Creeping Degradation Scenario**: Added a monitoring workflow for comparing a known-good OM4 fiber baseline against a current optical-loss measurement.
+- **Optical Power Meter**: Added a dedicated procedural 3D tool model and matching dependency-free SVG schematic for optical loss measurements.
+- **Health Classification**: Added state-derived Healthy, Marginal, Failed, and Unknown outcomes based on measured loss delta and the warning threshold.
+- **Degradation Report Export**: Added a CE-branded CSV export containing endpoint identity, baseline loss, current loss, delta, warning threshold, health status, and modeled session ID.
+
+### Fixed
+- **Tool Rendering Consistency**: Optical Power Meter is no longer rendered or labeled as Quick Clean in the 3D viewport or Operations Schematic.
+- **Degradation Schematic Readout**: The monitoring diagram now displays baseline loss, current loss, and calculated delta alongside the link health state.
+- **Monitoring Control State**: Baseline capture is disabled while measuring or after capture, preventing duplicate asynchronous baseline runs.
+
+### Accuracy Notes
+- Degradation values are modeled diagnostic state for training workflow practice; they are not live optical measurements or official test-instrument output.
+- The monitoring workflow requires the correct tool and opposite-panel endpoints before baseline capture and current measurement are available.
+
+## [0.10.0] - Fiber Backbone Certification
+### Added
+- **Certify New Fiber Backbone Scenario**: Added a commissioning workflow with CE-PATCH-A, CE-PATCH-B, OM4 multimode fiber, LC/UPC endpoints, a modeled CertiFiber Pro/OLTS, and a 50-meter certification profile.
+- **Endpoint-Gated Testing**: The learner must select the certification tool and choose endpoints from opposite patch panels before the test can run.
+- **Loss-Budget Evaluation**: Certification status is derived from measured loss versus the configured loss budget rather than from a button action alone.
+- **Certification Schematic**: Added 2D SVG drawings for the CertiFiber Pro, fiber path, source endpoint, destination endpoint, and test status.
+- **Certification Report Export**: Added a CE-branded CSV report with endpoint identity, fiber specifications, loss values, result, and modeled test-session ID.
+
+### Fixed
+- **R3F JSX Instrumentation Crash**: Removed DOM-oriented JSX location instrumentation that injected `data-loc` into React Three Fiber objects and caused `Cannot set "data-loc"` runtime failures.
+- **Operations State Reset**: Switching between Operations scenarios now clears the selected tool, endpoint selection, certification state, and scenario feedback.
+- **Fiber Scene Geometry**: Corrected panel-local endpoint placement and replaced the unreliable straight-cylinder backbone representation with a curved fiber path between the selected endpoints.
+- **Local Dev Startup**: The development script now uses Vite's runner config loader, allowing the Desktop workspace to start reliably on `localhost:3001`.
+
+### Accuracy Notes
+- Certification output is modeled from the scenario's fiber state and loss budget; it is not a live optical measurement or official Fluke software result.
+- The current certification profile passes with 2.1 dB measured loss against a 3.5 dB budget. Additional failed, degraded, and repair-required commissioning variants remain planned.
 
 ## [0.9.0] - Operations Sandbox Foundation
 ### Added
@@ -8,8 +108,8 @@ All notable changes to the CCNA CLI Simulator will be documented in this file.
 - **Scenario Command Ribbon**: Added a compact operations scenario ribbon with active, available, and planned scenario states.
 - **Procedural Server-Room Scene**: Added browser-native Three.js geometry for a rack, 24-port LC patch panel, tool bench, FI-3000 FiberInspector, and Quick Clean tool without external assets or GLTF files.
 - **Quarterly Endface Inspection**: Added the first operational workflow: inspect all 24 LC connectors, identify contaminated endfaces, clean them with the modeled Quick Clean tool, reinspect, and export the completed inspection log.
-- **Mission Brief Layout**: Added operational progress, tool state, connector counts, contamination counts, cleaning counts, modeled feedback, and export readiness.
-- **Operations Schematic**: Added a dependency-free 2D SVG drawing layer showing the selected tool, OM4 fiber path, and LC/UPC connector state.
+- **Mission Brief Layout**: Added operational progress, tool state, connector counts, contamination counts, cleaning counts, modeled feedback, and report export readiness.
+- **Operations Schematic**: Added a dependency-free 2D SVG drawing layer showing the selected tool, OM4 fiber path, LC/UPC connector state.
 - **Inspection Export**: Added CSV export for connector IDs, inspection scores, inspected state, and cleaning state.
 
 ### Accuracy Notes
@@ -39,7 +139,7 @@ All notable changes to the CCNA CLI Simulator will be documented in this file.
 
 ### Accuracy Notes
 - Packet particles are a visual reflection of a resolved modeled path, not real ICMP traffic or a claim of external reachability.
-- OSPF state currently models directly connected neighbor matching and route installation; full SPF, timers, authentication, and multi-area behavior remain future work.
+- OSPF state currently models directly connected neighbor matching and route installation; full SPF, timers, authentication, multi-area operation, and external reachability remain out of scope.
 - TCP/UDP transport behavior, service payloads, and external network access are not simulated.
 
 ## [0.6.0] - Inter-VLAN, DNS, and PoE State
@@ -151,7 +251,6 @@ All notable changes to the CCNA CLI Simulator will be documented in this file.
 - Fixed-path guided labs.
 - Home page for lab selection.
 - Basic IOS command validation.
-
 
 ## [0.2.1] - Developer Tooling & IOS Refinement
 ### Added
