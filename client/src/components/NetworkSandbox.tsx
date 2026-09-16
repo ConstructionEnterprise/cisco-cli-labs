@@ -601,7 +601,7 @@ export default function NetworkSandbox({ onExit, labId = "lab-1" }: { onExit: ()
   const [selection, setSelection] = useState<SelectionRef[]>([]);
   const [showTerminal, setShowTerminal] = useState(true);
   const [terminalMinimized, setTerminalMinimized] = useState(false);
-  const [terminalHeight, setTerminalHeight] = useState(260);
+  const [terminalHeight, setTerminalHeight] = useState(150);
   const [terminalInput, setTerminalInput] = useState("");
   const [notice, setNotice] = useState("Canvas ready");
   const [stepIndex, setStepIndex] = useState(() => loadMission(labId)?.stepIndex ?? 0);
@@ -636,7 +636,7 @@ export default function NetworkSandbox({ onExit, labId = "lab-1" }: { onExit: ()
     setPersisted(nextState);
     setStepIndex(savedMission?.stepIndex ?? 0);
     setLastFeedback(savedMission?.lastFeedback ?? "Welcome to the lab. Start with the first objective.");
-    setSelectedId(savedMission?.selectedId ?? nextState.topology.nodes[0]?.id ?? null);
+    setSelectedId(nextState.topology.nodes[0]?.id ?? null);
     setSelectedLinkId(null);
     setCableStart(null);
     setConnectionStart(null);
@@ -644,6 +644,9 @@ export default function NetworkSandbox({ onExit, labId = "lab-1" }: { onExit: ()
     setSelection([]);
     setPackets([]);
     setTool("select");
+    setTerminalMinimized(false);
+    setTerminalHeight(150);
+    setShowTerminal(true);
     setTerminalInput("");
     dragRef.current = null;
     setNotice(`${freshState.topology.name} loaded`);
@@ -965,6 +968,9 @@ ${linksCode}
     setSelection([]);
     setPackets([]);
     setTool("select");
+    setTerminalMinimized(false);
+    setTerminalHeight(150);
+    setShowTerminal(true);
     setTerminalInput("");
     dragRef.current = null;
     setNotice(freshState.topology.name + " reset");
@@ -1146,7 +1152,7 @@ ${linksCode}
               </div>
             </div>
           </details>
-          <details className="group mb-4 rounded-lg border border-white/10 bg-[#101a23]" open>
+          <details className="group mb-4 rounded-lg border border-white/10 bg-[#101a23]">
             <summary className="flex cursor-pointer list-none items-center justify-between px-3 py-2 text-[10px] uppercase tracking-wider text-[#b8c5c8]"><span>Devices</span><span className="text-[#63e6e2] transition group-open:rotate-180">⌄</span></summary>
             <div className="max-h-[360px] space-y-2 overflow-y-auto border-t border-white/10 p-2">
             {filteredDevices.map((device) => {

@@ -6,7 +6,7 @@
 - **Top-of-Page Startup**: Restored the browser viewport to the top when the application boots, when a lab changes, and when entering or leaving a sandbox view.
 
 ### Changed
-- **Network Sandbox Defaults**: Workspace and Devices panels now start collapsed, and device inspection content does not open until the user selects a device.
+- **Network Sandbox Defaults**: Workspace and Devices panels now start collapsed, while the first device remains the default IOS console target; additional device and inspection interactions remain user-driven.
 - **Compact IOS Console Dock**: The Network Sandbox IOS CLI now boots as the first device’s active console in an expanded compact dock with a 150px default height. The dock remains resizable and supports user-controlled minimize, restore, and close actions.
 
 ### Accuracy and Scope Notes

@@ -8,7 +8,7 @@ import { toast } from "sonner";
 import { applyCommand, boot, isCiscoCommand, modePrompt, normalizeCommand, type Mode, type Session } from "@/lib/ios-engine";
 import { Check, ChevronDown, ChevronUp, CircleHelp, Copy, Database, History, Network, Play, RotateCcw, TerminalSquare, Wrench } from "lucide-react";
 import { LAB_REGISTRY, type LabConfig } from "@/labs/labDefinitions";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
 /** 
  * Packet Observatory: Dynamic Engine Version
@@ -19,9 +19,11 @@ function initialSessions(lab: LabConfig): Record<string, Session> {
   return Object.fromEntries(lab.topology.devices.map((device: any) => [device.name || device.id, boot(device.name || device.id, device.role)]));
 }
 
+type LabMenuEntry = { title: string; placeholder?: boolean };
+
 type TrancheMenuProps = {
   name: string;
-  labs: Array<[string, LabConfig]>;
+  labs: Array<[string, LabMenuEntry]>;
   selectedLabId: string;
   onSelectLab: (id: string) => void;
 };
@@ -58,6 +60,37 @@ function TrancheMenu({ name, labs, selectedLabId, onSelectLab }: TrancheMenuProp
   );
 }
 
+
+type MasterTrancheMenuProps = Omit<TrancheMenuProps, "name" | "labs"> & {
+  name: string;
+  tranches: Array<{ name: string; labs: Array<[string, LabMenuEntry]> }>;
+};
+
+function MasterTrancheMenu({ name, tranches, selectedLabId, onSelectLab }: MasterTrancheMenuProps) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" className="flex shrink-0 items-center gap-2 rounded-lg border border-[#f5b74b]/45 bg-[#2a2112] px-3 py-2 text-left text-white transition hover:border-[#f5b74b]/75 hover:bg-[#3a2a16]">
+          <span className="font-mono text-[10px] uppercase tracking-wider text-[#f4d998]">{name}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#f4d998]" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-80 border-[#5a4522] bg-[#101923] p-2 text-[#edf4f3]">
+        <div className="px-2 pb-2 pt-1"><div className="font-mono text-[10px] uppercase tracking-[.16em] text-[#f4d998]">{name}</div><div className="mt-1 text-[11px] text-[#778a92]">Choose a tranche to access its guided labs.</div></div>
+        {tranches.map(({ name, labs }) => (
+          <DropdownMenuSub key={name}>
+            <DropdownMenuSubTrigger className="px-2.5 py-2.5 text-[#d7e4e4] focus:bg-[#2a2112] focus:text-white"><span className="font-mono text-[10px] uppercase tracking-wider text-[#f4d998]">{name}</span></DropdownMenuSubTrigger>
+            <DropdownMenuSubContent className="w-80 border-[#29424a] bg-[#101923] p-2 text-[#edf4f3]">
+              <div className="px-2 pb-2 pt-1"><div className="font-mono text-[10px] uppercase tracking-[.16em] text-[#63e6e2]">{name}</div><div className="mt-1 text-[11px] text-[#778a92]">Select a guided lab path.</div></div>
+              {labs.length > 0 ? labs.map(([id, item]) => <DropdownMenuItem key={id} onSelect={() => !item.placeholder && onSelectLab(id)} disabled={item.placeholder} className={`cursor-pointer gap-3 px-2.5 py-2.5 ${item.placeholder ? "text-[#667780]" : selectedLabId === id ? "bg-[#173038] text-white focus:bg-[#1b4148]" : "text-[#9aabb1] focus:bg-white/[.06] focus:text-white"}`}><span className="w-28 shrink-0 font-mono text-[10px] text-[#63e6e2]">{id.toUpperCase()}</span><span className="min-w-0 flex-1 truncate text-xs">{item.title}</span>{id === selectedLabId && <span className="rounded bg-[#f5b74b]/10 px-1.5 py-0.5 font-mono text-[9px] text-[#f5b74b]">ACTIVE</span>}</DropdownMenuItem>) : <div className="px-2.5 py-3 text-xs text-[#778a92]">No labs assigned yet.</div>}
+            </DropdownMenuSubContent>
+          </DropdownMenuSub>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export default function Home() {
   // State now uses the lab ID (string) from the registry
   const [selectedLabId, setSelectedLabId] = useState("lab-1");
@@ -85,6 +118,10 @@ export default function Home() {
   const complete = stepIndex >= lab.steps.length;
   const percent = Math.round((stepIndex / lab.steps.length) * 100);
   const guidedTrace = useMemo(() => getGuidedTraceProfile(selectedLabId, lab.topology.devices.map((device: any) => device.name || device.id)), [selectedLabId, lab]);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [selectedLabId, sandboxOpen, operationsOpen]);
 
   function selectLab(id: string) {
     setSelectedLabId(id); 
@@ -211,11 +248,20 @@ export default function Home() {
           <button type="button" onClick={() => setSandboxOpen(true)} className="flex shrink-0 items-center gap-2 rounded-lg border border-[#f5b74b]/40 bg-[#2a2112] px-3 py-2 text-left text-[#f4d998] transition hover:border-[#f5b74b]/70 hover:bg-[#3a2a16]">
             <Network className="h-3.5 w-3.5" /><span className="font-mono text-[10px] uppercase tracking-wider">Network Sandbox</span>
           </button>
-          <TrancheMenu name="Tranche One" labs={labsForTranche(1)} selectedLabId={selectedLabId} onSelectLab={selectLab} />
-          <TrancheMenu name="Tranche Two" labs={labsForTranche(2)} selectedLabId={selectedLabId} onSelectLab={selectLab} />
-          <TrancheMenu name="Tranche Three" labs={labsForTranche(3)} selectedLabId={selectedLabId} onSelectLab={selectLab} />
-          <TrancheMenu name="Tranche Four" labs={labsForTranche(4)} selectedLabId={selectedLabId} onSelectLab={selectLab} />
-          <TrancheMenu name="Tranche Five" labs={labsForTranche(5)} selectedLabId={selectedLabId} onSelectLab={selectLab} />
+          {["One", "Two", "Three", "Four", "Five"].map((masterName) => (
+            <MasterTrancheMenu
+              key={masterName}
+              name={`Master Tranche ${masterName}`}
+              tranches={[1, 2, 3, 4, 5].map((tranche) => ({
+                name: `Tranche ${["One", "Two", "Three", "Four", "Five"][tranche - 1]}`,
+                labs: masterName === "One"
+                  ? labsForTranche(tranche as 1 | 2 | 3 | 4 | 5)
+                  : [[`master-${masterName.toLowerCase()}-${tranche}-placeholder`, { title: "Placeholder Lab", placeholder: true }]],
+              }))}
+              selectedLabId={selectedLabId}
+              onSelectLab={selectLab}
+            />
+          ))}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button type="button" className="flex shrink-0 items-center gap-2 rounded-lg border border-[#63e6e2]/35 bg-[#173038] px-3 py-2 text-left text-white transition hover:border-[#63e6e2]/65 hover:bg-[#1b4148]"><Database className="h-3.5 w-3.5 text-[#63e6e2]" /><span className="font-mono text-[10px] uppercase tracking-wider text-[#63e6e2]">Data</span><ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#63e6e2]" /></button>
