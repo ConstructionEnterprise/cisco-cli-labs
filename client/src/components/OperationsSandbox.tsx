@@ -2,13 +2,14 @@ import { Activity, ArrowLeft, ClipboardCheck, CircleAlert, Download, Wrench } fr
 import { useEffect, useState } from "react";
 import OperationsViewport, { type ConnectorInspection, type OperationsTool, type FiberEndpoint, type CertificationState, type DegradationState, type SpliceState, type PolarityState } from "@/components/OperationsViewport";
 import OperationsSchematicPanel from "@/components/OperationsSchematicPanel";
+import InventoryManagementLibrary from "@/components/InventoryManagementLibrary";
 import { createSimulatedFlow, evaluateTraffic, trafficSummary, type SimulatedFlow } from "@/lib/traffic-engine";
 
 type OperationsSandboxProps = {
   onExit: () => void;
 };
 
-type OperationsScenarioId = "quarterly-endface" | "certify-backbone" | "creeping-degradation" | "splice-loss-acceptance" | "mpo-polarity-failure";
+type OperationsScenarioId = "quarterly-endface" | "certify-backbone" | "creeping-degradation" | "splice-loss-acceptance" | "mpo-polarity-failure" | "inventory-management-library";
 type OperationsSnapshot = {
   activeScenario: OperationsScenarioId;
   tool: OperationsTool | null;
@@ -40,6 +41,7 @@ const scenarioLibrary: { id: OperationsScenarioId; title: string; phase: string;
   { id: "creeping-degradation", title: "Detect Creeping Degradation", phase: "Monitoring", description: "Compare current link health against a known-good baseline and identify a marginal link.", available: true, icon: Activity },
   { id: "splice-loss-acceptance", title: "Splice Loss Acceptance", phase: "Diagnosis", description: "Use OTDR to localize a high-loss splice and verify the repair after re-splicing.", available: true, icon: Activity },
   { id: "mpo-polarity-failure", title: "MPO Polarity Failure", phase: "Diagnosis & Repair", description: "Diagnose a polarity mismatch on an MPO trunk and restore connectivity via repatching.", available: true, icon: Wrench },
+  { id: "inventory-management-library", title: "3D Inventory Management and Inspection Library", phase: "Inventory & Inspection", description: "Explore a 3D technician tool crib, inspect asset data, and practice inventory workflows.", available: true, icon: ClipboardCheck },
 ];
 
 function initialConnectors(): ConnectorInspection[] {
@@ -161,7 +163,7 @@ export default function OperationsSandbox({ onExit }: OperationsSandboxProps) {
     setSplice(initialSpliceState());
     setPolarity(initialPolarityState());
     setEndpoints(initialFiberEndpoints());
-    setNotice(id === "certify-backbone" ? "Select the CertiFiber Pro from the tool bench to begin certification." : id === "creeping-degradation" ? "Select the Optical Power Meter from the tool bench to start link health monitoring." : id === "splice-loss-acceptance" ? "Select the OptiFiber Pro (OTDR) from the tool bench to localize the splice fault." : id === "mpo-polarity-failure" ? "Select the MultiFiber Pro from the tool bench to diagnose MPO polarity." : "Select the FI-3000 from the tool bench, then inspect an LC connector.");
+    setNotice(id === "certify-backbone" ? "Select the CertiFiber Pro from the tool bench to begin certification." : id === "creeping-degradation" ? "Select the Optical Power Meter from the tool bench to start link health monitoring." : id === "splice-loss-acceptance" ? "Select the OptiFiber Pro (OTDR) from the tool bench to localize the splice fault." : id === "mpo-polarity-failure" ? "Select the MultiFiber Pro from the tool bench to diagnose MPO polarity." : id === "inventory-management-library" ? "Select an asset in the 3D inventory room to inspect its SKU, location, and technical data." : "Select the FI-3000 from the tool bench, then inspect an LC connector.");
     setTrafficFlows([]);
   }
 
@@ -928,9 +930,9 @@ export default function OperationsSandbox({ onExit }: OperationsSandboxProps) {
           </aside>
           <OperationsViewport tool={tool} connectors={connectors} onSelectTool={(nextTool) => { setTool(nextTool); setNotice(nextTool === "multifiber" ? "MultiFiber Pro selected. Run the polarity test." : "Select MultiFiber Pro from the tool bench."); }} onInspectConnector={interactWithConnector} scenario={activeScenario} certification={undefined} degradation={undefined} splice={undefined} polarity={polarity} endpoints={endpoints} onSelectEndpoint={selectEndpoint} />
           <OperationsSchematicPanel tool={tool} connector={selectedConnector} certification={undefined} degradation={undefined} splice={undefined} polarity={polarity} endpoints={endpoints} />
-        </section> : <section className="mt-5 rounded-2xl border border-[#f5b74b]/25 bg-[#2a2112] p-6 text-[#f4d998]"><div className="font-mono text-[10px] uppercase tracking-wider text-[#f5b74b]">Scenario planned</div><h2 className="mt-2 font-display text-xl font-semibold text-white">This workflow is queued for the next Operations Sandbox slice.</h2><p className="mt-2 max-w-2xl text-sm leading-6">The scenario remains visible in the library so the operational curriculum is discoverable while we build its procedural tools and acceptance criteria.</p></section>}
+        </section> : activeScenario === "inventory-management-library" ? <InventoryManagementLibrary /> : <section className="mt-5 rounded-2xl border border-[#f5b74b]/25 bg-[#2a2112] p-6 text-[#f4d998]"><div className="font-mono text-[10px] uppercase tracking-wider text-[#f5b74b]">Scenario planned</div><h2 className="mt-2 font-display text-xl font-semibold text-white">This workflow is queued for the next Operations Sandbox slice.</h2><p className="mt-2 max-w-2xl text-sm leading-6">The scenario remains visible in the library so the operational curriculum is discoverable while we build its procedural tools and acceptance criteria.</p></section>}
 
-        <section className="mt-5 rounded-2xl border border-[#63e6e2]/20 bg-[#101923] p-5 lg:p-7">
+        {activeScenario !== "inventory-management-library" && <section className="mt-5 rounded-2xl border border-[#63e6e2]/20 bg-[#101923] p-5 lg:p-7">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
             <div>
               <div className="font-mono text-[10px] uppercase tracking-[.18em] text-[#63e6e2]">Simulated Internet Traffic Fabric</div>
@@ -947,9 +949,9 @@ export default function OperationsSandbox({ onExit }: OperationsSandboxProps) {
               </div>
             )) : <div className="text-xs text-[#667780]">No simulated flows have been generated in this operations session.</div>}
           </div>
-        </section>
+        </section>}
 
-        <section className="mt-5 rounded-2xl border border-white/10 bg-[#101923] p-5 lg:p-7">
+        {activeScenario !== "inventory-management-library" && <section className="mt-5 rounded-2xl border border-white/10 bg-[#101923] p-5 lg:p-7">
           <div className="flex items-center gap-3 border-b border-white/10 pb-5">
             <CircleAlert className="h-5 w-5 text-[#f5b74b]" />
             <div>
@@ -958,7 +960,7 @@ export default function OperationsSandbox({ onExit }: OperationsSandboxProps) {
             </div>
           </div>
           <div className="mt-5 grid gap-3 md:grid-cols-3"><div className="rounded-lg border border-white/10 bg-[#0d151e] p-4 text-xs text-[#8fa0a7]"><ClipboardCheck className="mb-3 h-4 w-4 text-[#63e6e2]" /><strong className="block text-white">Commissioning</strong>Certify new links and capture known-good baselines.</div><div className="rounded-lg border border-white/10 bg-[#0d151e] p-4 text-xs text-[#8fa0a7]"><Wrench className="mb-3 h-4 w-4 text-[#f5b74b]" /><strong className="block text-white">Maintenance</strong>Inspect and clean infrastructure before failure.</div><div className="rounded-lg border border-white/10 bg-[#0d151e] p-4 text-xs text-[#8fa0a7]"><Activity className="mb-3 h-4 w-4 text-[#63e6e2]" /><strong className="block text-white">Monitoring</strong>Detect degradation and document operational risk.</div></div>
-        </section>
+        </section>}
       </div>
     </main>
   );

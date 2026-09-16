@@ -1,5 +1,20 @@
 # Changelog
 
+## [2026-09-16] - 3D Inventory Management and Inspection Library
+### Added
+- **Interactive Inventory Room**: Added a browser-native Three.js technician tool crib with categorized network, fiber, active-hardware, and bulk-cabling assets.
+- **Inspection Workbench**: Added a centered physical workbench with tabletop, legs, storage rails, and an active-asset highlight. Inventory aisles are symmetrically spaced around the center aisle.
+- **Asset Inspection Data**: Added SKU, quantity, status, location, manufacturer, part number, weight, unit price, coil/spool length, and price-per-meter fields where applicable.
+- **Bill of Materials**: Added multi-item BOM selection and deterministic procurement-cost totals.
+- **T568B Training Exercise**: Added a LinkIQ-style wiremap activity using the eight-wire T568B sequence.
+
+### Changed
+- **Inspection Interaction**: Single-click now selects an asset and updates the inspector; double-click populates the asset onto the workbench. Return to Shelf restores the original location.
+- **Operations Scenario Presentation**: The inventory scenario no longer renders unrelated simulated Internet Traffic or generic Operations Library panels, while the shared Operations Sandbox functionality remains available to scenarios that use it.
+
+### Accuracy Notes
+- The inventory room is a modeled training and reference environment. Prices, specifications, quantities, and spatial geometry are deterministic catalog data and are not live procurement or physical inventory records.
+
 ## [2026-09-16] - Curriculum Navigation and Sandbox Startup Layout
 ### Added
 - **Master Tranche Navigation**: Added Master Tranche One through Master Tranche Five buttons to the Curriculum ribbon. Each master menu contains nested Tranche One–Five menus; Master Tranche One routes to the existing guided labs, while Master Tranches Two–Five expose disabled generic `Placeholder Lab` entries for future curriculum work.
