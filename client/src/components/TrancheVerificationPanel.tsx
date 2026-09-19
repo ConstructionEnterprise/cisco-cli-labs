@@ -3,7 +3,7 @@ import { Minimize2, Network, Router, Table2 } from "lucide-react";
 import type { Session } from "@/lib/ios-engine";
 import ResizeGrabBar from "@/components/ResizeGrabBar";
 
-type VerificationTab = "interfaces" | "arp" | "mac" | "trunks" | "etherchannels" | "acls";
+type VerificationTab = "interfaces" | "arp" | "mac" | "trunks" | "etherchannels" | "acls" | "natpat";
 
 const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "interfaces", label: "IP Interfaces" },
@@ -12,6 +12,7 @@ const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "trunks", label: "Trunks" },
   { id: "etherchannels", label: "EtherChannels" },
   { id: "acls", label: "ACLs" },
+  { id: "natpat", label: "NAT / PAT" },
 ];
 
 function EmptyState({ message }: { message: string }) {
@@ -64,6 +65,24 @@ export default function TrancheVerificationPanel({ session, deviceName, height, 
     }
     return rows;
   }, [session.runningConfig]);
+  const natPatRows = useMemo(() => {
+    const rows: Array<Array<string | number>> = [];
+    for (const command of session.runningConfig || []) {
+      const pat = command.match(/^ip nat inside source list (\d+) interface (\S+) overload$/i);
+      if (pat) {
+        rows.push(["PAT overload", `ACL ${pat[1]}`, `Interface ${pat[2]}`, "overload"]);
+        continue;
+      }
+      const staticNat = command.match(/^ip nat inside source static (.+)$/i);
+      if (staticNat) {
+        rows.push(["Static NAT", staticNat[1], "one-to-one", "configured"]);
+        continue;
+      }
+      const asaPat = command.match(/^nat \(inside,outside\) dynamic interface$/i);
+      if (asaPat) rows.push(["Dynamic PAT", "inside → outside", "outside interface", "dynamic"]);
+    }
+    return rows;
+  }, [session.runningConfig]);
   const data: Record<VerificationTab, { description: string; headers: string[]; rows: Array<Array<string | number>> }> = {
     interfaces: { description: "Live interface address, default gateway, and operational state from the active IOS session.", headers: ["Interface", "IP Address", "Default Gateway", "Status", "Admin State", "Role"], rows: interfaceRows },
     arp: { description: "Modeled IP-to-MAC neighbor mappings learned by this device.", headers: ["Protocol Address", "Hardware Address", "Interface", "Age"], rows: arpRows },
@@ -71,6 +90,7 @@ export default function TrancheVerificationPanel({ session, deviceName, height, 
     trunks: { description: "Configured trunk links, native VLAN, and allowed VLAN state.", headers: ["Interface", "Status", "Native VLAN", "Allowed VLANs"], rows: trunkRows },
     etherchannels: { description: "Configured EtherChannel members and their modeled negotiation mode.", headers: ["Port-Channel", "Member", "Mode", "Status", "Switchport"], rows: etherChannelRows },
     acls: { description: "Numbered and named ACL rules currently present in the active IOS running configuration.", headers: ["ACL", "Type", "Action", "Rule / Match"], rows: aclRows },
+    natpat: { description: "Configured NAT and PAT rules from the active IOS running configuration. Translation entries will appear here when the model learns them.", headers: ["Mode", "Source", "Translation", "State"], rows: natPatRows },
   };
   const current = data[activeTab];
   return <section className="mt-6 overflow-hidden rounded-xl border border-[#63e6e2]/20 bg-[#0d1920] shadow-xl">
