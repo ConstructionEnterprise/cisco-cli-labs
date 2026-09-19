@@ -1,5 +1,26 @@
 # Changelog
 
+## [2026-09-19] - Tranche Verification Workspace
+### Added
+- **Live Verification Tables**: Added a tranche-only panel below the IOS simulator with IP interface, ARP, MAC address, trunk, and EtherChannel tabs. The tables derive from the active IOS session and display explicit empty states when no modeled entries are present.
+- **Resizable CLI and Verification Panels**: Added keyboard-accessible grab bars to resize both panels upward or downward within bounded heights. Arrow keys make incremental adjustments, while Home and End move directly to the minimum and maximum heights.
+- **Independent Minimize Controls**: Added separate minimize and restore buttons for the IOS simulator and Live Verification Tables, leaving each panel header visible while its body is collapsed.
+
+### Changed
+- **Tranche Workspace Layout**: Removed legacy CSS minimum-height constraints from the IOS simulator so the resize state is honored throughout its full range instead of stopping at the old terminal-shell and terminal-output minimums.
+
+### Fixed
+- **NAT/PAT Parser Validation**: Added the standard IOS `ip nat inside source list <number> interface <interface> overload` grammar to Global Configuration mode. The focused regression test confirms acceptance in config mode, rejection in interface mode, and preservation of existing `ip nat inside` interface behavior.
+
+### Validation
+- Focused NAT/PAT regression test passed.
+- `pnpm run check` passed.
+- Preview refreshed successfully.
+- The parser fix remains local and uncommitted in `client/src/lib/ios-engine.ts`.
+
+### Scope Notes
+- These verification and layout controls belong to the guided Tranche Labs. The Network Sandbox and Operations Sandbox retain their separate workflows and presentation behavior.
+
 ## [2026-09-16] - 3D Inventory Management and Inspection Library
 ### Added
 - **Interactive Inventory Room**: Added a browser-native Three.js technician tool crib with categorized network, fiber, active-hardware, and bulk-cabling assets.

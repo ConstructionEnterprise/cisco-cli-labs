@@ -4,9 +4,11 @@ import NetworkSandbox from "@/components/NetworkSandbox";
 import OperationsSandbox from "@/components/OperationsSandbox";
 import TrafficDataPanel from "@/components/TrafficDataPanel";
 import GuidedPacketTrace, { getGuidedTraceProfile } from "@/components/GuidedPacketTrace";
+import TrancheVerificationPanel from "@/components/TrancheVerificationPanel";
+import ResizeGrabBar from "@/components/ResizeGrabBar";
 import { toast } from "sonner";
 import { applyCommand, boot, isCiscoCommand, modePrompt, normalizeCommand, type Mode, type Session } from "@/lib/ios-engine";
-import { Check, ChevronDown, ChevronUp, CircleHelp, Copy, Database, History, Network, Play, RotateCcw, TerminalSquare, Wrench } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, CircleHelp, Copy, Database, History, Minimize2, Network, Play, RotateCcw, TerminalSquare, Wrench } from "lucide-react";
 import { LAB_REGISTRY, type LabConfig } from "@/labs/labDefinitions";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -111,6 +113,10 @@ export default function Home() {
   const [labHeaderOpen, setLabHeaderOpen] = useState(true);
   const [commandHistoryOpen, setCommandHistoryOpen] = useState(false);
   const [commandHistory, setCommandHistory] = useState<Record<string, string[]>>({});
+  const [terminalHeight, setTerminalHeight] = useState(380);
+  const [verificationHeight, setVerificationHeight] = useState(320);
+  const [terminalMinimized, setTerminalMinimized] = useState(false);
+  const [verificationMinimized, setVerificationMinimized] = useState(false);
 
   const step = lab.steps[Math.min(stepIndex, lab.steps.length - 1)];
   const session = sessions[activeDevice];
@@ -135,6 +141,10 @@ export default function Home() {
     setLabHeaderOpen(true);
     setCommandHistoryOpen(false);
     setCommandHistory({});
+    setTerminalHeight(380);
+    setVerificationHeight(320);
+    setTerminalMinimized(false);
+    setVerificationMinimized(false);
   }
 
   function reset() { 
@@ -146,7 +156,34 @@ export default function Home() {
     setTraceRun(0);
     setCommandHistoryOpen(false);
     setCommandHistory({});
+    setTerminalHeight(380);
+    setVerificationHeight(320);
+    setTerminalMinimized(false);
+    setVerificationMinimized(false);
     toast("Lab reset", { description: `${lab.title} is ready at the first IOS prompt.` }); 
+  }
+
+  function beginResize(event: React.PointerEvent<HTMLDivElement>, setter: React.Dispatch<React.SetStateAction<number>>, startHeight: number, min: number, max: number) {
+    event.preventDefault();
+    const startY = event.clientY;
+    const move = (moveEvent: PointerEvent) => setter(Math.min(max, Math.max(min, startHeight + moveEvent.clientY - startY)));
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+  }
+
+  function adjustHeight(setter: React.Dispatch<React.SetStateAction<number>>, current: number, amount: number, min: number, max: number) {
+    setter(Math.min(max, Math.max(min, current + amount)));
+  }
+
+  function handleResizeKey(event: React.KeyboardEvent<HTMLDivElement>, setter: React.Dispatch<React.SetStateAction<number>>, current: number, min: number, max: number) {
+    const amount = event.key === "ArrowUp" ? -24 : event.key === "ArrowDown" ? 24 : event.key === "Home" ? min - current : event.key === "End" ? max - current : 0;
+    if (!amount) return;
+    event.preventDefault();
+    adjustHeight(setter, current, amount, min, max);
   }
 
   function submit(value = input) {
@@ -399,7 +436,7 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="terminal-shell">
+            <div className="terminal-shell" style={{ minHeight: 0 }}>
               <div className="relative flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#111b24] px-5 py-3">
                 <div className="flex items-center gap-2">
                   <div className="flex gap-1.5">
@@ -412,6 +449,7 @@ export default function Home() {
                   <button type="button" aria-expanded={commandHistoryOpen} onClick={() => setCommandHistoryOpen((open) => !open)} className="flex items-center gap-1.5 rounded border border-[#63e6e2]/25 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-[#b9eeee] transition hover:border-[#63e6e2]/60 hover:bg-[#173038]">
                     <History className="h-3.5 w-3.5" /> Command History
                   </button>
+                  <button type="button" aria-expanded={!terminalMinimized} aria-controls="tranche-ios-sim-body" onClick={() => setTerminalMinimized((minimized) => !minimized)} className="flex items-center gap-1.5 rounded border border-[#f5b74b]/25 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-[#f4d998] transition hover:border-[#f5b74b]/60 hover:bg-[#2a2112]"><Minimize2 className="h-3.5 w-3.5" /> {terminalMinimized ? "Restore CLI" : "Minimize CLI"}</button>
                 </div>
                 {commandHistoryOpen && <div className="absolute right-4 top-full z-30 mt-2 max-h-80 w-[min(28rem,calc(100vw-2rem))] overflow-y-auto rounded-lg border border-[#63e6e2]/30 bg-[#101923] p-3 shadow-2xl">
                   <div className="mb-2 flex items-center justify-between border-b border-white/10 pb-2">
@@ -421,7 +459,7 @@ export default function Home() {
                   {activeCommandHistory.length ? activeCommandHistory.map((command, index) => <div key={`${command}-${index}`} className="flex gap-3 border-b border-white/[.06] py-1.5 font-mono text-[10px] text-[#b5c2c6]"><span className="w-5 shrink-0 text-right text-[#667780]">{index + 1}</span><span>{command}</span></div>) : <div className="py-3 text-xs text-[#778a92]">No commands entered on this device yet.</div>}
                 </div>}
               </div>
-              <div className="terminal-output min-h-[380px]" aria-live="polite">
+              {!terminalMinimized && <div id="tranche-ios-sim-body" className="terminal-output overflow-y-auto" style={{ height: terminalHeight, minHeight: 0 }} aria-live="polite">
                 {recent.map((line, index) => (
                   <div key={`${line}-${index}`} className={`${line.startsWith("%") ? "text-[#f07178]" : line.startsWith("Hint:") ? "text-[#f5b74b]" : line.startsWith("Cisco") || line.includes("·") || line.startsWith("Full IOS") ? "text-[#72848d]" : line.startsWith("✓") || line.includes("applied") || line.includes("enabled") || line.includes("entered") || line.includes("configured") || line.includes("visible") || line.includes("Success") ? "text-[#b5d8d4]" : "text-[#a4b2b7]"}`}>{line || "\u00a0"}</div>
                 ))}
@@ -431,8 +469,8 @@ export default function Home() {
                     <input autoFocus value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submit()} className="min-w-0 flex-1 bg-transparent font-mono text-sm text-white outline-none placeholder:text-[#42535c]" placeholder="type the full Cisco IOS command..." aria-label="Cisco IOS command" />
                   </div>
                 )}
-              </div>
-              <div className="border-t border-white/10 bg-[#0e1720] px-5 py-3">
+              </div>}
+              {!terminalMinimized && <div className="border-t border-white/10 bg-[#0e1720] px-5 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" className="border-white/15 bg-transparent text-[#94a4aa] hover:bg-white/10 hover:text-white" onClick={() => setHint((value) => !value)}>
@@ -446,8 +484,27 @@ export default function Home() {
                     <Play className="mr-2 h-3.5 w-3.5" /> Run suggested
                   </Button>
                 </div>
-              </div>
+              </div>}
             </div>
+
+            {!terminalMinimized && <ResizeGrabBar
+              label="Resize IOS simulator"
+              value={terminalHeight}
+              min={220}
+              max={760}
+              onPointerDown={(event) => beginResize(event, setTerminalHeight, terminalHeight, 220, 760)}
+              onKeyDown={(event) => handleResizeKey(event, setTerminalHeight, terminalHeight, 220, 760)}
+            />}
+
+            <TrancheVerificationPanel
+              session={session}
+              deviceName={activeDevice}
+              height={verificationHeight}
+              minimized={verificationMinimized}
+              onToggleMinimized={() => setVerificationMinimized((minimized) => !minimized)}
+              onResizeStart={(event) => beginResize(event, setVerificationHeight, verificationHeight, 220, 760)}
+              onResizeKeyDown={(event) => handleResizeKey(event, setVerificationHeight, verificationHeight, 220, 760)}
+            />
 
             <div className="mt-6 grid gap-4 md:grid-cols-3">
               <div className="panel-surface p-4">
