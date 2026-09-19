@@ -240,6 +240,7 @@ export function applyCommand(session: Session, command: string, history: string[
   }
   if (session.mode === "config" && !["configure terminal", "end", "exit"].includes(canonical) && !canonical.startsWith("interface ")) next.runningConfig.push(typed);
   if ((session.mode === "interface" || session.mode === "subinterface") && !["end", "exit"].includes(canonical)) next.runningConfig.push(typed);
+  if (session.mode === "acl" && !["end", "exit"].includes(canonical)) next.runningConfig.push(typed);
   if (session.mode === "object-network" && !["end", "exit"].includes(canonical)) next.runningConfig.push(typed);
   return next;
 }

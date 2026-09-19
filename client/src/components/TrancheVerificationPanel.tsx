@@ -3,7 +3,7 @@ import { Minimize2, Network, Router, Table2 } from "lucide-react";
 import type { Session } from "@/lib/ios-engine";
 import ResizeGrabBar from "@/components/ResizeGrabBar";
 
-type VerificationTab = "interfaces" | "arp" | "mac" | "trunks" | "etherchannels";
+type VerificationTab = "interfaces" | "arp" | "mac" | "trunks" | "etherchannels" | "acls";
 
 const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "interfaces", label: "IP Interfaces" },
@@ -11,6 +11,7 @@ const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "mac", label: "MAC Address" },
   { id: "trunks", label: "Trunks" },
   { id: "etherchannels", label: "EtherChannels" },
+  { id: "acls", label: "ACLs" },
 ];
 
 function EmptyState({ message }: { message: string }) {
@@ -39,12 +40,37 @@ export default function TrancheVerificationPanel({ session, deviceName, height, 
   const macRows = (session.macTable || []).map((entry) => [entry.vlan, entry.mac, entry.type, entry.port, entry.lastSeen ? new Date(entry.lastSeen).toLocaleTimeString() : "—"]);
   const trunkRows = interfaces.filter(([, state]) => state.switchportMode === "trunk").map(([name, state]) => [name, state.status, state.nativeVlan ?? "1", state.allowedVlans || "all"]);
   const etherChannelRows = interfaces.filter(([, state]) => state.channelGroup !== undefined).map(([name, state]) => [`Po${state.channelGroup}`, name, state.channelMode || "—", state.status, state.switchportMode || "—"]);
+  const aclRows = useMemo(() => {
+    const rows: Array<Array<string | number>> = [];
+    let namedAcl: { name: string; type: string } | null = null;
+    for (const command of session.runningConfig || []) {
+      const namedHeader = command.match(/^ip access-list (standard|extended) (\S+)/i);
+      if (namedHeader) {
+        namedAcl = { type: namedHeader[1].toLowerCase(), name: namedHeader[2] };
+        continue;
+      }
+      const numberedRule = command.match(/^access-list (\S+) (?:(extended) )?(permit|deny) (.+)/i);
+      if (numberedRule) {
+        rows.push([numberedRule[1], numberedRule[2] ? "extended" : "standard", numberedRule[3].toLowerCase(), numberedRule[4]]);
+        namedAcl = null;
+        continue;
+      }
+      const namedRule = command.match(/^(permit|deny|remark) (.+)/i);
+      if (namedAcl && namedRule) {
+        rows.push([namedAcl.name, namedAcl.type, namedRule[1].toLowerCase(), namedRule[2]]);
+        continue;
+      }
+      if (namedAcl && !command.startsWith(" ")) namedAcl = null;
+    }
+    return rows;
+  }, [session.runningConfig]);
   const data: Record<VerificationTab, { description: string; headers: string[]; rows: Array<Array<string | number>> }> = {
     interfaces: { description: "Live interface address, default gateway, and operational state from the active IOS session.", headers: ["Interface", "IP Address", "Default Gateway", "Status", "Admin State", "Role"], rows: interfaceRows },
     arp: { description: "Modeled IP-to-MAC neighbor mappings learned by this device.", headers: ["Protocol Address", "Hardware Address", "Interface", "Age"], rows: arpRows },
     mac: { description: "Modeled Layer 2 forwarding entries learned by this device.", headers: ["VLAN", "MAC Address", "Type", "Port", "Last Seen"], rows: macRows },
     trunks: { description: "Configured trunk links, native VLAN, and allowed VLAN state.", headers: ["Interface", "Status", "Native VLAN", "Allowed VLANs"], rows: trunkRows },
     etherchannels: { description: "Configured EtherChannel members and their modeled negotiation mode.", headers: ["Port-Channel", "Member", "Mode", "Status", "Switchport"], rows: etherChannelRows },
+    acls: { description: "Numbered and named ACL rules currently present in the active IOS running configuration.", headers: ["ACL", "Type", "Action", "Rule / Match"], rows: aclRows },
   };
   const current = data[activeTab];
   return <section className="mt-6 overflow-hidden rounded-xl border border-[#63e6e2]/20 bg-[#0d1920] shadow-xl">
