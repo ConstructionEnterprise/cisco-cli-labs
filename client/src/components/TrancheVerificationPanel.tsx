@@ -25,13 +25,22 @@ function Table({ headers, rows }: { headers: string[]; rows: Array<Array<string 
 export default function TrancheVerificationPanel({ session, deviceName, height, minimized, onToggleMinimized, onResizeStart, onResizeKeyDown }: { session: Session; deviceName: string; height: number; minimized: boolean; onToggleMinimized: () => void; onResizeStart: (event: React.PointerEvent<HTMLDivElement>) => void; onResizeKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void }) {
   const [activeTab, setActiveTab] = useState<VerificationTab>("interfaces");
   const interfaces = useMemo(() => Object.entries(session.interfaces || {}), [session.interfaces]);
-  const interfaceRows = interfaces.map(([name, state]) => [name, state.ipv4.length ? state.ipv4.join(", ") : "unassigned", state.status, state.shutdown ? "administratively down" : "up", state.switchportMode || "routed"]);
+  const defaultGateway = useMemo(() => {
+    for (const command of [...(session.runningConfig || [])].reverse()) {
+      const routeMatch = command.match(/^ip route 0\.0\.0\.0 0\.0\.0\.0 ([0-9.]+)/i);
+      if (routeMatch) return routeMatch[1];
+      const gatewayMatch = command.match(/^ip default-gateway ([0-9.]+)/i);
+      if (gatewayMatch) return gatewayMatch[1];
+    }
+    return "—";
+  }, [session.runningConfig]);
+  const interfaceRows = interfaces.map(([name, state]) => [name, state.ipv4.length ? state.ipv4.join(", ") : "unassigned", defaultGateway, state.status, state.shutdown ? "administratively down" : "up", state.switchportMode || "routed"]);
   const arpRows = (session.arpTable || []).map((entry) => [entry.ip, entry.mac, entry.interface, String(entry.age)]);
   const macRows = (session.macTable || []).map((entry) => [entry.vlan, entry.mac, entry.type, entry.port, entry.lastSeen ? new Date(entry.lastSeen).toLocaleTimeString() : "—"]);
   const trunkRows = interfaces.filter(([, state]) => state.switchportMode === "trunk").map(([name, state]) => [name, state.status, state.nativeVlan ?? "1", state.allowedVlans || "all"]);
   const etherChannelRows = interfaces.filter(([, state]) => state.channelGroup !== undefined).map(([name, state]) => [`Po${state.channelGroup}`, name, state.channelMode || "—", state.status, state.switchportMode || "—"]);
   const data: Record<VerificationTab, { description: string; headers: string[]; rows: Array<Array<string | number>> }> = {
-    interfaces: { description: "Live interface address and operational state from the active IOS session.", headers: ["Interface", "IP Address", "Status", "Admin State", "Role"], rows: interfaceRows },
+    interfaces: { description: "Live interface address, default gateway, and operational state from the active IOS session.", headers: ["Interface", "IP Address", "Default Gateway", "Status", "Admin State", "Role"], rows: interfaceRows },
     arp: { description: "Modeled IP-to-MAC neighbor mappings learned by this device.", headers: ["Protocol Address", "Hardware Address", "Interface", "Age"], rows: arpRows },
     mac: { description: "Modeled Layer 2 forwarding entries learned by this device.", headers: ["VLAN", "MAC Address", "Type", "Port", "Last Seen"], rows: macRows },
     trunks: { description: "Configured trunk links, native VLAN, and allowed VLAN state.", headers: ["Interface", "Status", "Native VLAN", "Allowed VLANs"], rows: trunkRows },
