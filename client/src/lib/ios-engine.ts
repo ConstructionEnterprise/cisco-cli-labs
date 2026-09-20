@@ -201,10 +201,15 @@ export function applyCommand(session: Session, command: string, history: string[
   }
   const ping = session.mode === "privileged" ? canonical.match(/^ping ([0-9.]+)$/) : null;
   if (ping) {
-    const [interfaceName, interfaceState] = Object.entries(next.interfaces).find(([, state]) => state.status === "up" && !state.shutdown && state.ipv4.length) || [];
+    const [interfaceName, interfaceState] = Object.entries(next.interfaces).find(([name, state]) => {
+      const parentName = name.includes(".") ? name.split(".")[0] : null;
+      const parent = parentName ? next.interfaces[parentName] : undefined;
+      const operational = state.status === "up" && !state.shutdown || Boolean(parent && parent.status === "up" && !parent.shutdown && state.encapsulation === "dot1q");
+      return operational && state.ipv4.length;
+    }) || [];
     if (interfaceName && interfaceState) {
       const mac = modeledPeerMac(ping[1]);
-      const vlan = interfaceState.accessVlan ?? 1;
+      const vlan = interfaceState.vlanId ?? interfaceState.accessVlan ?? 1;
       const arpEntry = { ip: ping[1], mac, interface: interfaceName, age: 0 };
       const macEntry = { mac, port: interfaceName, vlan, type: "dynamic" as const, lastSeen: Date.now() };
       next.arpTable = [...next.arpTable.filter((entry) => entry.ip !== ping[1]), arpEntry];

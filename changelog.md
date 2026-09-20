@@ -16,6 +16,7 @@
 - **DHCP Verification**: Added a DHCP tab to the live verification panel. It displays modeled DHCP pools, active or expired leases, excluded addresses, and DHCP-client state directly from the active IOS session.
 - **Interface and VLAN Relationships**: Added modeled 802.1Q encapsulation and VLAN IDs to interface state, derived Router-on-a-Stick subinterface status from the physical parent, expanded IP Interfaces with parent/VLAN/encapsulation/gateway relationships, and added a VLANs tab relating VLAN names to routed gateways, access ports, and trunks. Router-on-a-Stick now guides CE-SW1 VLAN/trunk configuration and correctly targets `show vlan brief` and `show interfaces trunk` at the switch.
 - **CDP Verification**: Added a topology-backed CDP tab across applicable tranche labs. It relates each active network device's local interface to a network-capable neighbor and remote port, labels the neighbor role, and distinguishes direct links from trunk or VLAN gateway relationships.
+- **ROAS Neighbor Learning Fix**: Corrected modeled ping learning for 802.1Q subinterfaces. A subinterface now qualifies for ARP/MAC learning when its physical parent is operational and the subinterface has dot1Q encapsulation and an IPv4 address, matching the derived interface state shown in the verification panel.
 
 ### Changed
 - **Tranche Workspace Layout**: Removed legacy CSS minimum-height constraints from the IOS simulator so the resize state is honored throughout its full range instead of stopping at the old terminal-shell and terminal-output minimums.
