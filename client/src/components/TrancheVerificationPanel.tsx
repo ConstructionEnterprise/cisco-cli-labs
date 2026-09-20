@@ -3,7 +3,7 @@ import { Minimize2, Network, Router, Table2 } from "lucide-react";
 import type { Session } from "@/lib/ios-engine";
 import ResizeGrabBar from "@/components/ResizeGrabBar";
 
-type VerificationTab = "interfaces" | "arp" | "mac" | "trunks" | "etherchannels" | "acls" | "natpat" | "ospf";
+type VerificationTab = "interfaces" | "arp" | "mac" | "trunks" | "etherchannels" | "acls" | "natpat" | "dhcp" | "ospf";
 
 const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "interfaces", label: "IP Interfaces" },
@@ -13,6 +13,7 @@ const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "etherchannels", label: "EtherChannels" },
   { id: "acls", label: "ACLs" },
   { id: "natpat", label: "NAT / PAT" },
+  { id: "dhcp", label: "DHCP" },
   { id: "ospf", label: "OSPF" },
 ];
 
@@ -89,6 +90,17 @@ export default function TrancheVerificationPanel({ session, deviceName, height, 
     return rows;
   }, [session.runningConfig]);
   const ospfRows = useMemo(() => Object.values(session.ospfProcesses || {}).map((process) => [String(process.id), process.routerId || "—", process.networks.length ? process.networks.map((network) => `${network.network} / ${network.wildcard} (area ${network.area})`).join("; ") : "—", process.passiveInterfaces?.length ? process.passiveInterfaces.join(", ") : "none"]), [session.ospfProcesses]);
+  const dhcpRows = useMemo(() => {
+    const rows: Array<Array<string | number>> = [];
+    for (const pool of Object.values(session.dhcpPools || {})) {
+      rows.push(["Pool", pool.name, pool.network && pool.mask ? `${pool.network} / ${pool.mask}` : "—", "configured", pool.defaultRouter || pool.dnsServer ? `GW ${pool.defaultRouter || "—"} · DNS ${pool.dnsServer || "—"}` : "—", "—"]);
+    }
+    for (const lease of session.dhcpLeases || []) rows.push(["Lease", lease.clientId, lease.ip, lease.state, lease.mac, lease.pool]);
+    for (const address of session.dhcpExcludedAddresses || []) rows.push(["Excluded", address, "reserved", "—", "—", "—"]);
+    if (session.dhcpClient) rows.push(["Client", session.dhcpClient.mac, session.dhcpClient.ip || "—", session.dhcpClient.state, session.dhcpClient.gateway || "—", session.dhcpClient.interface]);
+    for (const [name, state] of Object.entries(session.interfaces || {})) if (state.dhcpClient && !session.dhcpClient) rows.push(["Client", name, "address pending", "INIT", "—", name]);
+    return rows;
+  }, [session.dhcpClient, session.dhcpExcludedAddresses, session.dhcpLeases, session.dhcpPools, session.interfaces]);
   const data: Record<VerificationTab, { description: string; headers: string[]; rows: Array<Array<string | number>> }> = {
     interfaces: { description: "Live interface address, default gateway, and operational state from the active IOS session.", headers: ["Interface", "IP Address", "Default Gateway", "Status", "Admin State", "Role"], rows: interfaceRows },
     arp: { description: "Modeled IP-to-MAC neighbor mappings learned by this device.", headers: ["Protocol Address", "Hardware Address", "Interface", "Age"], rows: arpRows },
@@ -97,6 +109,7 @@ export default function TrancheVerificationPanel({ session, deviceName, height, 
     etherchannels: { description: "Configured EtherChannel members, explicitly identifying LACP active/passive negotiation versus static mode-on bundling.", headers: ["Port-Channel", "Member", "Protocol", "Mode", "Status", "Switchport"], rows: etherChannelRows },
     acls: { description: "Numbered and named ACL rules currently present in the active IOS running configuration.", headers: ["ACL", "Type", "Action", "Rule / Match"], rows: aclRows },
     natpat: { description: "Configured NAT and PAT rules from the active IOS running configuration. Translation entries will appear here when the model learns them.", headers: ["Mode", "Source", "Translation", "State"], rows: natPatRows },
+    dhcp: { description: "Modeled DHCP pools, leases, exclusions, and client state from the active IOS session.", headers: ["Record", "Identity", "Addressing", "Lease / State", "Gateway / MAC", "Interface / Pool"], rows: dhcpRows },
     ospf: { description: "Configured OSPF processes, router IDs, network statements, and passive interfaces from the active IOS session. Neighbor adjacencies are not yet modeled in this panel.", headers: ["Process", "Router ID", "Advertised Networks", "Passive Interfaces"], rows: ospfRows },
   };
   const current = data[activeTab];
