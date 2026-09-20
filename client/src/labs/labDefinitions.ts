@@ -982,7 +982,34 @@ type PracticeExtension = {
   targetDevice: string;
   commands: string[];
 };
+type ModeledTrafficStep = {
+  targetDevice: string;
+  command: string;
+  label: string;
+  description: string;
+  successMessage: string;
+};
 
+// These are core objectives, not generic evidence passes. Each destination is
+// chosen from the lab's modeled IPv4 topology so the ping can create useful
+// ARP/MAC evidence in the Live Verification Tables at the point it is taught.
+const MODELED_TRAFFIC_STEPS: Record<string, ModeledTrafficStep> = {
+  "tr3-router-on-a-stick": { targetDevice: "CE-R1", command: "ping 192.168.10.10", label: "Generate Inter-VLAN Traffic", description: "Ping the Engineering host to model routed traffic and learn its ARP and dynamic MAC evidence.", successMessage: "The modeled inter-VLAN ping learned the Engineering host in the ARP and MAC tables." },
+  "tr3-static-routing": { targetDevice: "CE-R1", command: "ping 10.0.0.2", label: "Generate Routed Traffic", description: "Ping the next-hop router to model the directly connected neighbor and populate ARP/MAC evidence.", successMessage: "The modeled routed ping learned the next-hop neighbor in the ARP and MAC tables." },
+  "tr3-dhcp-server": { targetDevice: "CE-R1", command: "ping 192.168.30.10", label: "Verify DHCP Client Reachability", description: "Ping the modeled DHCP client after address assignment to create neighbor evidence for the LAN.", successMessage: "The modeled DHCP-client ping learned the client in the ARP and MAC tables." },
+  "tr4-firewall-asa-foundations": { targetDevice: "CE-FW1", command: "ping 172.16.10.10", label: "Generate Inside Traffic", description: "Ping the DMZ web server to model an inside security-path exchange and learn its neighbor evidence.", successMessage: "The modeled firewall-side ping learned the DMZ server in the ARP and MAC tables." },
+  "tr5-binary-cidr": { targetDevice: "CE-R1", command: "ping 192.0.2.70", label: "Test Host Boundary", description: "Ping the host inside the configured subnet to model local delivery and populate ARP/MAC evidence.", successMessage: "The modeled host-boundary ping learned the local host in the ARP and MAC tables." },
+  "tr5-vlsm-dual-stack": { targetDevice: "CE-R1", command: "ping 10.10.0.10", label: "Generate IPv4 Traffic", description: "Ping the IPv4 host in the first VLSM segment to model local delivery and learn its neighbor evidence.", successMessage: "The modeled VLSM ping learned the IPv4 host in the ARP and MAC tables." },
+  "tr5-ipv6-subnetting": { targetDevice: "CE-R1", command: "ping 10.20.0.2", label: "Verify IPv4 Point-to-Point", description: "Ping the IPv4 point-to-point neighbor while comparing the same link's IPv6 addressing.", successMessage: "The modeled point-to-point ping learned the IPv4 neighbor in the ARP and MAC tables." },
+  "tr5-multicast": { targetDevice: "CE-R1", command: "ping 198.51.100.2", label: "Generate Unicast Baseline", description: "Run a unicast ping first so the multicast exercise has a learned neighbor baseline in the verification tables.", successMessage: "The modeled unicast baseline learned the adjacent host in the ARP and MAC tables." },
+  "tr5-broadcast-neighbor-discovery": { targetDevice: "CE-R1", command: "ping 192.168.70.10", label: "Generate IPv4 Neighbor Traffic", description: "Ping the IPv4 LAN host to model ARP resolution before comparing it with IPv6 Neighbor Discovery.", successMessage: "The modeled IPv4 neighbor ping learned the host in the ARP and MAC tables." },
+};
+
+for (const [labId, traffic] of Object.entries(MODELED_TRAFFIC_STEPS)) {
+  const lab = LAB_REGISTRY[labId];
+  if (!lab || lab.steps.some((step) => step.expectedCommand === traffic.command)) continue;
+  lab.steps.push({ id: lab.steps.length + 1, label: traffic.label, description: traffic.description, targetDevice: traffic.targetDevice, requiredMode: "privileged", expectedCommand: traffic.command, successMessage: traffic.successMessage, validation: () => true });
+}
 // The core objectives teach the configuration path. These extensions add repeated,
 // topic-specific evidence passes so each new lab also builds verification fluency.
 const PRACTICE_EXTENSIONS: Record<string, PracticeExtension> = {
@@ -1011,9 +1038,10 @@ const PRACTICE_EXTENSIONS: Record<string, PracticeExtension> = {
 for (const [labId, extension] of Object.entries(PRACTICE_EXTENSIONS)) {
   const lab = LAB_REGISTRY[labId];
   if (!lab) continue;
+  const evidenceCommands = extension.commands.filter((command) => !lab.steps.some((step) => step.expectedCommand === command));
   const additionalCount = Math.max(0, extension.targetLength - lab.steps.length);
   const additionalSteps = Array.from({ length: additionalCount }, (_, index) => {
-    const command = extension.commands[index % extension.commands.length];
+    const command = evidenceCommands[index % evidenceCommands.length];
     const pass = index + 1;
     return {
       id: lab.steps.length + pass,

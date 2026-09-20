@@ -12,6 +12,7 @@
 - **Independent Minimize Controls**: Added separate minimize and restore buttons for the IOS simulator and Live Verification Tables, leaving each panel header visible while its body is collapsed.
 - **Packet Trace Playback**: Made the operational-context slide counter itself an accessible Pause/Resume button. Pausing freezes the current frame without changing guided-lab progress or IOS state.
 - **Modeled ARP/MAC Learning**: Added a deterministic ping step to IPv4 Interface Fundamentals. Pinging `192.168.10.10` from the active `g0/0` interface records a corresponding ARP neighbor and dynamic MAC entry, followed by guided `show arp` and `show mac address-table` verification steps.
+- **Cross-Tranche Traffic Guidance**: Added topology-specific modeled ping objectives to routed IPv4 tranche labs, including inter-VLAN, static-routing, DHCP, firewall/DMZ, CIDR, VLSM, point-to-point, multicast-baseline, and IPv4 neighbor-discovery exercises. These steps are inserted before generic evidence passes, and duplicate ping commands are removed from the later generic rotation. IPv6-only and Layer 2-only labs remain free of artificial IPv4 traffic steps.
 
 ### Changed
 - **Tranche Workspace Layout**: Removed legacy CSS minimum-height constraints from the IOS simulator so the resize state is honored throughout its full range instead of stopping at the old terminal-shell and terminal-output minimums.

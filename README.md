@@ -27,6 +27,7 @@ The guided IOS console is optimized for keeping the next command and the evidenc
 * **Fixed visual rhythm:** Packet traces use a stable viewport height and compact spacing so activating a new frame does not move the console underneath it.
 * **Packet-trace playback control:** The slide counter is an accessible Pause/Resume button. Pausing freezes the current frame and counter without changing lab progress or IOS session state.
 * **Modeled neighbor learning:** The IPv4 Interface Fundamentals lab includes a deterministic `ping 192.168.10.10` traffic step. The IOS model records the resulting branch-host ARP entry and dynamic MAC entry so the ARP and MAC verification tabs show the same evidence described by the packet trace.
+* **Context-aware tranche traffic:** Routed IPv4 labs now place an appropriate modeled `ping` objective immediately after their configuration objectives and before generic evidence passes. Destinations follow each lab's topology, while IPv6-only and Layer 2-only labs are not given an artificial IPv4 ping step.
 
 These behaviors preserve the Observe -> Configure -> Verify loop while reducing unnecessary page scrolling during command entry.
 
