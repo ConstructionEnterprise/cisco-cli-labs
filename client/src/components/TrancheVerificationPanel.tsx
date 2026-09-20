@@ -3,13 +3,14 @@ import { Minimize2, Network, Router, Table2 } from "lucide-react";
 import type { Session } from "@/lib/ios-engine";
 import ResizeGrabBar from "@/components/ResizeGrabBar";
 
-type VerificationTab = "interfaces" | "vlans" | "arp" | "mac" | "trunks" | "etherchannels" | "acls" | "natpat" | "dhcp" | "ospf";
+type VerificationTab = "interfaces" | "vlans" | "arp" | "mac" | "cdp" | "trunks" | "etherchannels" | "acls" | "natpat" | "dhcp" | "ospf";
 
 const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "interfaces", label: "IP Interfaces" },
   { id: "vlans", label: "VLANs" },
   { id: "arp", label: "ARP" },
   { id: "mac", label: "MAC Address" },
+  { id: "cdp", label: "CDP" },
   { id: "trunks", label: "Trunks" },
   { id: "etherchannels", label: "EtherChannels" },
   { id: "acls", label: "ACLs" },
@@ -27,7 +28,7 @@ function Table({ headers, rows }: { headers: string[]; rows: Array<Array<string 
   return <div className="overflow-x-auto rounded-lg border border-white/10"><table className="w-full min-w-[620px] border-collapse text-left font-mono text-[10px]"><thead className="bg-[#111f28] text-[#63e6e2]"><tr>{headers.map((header) => <th key={header} className="border-b border-white/10 px-3 py-2 font-normal uppercase tracking-wider">{header}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${row.join("-")}-${index}`} className="border-b border-white/[.06] last:border-0 odd:bg-[#0d1821] even:bg-[#0a141c]">{row.map((cell, cellIndex) => <td key={`${cell}-${cellIndex}`} className={`px-3 py-2 ${cellIndex === 0 ? "text-[#f4d998]" : "text-[#b7c7ca]"}`}>{cell}</td>)}</tr>)}</tbody></table></div>;
 }
 
-export default function TrancheVerificationPanel({ session, deviceName, height, minimized, onToggleMinimized, onResizeStart, onResizeKeyDown }: { session: Session; deviceName: string; height: number; minimized: boolean; onToggleMinimized: () => void; onResizeStart: (event: React.PointerEvent<HTMLDivElement>) => void; onResizeKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void }) {
+export default function TrancheVerificationPanel({ session, deviceName, topology, height, minimized, onToggleMinimized, onResizeStart, onResizeKeyDown }: { session: Session; deviceName: string; topology: { devices: any[]; links: any[] }; height: number; minimized: boolean; onToggleMinimized: () => void; onResizeStart: (event: React.PointerEvent<HTMLDivElement>) => void; onResizeKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void }) {
   const [activeTab, setActiveTab] = useState<VerificationTab>("interfaces");
   const interfaces = useMemo(() => Object.entries(session.interfaces || {}), [session.interfaces]);
   const defaultGateway = useMemo(() => {
@@ -58,6 +59,25 @@ export default function TrancheVerificationPanel({ session, deviceName, height, 
     }
     return rows;
   }, [interfaces, session.interfaces, session.vlans]);
+  const cdpRows = useMemo(() => {
+    const devices = new Map((topology.devices || []).map((device) => [device.id, device]));
+    const nameFor = (id: string) => devices.get(id)?.name || id;
+    const cdpCapable = (device: any) => ["router", "switch", "firewall", "asa", "modem", "access-point"].includes(device?.kind);
+    const rows: Array<Array<string | number>> = [];
+    for (const link of topology.links || []) {
+      const localId = link.from === devices.get(link.from)?.id && nameFor(link.from) === deviceName ? link.from : link.to === devices.get(link.to)?.id && nameFor(link.to) === deviceName ? link.to : null;
+      if (!localId) continue;
+      const remoteId = localId === link.from ? link.to : link.from;
+      const remote = devices.get(remoteId);
+      if (!remote || !cdpCapable(remote)) continue;
+      const localPort = localId === link.from ? link.fromPort : link.toPort;
+      const remotePort = localId === link.from ? link.toPort : link.fromPort;
+      const localState = session.interfaces[localPort];
+      const relationship = localState?.switchportMode === "trunk" ? "trunk neighbor" : localState?.vlanId ? `VLAN ${localState.vlanId} gateway path` : "direct neighbor";
+      rows.push([nameFor(localId), localPort || "—", nameFor(remoteId), remotePort || "—", remote.role || remote.kind || "network device", relationship]);
+    }
+    return rows;
+  }, [deviceName, session.interfaces, topology.devices, topology.links]);
   const arpRows = (session.arpTable || []).map((entry) => [entry.ip, entry.mac, entry.interface, String(entry.age)]);
   const macRows = (session.macTable || []).map((entry) => [entry.vlan, entry.mac, entry.type, entry.port, entry.lastSeen ? new Date(entry.lastSeen).toLocaleTimeString() : "—"]);
   const trunkRows = interfaces.filter(([, state]) => state.switchportMode === "trunk").map(([name, state]) => [name, state.status, state.nativeVlan ?? "1", state.allowedVlans || "all"]);
@@ -125,6 +145,7 @@ export default function TrancheVerificationPanel({ session, deviceName, height, 
     vlans: { description: "Modeled VLAN relationships across routed subinterfaces, access ports, and trunk interfaces.", headers: ["VLAN", "Name", "Routed Gateway", "Access Ports", "Trunk Interfaces", "Role"], rows: vlanRows },
     arp: { description: "Modeled IP-to-MAC neighbor mappings learned by this device.", headers: ["Protocol Address", "Hardware Address", "Interface", "Age"], rows: arpRows },
     mac: { description: "Modeled Layer 2 forwarding entries learned by this device.", headers: ["VLAN", "MAC Address", "Type", "Port", "Last Seen"], rows: macRows },
+    cdp: { description: "Topology-backed Cisco Discovery Protocol relationships between this device's local interfaces and network-capable neighbors.", headers: ["Local Device", "Local Interface", "Neighbor", "Remote Interface", "Neighbor Role", "Relationship"], rows: cdpRows },
     trunks: { description: "Configured trunk links, native VLAN, and allowed VLAN state.", headers: ["Interface", "Status", "Native VLAN", "Allowed VLANs"], rows: trunkRows },
     etherchannels: { description: "Configured EtherChannel members, explicitly identifying LACP active/passive negotiation versus static mode-on bundling.", headers: ["Port-Channel", "Member", "Protocol", "Mode", "Status", "Switchport"], rows: etherChannelRows },
     acls: { description: "Numbered and named ACL rules currently present in the active IOS running configuration.", headers: ["ACL", "Type", "Action", "Rule / Match"], rows: aclRows },

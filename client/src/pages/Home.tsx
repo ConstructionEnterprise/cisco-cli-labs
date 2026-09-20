@@ -499,6 +499,7 @@ export default function Home() {
             <TrancheVerificationPanel
               session={session}
               deviceName={activeDevice}
+              topology={lab.topology}
               height={verificationHeight}
               minimized={verificationMinimized}
               onToggleMinimized={() => setVerificationMinimized((minimized) => !minimized)}

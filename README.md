@@ -30,6 +30,7 @@ The guided IOS console is optimized for keeping the next command and the evidenc
 * **Context-aware tranche traffic:** Routed IPv4 labs now place an appropriate modeled `ping` objective immediately after their configuration objectives and before generic evidence passes. Destinations follow each lab's topology, while IPv6-only and Layer 2-only labs are not given an artificial IPv4 ping step.
 * **DHCP verification:** The live verification panel includes a DHCP tab for modeled pools, leases, excluded addresses, and DHCP-client state, keeping address-assignment evidence visible alongside interfaces, ARP, MAC, NAT/PAT, and OSPF state.
 * **Relationship-aware interface verification:** The IP Interfaces table now shows parent interfaces, VLAN IDs, 802.1Q encapsulation, gateway role, and derived subinterface state. A VLANs tab relates VLAN names to routed gateways, access ports, and trunk interfaces. Router-on-a-Stick explicitly configures and verifies CE-SW1 with `show vlan brief` and `show interfaces trunk`; switch-specific evidence is no longer presented as a CE-R1 command.
+* **CDP verification:** Applicable tranche labs now expose a topology-backed CDP tab showing local device/interface, network-capable neighbor, remote interface, neighbor role, and the relationship type. CDP is derived from modeled topology links and does not incorrectly populate ARP or MAC state.
 
 These behaviors preserve the Observe -> Configure -> Verify loop while reducing unnecessary page scrolling during command entry.
 
