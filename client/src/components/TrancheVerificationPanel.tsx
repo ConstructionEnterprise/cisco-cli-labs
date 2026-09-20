@@ -3,10 +3,11 @@ import { Minimize2, Network, Router, Table2 } from "lucide-react";
 import type { Session } from "@/lib/ios-engine";
 import ResizeGrabBar from "@/components/ResizeGrabBar";
 
-type VerificationTab = "interfaces" | "arp" | "mac" | "trunks" | "etherchannels" | "acls" | "natpat" | "dhcp" | "ospf";
+type VerificationTab = "interfaces" | "vlans" | "arp" | "mac" | "trunks" | "etherchannels" | "acls" | "natpat" | "dhcp" | "ospf";
 
 const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "interfaces", label: "IP Interfaces" },
+  { id: "vlans", label: "VLANs" },
   { id: "arp", label: "ARP" },
   { id: "mac", label: "MAC Address" },
   { id: "trunks", label: "Trunks" },
@@ -38,7 +39,25 @@ export default function TrancheVerificationPanel({ session, deviceName, height, 
     }
     return "—";
   }, [session.runningConfig]);
-  const interfaceRows = interfaces.map(([name, state]) => [name, state.ipv4.length ? state.ipv4.join(", ") : "unassigned", defaultGateway, state.status, state.shutdown ? "administratively down" : "up", state.switchportMode || "routed"]);
+  const interfaceRows = interfaces.map(([name, state]) => {
+    const parentName = name.includes(".") ? name.split(".")[0] : "—";
+    const parent = parentName === "—" ? undefined : session.interfaces[parentName];
+    const derivedStatus = name.includes(".") && parent?.status === "up" && state.encapsulation === "dot1q" && state.ipv4.length ? "up" : state.status;
+    return [name, parentName, state.vlanId ?? "—", state.encapsulation === "dot1q" ? `802.1Q ${state.vlanId}` : "—", state.ipv4.length ? state.ipv4.join(", ") : "unassigned", state.vlanId ? `VLAN ${state.vlanId} gateway` : state.switchportMode || "routed", derivedStatus, state.shutdown ? (name.includes(".") ? "inherited parent" : "administratively down") : "up"];
+  });
+  const vlanRows = useMemo(() => {
+    const rows: Array<Array<string | number>> = [];
+    const vlanIds = new Set<string>(Object.keys(session.vlans || {}));
+    for (const [, state] of Object.entries(session.interfaces || {})) if (state.accessVlan !== undefined) vlanIds.add(String(state.accessVlan));
+    for (const [name, state] of Object.entries(session.interfaces || {})) if (state.vlanId !== undefined) vlanIds.add(String(state.vlanId));
+    for (const vlanId of Array.from(vlanIds).sort((a, b) => Number(a) - Number(b))) {
+      const gateways = interfaces.filter(([, state]) => state.vlanId === Number(vlanId)).map(([name]) => name);
+      const accessPorts = interfaces.filter(([, state]) => state.accessVlan === Number(vlanId)).map(([name]) => name);
+      const trunks = interfaces.filter(([, state]) => state.switchportMode === "trunk").map(([name]) => name);
+      rows.push([vlanId, session.vlans[vlanId] || "—", gateways.length ? gateways.join(", ") : "—", accessPorts.length ? accessPorts.join(", ") : "—", trunks.length ? trunks.join(", ") : "—", gateways.length ? "routed gateway" : "Layer 2 VLAN"]);
+    }
+    return rows;
+  }, [interfaces, session.interfaces, session.vlans]);
   const arpRows = (session.arpTable || []).map((entry) => [entry.ip, entry.mac, entry.interface, String(entry.age)]);
   const macRows = (session.macTable || []).map((entry) => [entry.vlan, entry.mac, entry.type, entry.port, entry.lastSeen ? new Date(entry.lastSeen).toLocaleTimeString() : "—"]);
   const trunkRows = interfaces.filter(([, state]) => state.switchportMode === "trunk").map(([name, state]) => [name, state.status, state.nativeVlan ?? "1", state.allowedVlans || "all"]);
@@ -102,7 +121,8 @@ export default function TrancheVerificationPanel({ session, deviceName, height, 
     return rows;
   }, [session.dhcpClient, session.dhcpExcludedAddresses, session.dhcpLeases, session.dhcpPools, session.interfaces]);
   const data: Record<VerificationTab, { description: string; headers: string[]; rows: Array<Array<string | number>> }> = {
-    interfaces: { description: "Live interface address, default gateway, and operational state from the active IOS session.", headers: ["Interface", "IP Address", "Default Gateway", "Status", "Admin State", "Role"], rows: interfaceRows },
+    interfaces: { description: "Live interface relationships, including parent/subinterface hierarchy, 802.1Q VLAN binding, gateway role, and derived operational state.", headers: ["Interface", "Parent", "VLAN", "Encapsulation", "IP Address", "Role", "Status", "Admin State"], rows: interfaceRows },
+    vlans: { description: "Modeled VLAN relationships across routed subinterfaces, access ports, and trunk interfaces.", headers: ["VLAN", "Name", "Routed Gateway", "Access Ports", "Trunk Interfaces", "Role"], rows: vlanRows },
     arp: { description: "Modeled IP-to-MAC neighbor mappings learned by this device.", headers: ["Protocol Address", "Hardware Address", "Interface", "Age"], rows: arpRows },
     mac: { description: "Modeled Layer 2 forwarding entries learned by this device.", headers: ["VLAN", "MAC Address", "Type", "Port", "Last Seen"], rows: macRows },
     trunks: { description: "Configured trunk links, native VLAN, and allowed VLAN state.", headers: ["Interface", "Status", "Native VLAN", "Allowed VLANs"], rows: trunkRows },

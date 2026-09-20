@@ -20,6 +20,8 @@ export type InterfaceState = {
   allowedVlans?: string;
   channelGroup?: number;
   channelMode?: "active" | "passive" | "on";
+  encapsulation?: "dot1q";
+  vlanId?: number;
   status: "up" | "down" | "err-disabled";
   speed: string;
   duplex: "full" | "half" | "auto";
@@ -181,6 +183,9 @@ export function applyCommand(session: Session, command: string, history: string[
   if (session.mode === "config" && canonical.startsWith("vlan ")) {
     next.vlans[canonical.slice(5)] = next.vlans[canonical.slice(5)] || "default";
   }
+  if (session.mode === "vlan" && session.context && canonical.startsWith("name ")) {
+    next.vlans[session.context] = typed.slice("name ".length).trim();
+  }
   if (session.mode === "config" && canonical.startsWith("ip dhcp pool ")) {
     const name = canonical.slice("ip dhcp pool ".length).trim();
     next.dhcpPools[name] = next.dhcpPools[name] || { name: typed.slice("ip dhcp pool ".length).trim() };
@@ -243,6 +248,8 @@ export function applyCommand(session: Session, command: string, history: string[
     if (canonical.startsWith("security-level ")) state.securityLevel = Number(canonical.slice("security-level ".length));
     if (canonical === "ip address dhcp") { state.dhcpClient = true; state.ipv4 = []; }
     if (canonical.startsWith("ipv6 address ")) state.ipv6.push(typed.slice("ipv6 address ".length));
+    const dot1q = canonical.match(/^encapsulation dot1q (\d+)$/);
+    if (dot1q) { state.encapsulation = "dot1q"; state.vlanId = Number(dot1q[1]); }
     if (canonical === "no shutdown") { state.shutdown = false; state.status = "up"; }
     if (canonical === "shutdown") { state.shutdown = true; state.status = "down"; }
     if (canonical === "power inline auto") state.poe.enabled = true;
