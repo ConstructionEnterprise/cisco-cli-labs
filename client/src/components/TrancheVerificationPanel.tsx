@@ -3,7 +3,7 @@ import { Minimize2, Network, Router, Table2 } from "lucide-react";
 import type { Session } from "@/lib/ios-engine";
 import ResizeGrabBar from "@/components/ResizeGrabBar";
 
-type VerificationTab = "interfaces" | "arp" | "mac" | "trunks" | "etherchannels" | "acls" | "natpat";
+type VerificationTab = "interfaces" | "arp" | "mac" | "trunks" | "etherchannels" | "acls" | "natpat" | "ospf";
 
 const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "interfaces", label: "IP Interfaces" },
@@ -13,6 +13,7 @@ const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "etherchannels", label: "EtherChannels" },
   { id: "acls", label: "ACLs" },
   { id: "natpat", label: "NAT / PAT" },
+  { id: "ospf", label: "OSPF" },
 ];
 
 function EmptyState({ message }: { message: string }) {
@@ -40,7 +41,11 @@ export default function TrancheVerificationPanel({ session, deviceName, height, 
   const arpRows = (session.arpTable || []).map((entry) => [entry.ip, entry.mac, entry.interface, String(entry.age)]);
   const macRows = (session.macTable || []).map((entry) => [entry.vlan, entry.mac, entry.type, entry.port, entry.lastSeen ? new Date(entry.lastSeen).toLocaleTimeString() : "—"]);
   const trunkRows = interfaces.filter(([, state]) => state.switchportMode === "trunk").map(([name, state]) => [name, state.status, state.nativeVlan ?? "1", state.allowedVlans || "all"]);
-  const etherChannelRows = interfaces.filter(([, state]) => state.channelGroup !== undefined).map(([name, state]) => [`Po${state.channelGroup}`, name, state.channelMode || "—", state.status, state.switchportMode || "—"]);
+  const etherChannelRows = interfaces.filter(([, state]) => state.channelGroup !== undefined).map(([name, state]) => {
+    const mode = state.channelMode || "—";
+    const protocol = mode === "active" || mode === "passive" ? "LACP" : mode === "on" ? "Static" : "—";
+    return [`Po${state.channelGroup}`, name, protocol, mode, state.status, state.switchportMode || "—"];
+  });
   const aclRows = useMemo(() => {
     const rows: Array<Array<string | number>> = [];
     let namedAcl: { name: string; type: string } | null = null;
@@ -83,14 +88,16 @@ export default function TrancheVerificationPanel({ session, deviceName, height, 
     }
     return rows;
   }, [session.runningConfig]);
+  const ospfRows = useMemo(() => Object.values(session.ospfProcesses || {}).map((process) => [String(process.id), process.routerId || "—", process.networks.length ? process.networks.map((network) => `${network.network} / ${network.wildcard} (area ${network.area})`).join("; ") : "—", process.passiveInterfaces?.length ? process.passiveInterfaces.join(", ") : "none"]), [session.ospfProcesses]);
   const data: Record<VerificationTab, { description: string; headers: string[]; rows: Array<Array<string | number>> }> = {
     interfaces: { description: "Live interface address, default gateway, and operational state from the active IOS session.", headers: ["Interface", "IP Address", "Default Gateway", "Status", "Admin State", "Role"], rows: interfaceRows },
     arp: { description: "Modeled IP-to-MAC neighbor mappings learned by this device.", headers: ["Protocol Address", "Hardware Address", "Interface", "Age"], rows: arpRows },
     mac: { description: "Modeled Layer 2 forwarding entries learned by this device.", headers: ["VLAN", "MAC Address", "Type", "Port", "Last Seen"], rows: macRows },
     trunks: { description: "Configured trunk links, native VLAN, and allowed VLAN state.", headers: ["Interface", "Status", "Native VLAN", "Allowed VLANs"], rows: trunkRows },
-    etherchannels: { description: "Configured EtherChannel members and their modeled negotiation mode.", headers: ["Port-Channel", "Member", "Mode", "Status", "Switchport"], rows: etherChannelRows },
+    etherchannels: { description: "Configured EtherChannel members, explicitly identifying LACP active/passive negotiation versus static mode-on bundling.", headers: ["Port-Channel", "Member", "Protocol", "Mode", "Status", "Switchport"], rows: etherChannelRows },
     acls: { description: "Numbered and named ACL rules currently present in the active IOS running configuration.", headers: ["ACL", "Type", "Action", "Rule / Match"], rows: aclRows },
     natpat: { description: "Configured NAT and PAT rules from the active IOS running configuration. Translation entries will appear here when the model learns them.", headers: ["Mode", "Source", "Translation", "State"], rows: natPatRows },
+    ospf: { description: "Configured OSPF processes, router IDs, network statements, and passive interfaces from the active IOS session. Neighbor adjacencies are not yet modeled in this panel.", headers: ["Process", "Router ID", "Advertised Networks", "Passive Interfaces"], rows: ospfRows },
   };
   const current = data[activeTab];
   return <section className="mt-6 overflow-hidden rounded-xl border border-[#63e6e2]/20 bg-[#0d1920] shadow-xl">

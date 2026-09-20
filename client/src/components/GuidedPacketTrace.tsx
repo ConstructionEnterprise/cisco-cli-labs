@@ -1,3 +1,4 @@
+import { Pause, Play } from "lucide-react";
 import { useEffect, useState } from "react";
 
 export type GuidedTraceFrame = {
@@ -206,15 +207,20 @@ function kindColor(kind: GuidedTraceFrame["kind"]) {
 
 export default function GuidedPacketTrace({ profile, run, leftLabel, rightLabel }: { profile: GuidedTraceProfile; run: number; leftLabel: string; rightLabel: string }) {
   const [frameIndex, setFrameIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
   const frame = profile.frames[frameIndex] || profile.frames[0];
   const colors = kindColor(frame.kind);
 
   useEffect(() => {
-    if (!run) return;
     setFrameIndex(0);
+    setPaused(false);
+  }, [profile, run]);
+
+  useEffect(() => {
+    if (!run || paused) return;
     const timer = window.setInterval(() => setFrameIndex((index) => (index + 1) % profile.frames.length), 1150);
     return () => window.clearInterval(timer);
-  }, [profile, run]);
+  }, [profile, run, paused]);
 
   if (!frame) return null;
 
@@ -222,7 +228,12 @@ export default function GuidedPacketTrace({ profile, run, leftLabel, rightLabel 
     <div className="mt-3 flex h-[236px] min-h-[236px] flex-col overflow-hidden rounded-xl border border-[#63e6e2]/25 bg-[#09151d] p-3" aria-live="polite">
       <div className="flex items-center justify-between gap-3">
         <div className="font-mono text-[10px] uppercase tracking-[.16em] text-[#63e6e2]">{profile.title} · packet trace</div>
-        <span className="rounded bg-[#63e6e2]/10 px-2 py-1 font-mono text-[9px] uppercase text-[#63e6e2]">{run ? `${frameIndex + 1}/${profile.frames.length}` : "STANDBY"}</span>
+        <div className="flex items-center gap-2">
+          <button type="button" disabled={!run} aria-pressed={paused} aria-label={paused ? "Resume packet trace animation" : "Pause packet trace animation"} title={paused ? "Resume animation" : "Pause animation"} onClick={() => setPaused((value) => !value)} className="inline-flex items-center gap-1.5 rounded border border-[#63e6e2]/25 bg-[#63e6e2]/10 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-[#b9eeee] transition hover:border-[#63e6e2]/65 hover:bg-[#173038] disabled:cursor-not-allowed disabled:opacity-40">
+            {paused ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
+            {run ? `${frameIndex + 1}/${profile.frames.length}` : "STANDBY"}
+          </button>
+        </div>
       </div>
       <div className="relative mt-3 flex shrink-0 items-center justify-between gap-3 font-mono text-[10px]">
         <div className="rounded-lg border border-[#f5b74b]/35 bg-[#2a2112] px-3 py-2 text-[#f4d998]">{leftLabel}</div>

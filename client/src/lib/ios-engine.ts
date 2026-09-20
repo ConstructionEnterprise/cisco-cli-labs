@@ -86,6 +86,12 @@ export function normalizeCommand(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+function modeledPeerMac(ip: string): string {
+  const octets = ip.split(".").map((part) => Number(part));
+  if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return "02AA.BEEF.0001";
+  return `02AA.${octets[0].toString(16).padStart(2, "0")}${octets[1].toString(16).padStart(2, "0")}.${octets[2].toString(16).padStart(2, "0")}${octets[3].toString(16).padStart(2, "0")}`.toUpperCase();
+}
+
 /**
  * Deliberately small IOS command grammar used by both the guided labs and the
  * free sandbox. A command must be valid for the current EXEC/configuration
@@ -187,6 +193,18 @@ export function applyCommand(session: Session, command: string, history: string[
   if (session.mode === "config" && canonical.startsWith("ip host ")) {
     const parts = typed.slice("ip host ".length).trim().split(" ");
     if (parts.length === 2) next.dnsRecords[parts[0].toLowerCase()] = parts[1];
+  }
+  const ping = session.mode === "privileged" ? canonical.match(/^ping ([0-9.]+)$/) : null;
+  if (ping) {
+    const [interfaceName, interfaceState] = Object.entries(next.interfaces).find(([, state]) => state.status === "up" && !state.shutdown && state.ipv4.length) || [];
+    if (interfaceName && interfaceState) {
+      const mac = modeledPeerMac(ping[1]);
+      const vlan = interfaceState.accessVlan ?? 1;
+      const arpEntry = { ip: ping[1], mac, interface: interfaceName, age: 0 };
+      const macEntry = { mac, port: interfaceName, vlan, type: "dynamic" as const, lastSeen: Date.now() };
+      next.arpTable = [...next.arpTable.filter((entry) => entry.ip !== ping[1]), arpEntry];
+      next.macTable = [...next.macTable.filter((entry) => !(entry.mac === mac && entry.port === interfaceName)), macEntry];
+    }
   }
   if (session.mode === "config" && canonical.startsWith("router ospf ")) {
     const id = canonical.slice("router ospf ".length).trim();

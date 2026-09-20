@@ -5,9 +5,13 @@
 - **Live Verification Tables**: Added a tranche-only panel below the IOS simulator with IP interface, ARP, MAC address, trunk, and EtherChannel tabs. The tables derive from the active IOS session and display explicit empty states when no modeled entries are present.
 - **ACL Verification**: Added a numbered and named ACL tab that displays rules as they are entered through standard `access-list` commands or named ACL configuration mode.
 - **NAT/PAT Verification**: Added a NAT/PAT tab that displays configured PAT overload, static NAT, and dynamic PAT rules from the active IOS running configuration, with honest empty-state behavior for translations that have not been modeled.
+- **OSPF Verification**: Added an OSPF tab that displays process IDs, router IDs, advertised networks, areas, and passive interfaces from the active IOS session, while clearly identifying that neighbor adjacencies are not yet modeled in this panel.
+- **LACP Verification**: EtherChannel verification now explicitly labels `channel-group` members using `mode active` or `mode passive` as LACP, while distinguishing static `mode on` bundling. The existing mode column remains visible for direct CLI correlation.
 - **Default Gateway Tracking**: Expanded the IP Interfaces table with a live Default Gateway column derived from configured `ip route 0.0.0.0 0.0.0.0 <next-hop>` or `ip default-gateway <address>` commands.
 - **Resizable CLI and Verification Panels**: Added keyboard-accessible grab bars to resize both panels upward or downward within bounded heights. Arrow keys make incremental adjustments, while Home and End move directly to the minimum and maximum heights.
 - **Independent Minimize Controls**: Added separate minimize and restore buttons for the IOS simulator and Live Verification Tables, leaving each panel header visible while its body is collapsed.
+- **Packet Trace Playback**: Made the operational-context slide counter itself an accessible Pause/Resume button. Pausing freezes the current frame without changing guided-lab progress or IOS state.
+- **Modeled ARP/MAC Learning**: Added a deterministic ping step to IPv4 Interface Fundamentals. Pinging `192.168.10.10` from the active `g0/0` interface records a corresponding ARP neighbor and dynamic MAC entry, followed by guided `show arp` and `show mac address-table` verification steps.
 
 ### Changed
 - **Tranche Workspace Layout**: Removed legacy CSS minimum-height constraints from the IOS simulator so the resize state is honored throughout its full range instead of stopping at the old terminal-shell and terminal-output minimums.
