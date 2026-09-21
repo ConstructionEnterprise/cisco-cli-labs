@@ -124,13 +124,17 @@ export function applyModeledNeighborDiscovery(sessions: Record<string, Session>,
       if (!state || state.shutdown || state.status !== "up" || !state.ipv6.length) continue;
       const localIpv6 = state.ipv6.find((address) => !address.toLowerCase().startsWith("fe80:"));
       if (!localIpv6) continue;
-      const peer = modeledPeerIpv6(localIpv6, devices.get(remoteId)?.kind);
-      const remoteName = nameFor(remoteId);
+      const remoteDevice = devices.get(remoteId);
+      const endpointLink = remoteDevice?.kind === "switch" ? (topology.links || []).find((candidate) => candidate.from === remoteId && devices.get(candidate.to)?.kind === "pc") || (topology.links || []).find((candidate) => candidate.to === remoteId && devices.get(candidate.from)?.kind === "pc") : undefined;
+      const endpointId = endpointLink ? (endpointLink.from === remoteId ? endpointLink.to : endpointLink.from) : remoteId;
+      const peer = modeledPeerIpv6(localIpv6, devices.get(endpointId)?.kind);
+      const remoteName = nameFor(endpointId);
       const entry: Ipv6NeighborEntry = { ipv6: peer.global, linkLocal: peer.linkLocal, mac: modeledIpv6Mac(peer.global), interface: localPort, state: "REACHABLE", discovery: "NS/NA", neighbor: remoteName };
       local.ipv6Neighbors = [...local.ipv6Neighbors.filter((item) => !(item.interface === localPort && item.ipv6 === entry.ipv6)), entry];
       const remoteSession = next[remoteName];
-      if (remoteSession && remotePort) {
-        const remoteEntry: Ipv6NeighborEntry = { ipv6: localIpv6.split("/")[0], linkLocal: state.ipv6.find((address) => address.toLowerCase().startsWith("fe80:"))?.split("/")[0], mac: modeledIpv6Mac(localIpv6), interface: remotePort, state: "REACHABLE", discovery: "NS/NA", neighbor: localName };
+      const reciprocalPort = endpointLink ? (endpointLink.from === endpointId ? endpointLink.toPort : endpointLink.fromPort) : remotePort;
+      if (remoteSession && reciprocalPort) {
+        const remoteEntry: Ipv6NeighborEntry = { ipv6: localIpv6.split("/")[0], linkLocal: state.ipv6.find((address) => address.toLowerCase().startsWith("fe80:"))?.split("/")[0], mac: modeledIpv6Mac(localIpv6), interface: reciprocalPort, state: "REACHABLE", discovery: "NS/NA", neighbor: localName };
         remoteSession.ipv6Neighbors = [...remoteSession.ipv6Neighbors.filter((item) => !(item.interface === remotePort && item.neighbor === localName)), remoteEntry];
       }
     }

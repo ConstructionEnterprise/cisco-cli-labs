@@ -336,7 +336,7 @@ export const LAB_REGISTRY: Record<string, LabConfig> = {
     type: "guided",
     title: "IPv6 Interface Fundamentals",
     description: "Enable IPv6 forwarding and configure global and link-local addressing.",
-    topology: { devices: [{ id: "r1", name: "CE-R1", kind: "router", role: "IPv6 Edge Router", x: 250, y: 180, ports: ["g0/0"] }, { id: "pc1", name: "V6-PC1", kind: "pc", role: "IPv6 Host", x: 600, y: 180, ports: ["eth0"] }], links: [{ id: "l1", from: "r1", to: "pc1", fromPort: "g0/0", toPort: "eth0" }] },
+    topology: { devices: [{ id: "r1", name: "CE-R1", kind: "router", role: "IPv6 Edge Router", x: 180, y: 180, ports: ["g0/0"] }, { id: "sw1", name: "CE-SW1", kind: "switch", role: "IPv6 Access Switch", x: 470, y: 180, ports: ["g0/1", "g0/2"] }, { id: "pc1", name: "V6-PC1", kind: "pc", role: "IPv6 Host", x: 760, y: 180, ports: ["eth0"] }], links: [{ id: "l1", from: "r1", to: "sw1", fromPort: "g0/0", toPort: "g0/1" }, { id: "l2", from: "sw1", to: "pc1", fromPort: "g0/2", toPort: "eth0" }] },
     initialState: {},
     steps: [
       { id: 1, label: "Privileged Mode", description: "Enter Privileged EXEC mode before configuring IPv6.", targetDevice: "CE-R1", requiredMode: "user", expectedCommand: "enable", successMessage: "CE-R1 is ready for configuration.", validation: (state) => true },
@@ -1053,7 +1053,14 @@ const PRACTICE_EXTENSIONS: Record<string, PracticeExtension> = {
 for (const [labId, extension] of Object.entries(PRACTICE_EXTENSIONS)) {
   const lab = LAB_REGISTRY[labId];
   if (!lab) continue;
-  const evidenceCommands = extension.commands.filter((command) => !lab.steps.some((step) => step.expectedCommand === command));
+  const cdpCapable = (device: any) => ["router", "switch", "firewall", "asa", "modem", "access-point"].includes(device?.kind);
+  const devices = new Map(lab.topology.devices.map((device: any) => [device.id, device]));
+  const hasCdpPeer = lab.topology.links.some((link: any) => cdpCapable(devices.get(link.from)) && cdpCapable(devices.get(link.to)));
+  const evidenceCommands = extension.commands.filter((command) => {
+    if (lab.steps.some((step) => step.expectedCommand === command)) return false;
+    if (command.startsWith("show cdp neighbors") && !hasCdpPeer) return false;
+    return true;
+  });
   const additionalCount = Math.max(0, extension.targetLength - lab.steps.length);
   const additionalSteps = Array.from({ length: additionalCount }, (_, index) => {
     const command = evidenceCommands[index % evidenceCommands.length];
