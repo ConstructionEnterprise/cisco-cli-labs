@@ -18,6 +18,7 @@
 - **CDP Verification**: Added a topology-backed CDP tab across applicable tranche labs. It relates each active network device's local interface to a network-capable neighbor and remote port, labels the neighbor role, and distinguishes direct links from trunk or VLAN gateway relationships.
 - **ROAS Neighbor Learning Fix**: Corrected modeled ping learning for 802.1Q subinterfaces. A subinterface now qualifies for ARP/MAC learning when its physical parent is operational and the subinterface has dot1Q encapsulation and an IPv4 address, matching the derived interface state shown in the verification panel.
 - **IPv6 Neighbor Discovery**: Added an IPv6 Neighbors live verification tab and session-level ND state. Once an IPv6 interface has a global address, link-local address, and active link, the topology engine models a Neighbor Solicitation/Neighbor Advertisement exchange and records reciprocal state on the connected endpoint, including V6-PC1.
+- **IPv6 Link-Local Parser Fix**: Corrected interface-mode validation so valid Cisco syntax such as `ipv6 address fe80::1 link-local` is accepted without requiring an IPv6 prefix length.
 
 ### Changed
 - **Tranche Workspace Layout**: Removed legacy CSS minimum-height constraints from the IOS simulator so the resize state is honored throughout its full range instead of stopping at the old terminal-shell and terminal-output minimums.
