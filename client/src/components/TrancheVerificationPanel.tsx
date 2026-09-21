@@ -3,13 +3,14 @@ import { Minimize2, Network, Router, Table2 } from "lucide-react";
 import type { Session } from "@/lib/ios-engine";
 import ResizeGrabBar from "@/components/ResizeGrabBar";
 
-type VerificationTab = "interfaces" | "vlans" | "arp" | "mac" | "cdp" | "trunks" | "etherchannels" | "acls" | "natpat" | "dhcp" | "ospf";
+type VerificationTab = "interfaces" | "vlans" | "arp" | "mac" | "ipv6neighbors" | "cdp" | "trunks" | "etherchannels" | "acls" | "natpat" | "dhcp" | "ospf";
 
 const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "interfaces", label: "IP Interfaces" },
   { id: "vlans", label: "VLANs" },
   { id: "arp", label: "ARP" },
   { id: "mac", label: "MAC Address" },
+  { id: "ipv6neighbors", label: "IPv6 Neighbors" },
   { id: "cdp", label: "CDP" },
   { id: "trunks", label: "Trunks" },
   { id: "etherchannels", label: "EtherChannels" },
@@ -80,6 +81,7 @@ export default function TrancheVerificationPanel({ session, deviceName, topology
   }, [deviceName, session.interfaces, topology.devices, topology.links]);
   const arpRows = (session.arpTable || []).map((entry) => [entry.ip, entry.mac, entry.interface, String(entry.age)]);
   const macRows = (session.macTable || []).map((entry) => [entry.vlan, entry.mac, entry.type, entry.port, entry.lastSeen ? new Date(entry.lastSeen).toLocaleTimeString() : "—"]);
+  const ipv6NeighborRows = (session.ipv6Neighbors || []).map((entry) => [entry.ipv6, entry.linkLocal || "—", entry.mac, entry.interface, entry.state, entry.discovery, entry.neighbor || "—"]);
   const trunkRows = interfaces.filter(([, state]) => state.switchportMode === "trunk").map(([name, state]) => [name, state.status, state.nativeVlan ?? "1", state.allowedVlans || "all"]);
   const etherChannelRows = interfaces.filter(([, state]) => state.channelGroup !== undefined).map(([name, state]) => {
     const mode = state.channelMode || "—";
@@ -145,6 +147,7 @@ export default function TrancheVerificationPanel({ session, deviceName, topology
     vlans: { description: "Modeled VLAN relationships across routed subinterfaces, access ports, and trunk interfaces.", headers: ["VLAN", "Name", "Routed Gateway", "Access Ports", "Trunk Interfaces", "Role"], rows: vlanRows },
     arp: { description: "Modeled IP-to-MAC neighbor mappings learned by this device.", headers: ["Protocol Address", "Hardware Address", "Interface", "Age"], rows: arpRows },
     mac: { description: "Modeled Layer 2 forwarding entries learned by this device.", headers: ["VLAN", "MAC Address", "Type", "Port", "Last Seen"], rows: macRows },
+    ipv6neighbors: { description: "Modeled IPv6 Neighbor Discovery state. A configured, operational IPv6 link sends a Neighbor Solicitation and the connected endpoint responds with a Neighbor Advertisement.", headers: ["IPv6 Address", "Link-Local", "MAC Address", "Interface", "State", "Discovery", "Neighbor"], rows: ipv6NeighborRows },
     cdp: { description: "Topology-backed Cisco Discovery Protocol relationships between this device's local interfaces and network-capable neighbors.", headers: ["Local Device", "Local Interface", "Neighbor", "Remote Interface", "Neighbor Role", "Relationship"], rows: cdpRows },
     trunks: { description: "Configured trunk links, native VLAN, and allowed VLAN state.", headers: ["Interface", "Status", "Native VLAN", "Allowed VLANs"], rows: trunkRows },
     etherchannels: { description: "Configured EtherChannel members, explicitly identifying LACP active/passive negotiation versus static mode-on bundling.", headers: ["Port-Channel", "Member", "Protocol", "Mode", "Status", "Switchport"], rows: etherChannelRows },

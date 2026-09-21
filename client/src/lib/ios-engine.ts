@@ -4,6 +4,7 @@ export type Mode = "user" | "privileged" | "config" | "vlan" | "interface" | "in
 
 export type MacEntry = { mac: string; port: string; vlan: number; type: "dynamic" | "static"; lastSeen?: number };
 export type ArpEntry = { ip: string; mac: string; interface: string; age: number };
+export type Ipv6NeighborEntry = { ipv6: string; linkLocal?: string; mac: string; interface: string; state: "REACHABLE" | "STALE"; discovery: "NS/NA"; neighbor?: string };
 export type Route = { prefix: string; nextHop?: string; interface?: string; protocol: "connected" | "static" | "ospf" };
 export type DhcpPool = { name: string; network?: string; mask?: string; defaultRouter?: string; dnsServer?: string; domainName?: string };
 export type DhcpLease = { mac: string; ip: string; clientId: string; state: "active" | "expired"; pool: string; leaseStart: string; leaseEnd: string };
@@ -45,6 +46,7 @@ export type Session = {
   vlans: Record<string, string>;
   macTable: MacEntry[];
   arpTable: ArpEntry[];
+  ipv6Neighbors: Ipv6NeighborEntry[];
   routingTable: Route[];
   dhcpPools: Record<string, DhcpPool>;
   dhcpLeases: DhcpLease[];
@@ -67,6 +69,7 @@ export function boot(name: string, role: string): Session {
     vlans: {},
     macTable: [],
     arpTable: [],
+    ipv6Neighbors: [],
     routingTable: [],
     dhcpPools: {},
     dhcpLeases: [],
@@ -92,6 +95,47 @@ function modeledPeerMac(ip: string): string {
   const octets = ip.split(".").map((part) => Number(part));
   if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) return "02AA.BEEF.0001";
   return `02AA.${octets[0].toString(16).padStart(2, "0")}${octets[1].toString(16).padStart(2, "0")}.${octets[2].toString(16).padStart(2, "0")}${octets[3].toString(16).padStart(2, "0")}`.toUpperCase();
+}
+
+function modeledIpv6Mac(ip: string): string {
+  const hex = ip.replace(/[^0-9a-f]/gi, "").toUpperCase().padStart(8, "0").slice(-8);
+  return `02AA.${hex.slice(0, 4)}.${hex.slice(4)}`;
+}
+
+function modeledPeerIpv6(localAddress: string, remoteKind?: string): { global: string; linkLocal: string } {
+  const address = localAddress.split("/")[0];
+  const hostSuffix = remoteKind === "pc" ? "10" : remoteKind === "router" ? "2" : "10";
+  return { global: address.replace(/::[0-9a-f]+$/i, `::${hostSuffix}`), linkLocal: `fe80::${hostSuffix}` };
+}
+
+export type ModeledTopology = { devices: Array<{ id: string; name?: string; kind?: string; role?: string }>; links: Array<{ from: string; to: string; fromPort?: string; toPort?: string }> };
+
+/** Model a local Neighbor Solicitation and the connected endpoint's Neighbor Advertisement. */
+export function applyModeledNeighborDiscovery(sessions: Record<string, Session>, topology: ModeledTopology): Record<string, Session> {
+  const devices = new Map((topology.devices || []).map((device) => [device.id, device]));
+  const nameFor = (id: string) => devices.get(id)?.name || id;
+  const next = Object.fromEntries(Object.entries(sessions).map(([name, session]) => [name, { ...session, ipv6Neighbors: [...(session.ipv6Neighbors || [])] }])) as Record<string, Session>;
+  for (const link of topology.links || []) {
+    for (const [localId, remoteId, localPort, remotePort] of [[link.from, link.to, link.fromPort, link.toPort], [link.to, link.from, link.toPort, link.fromPort]] as Array<[string, string, string | undefined, string | undefined]>) {
+      const localName = nameFor(localId);
+      const local = next[localName];
+      if (!local || !localPort) continue;
+      const state = local.interfaces[localPort];
+      if (!state || state.shutdown || state.status !== "up" || !state.ipv6.length) continue;
+      const localIpv6 = state.ipv6.find((address) => !address.toLowerCase().startsWith("fe80:"));
+      if (!localIpv6) continue;
+      const peer = modeledPeerIpv6(localIpv6, devices.get(remoteId)?.kind);
+      const remoteName = nameFor(remoteId);
+      const entry: Ipv6NeighborEntry = { ipv6: peer.global, linkLocal: peer.linkLocal, mac: modeledIpv6Mac(peer.global), interface: localPort, state: "REACHABLE", discovery: "NS/NA", neighbor: remoteName };
+      local.ipv6Neighbors = [...local.ipv6Neighbors.filter((item) => !(item.interface === localPort && item.ipv6 === entry.ipv6)), entry];
+      const remoteSession = next[remoteName];
+      if (remoteSession && remotePort) {
+        const remoteEntry: Ipv6NeighborEntry = { ipv6: localIpv6.split("/")[0], linkLocal: state.ipv6.find((address) => address.toLowerCase().startsWith("fe80:"))?.split("/")[0], mac: modeledIpv6Mac(localIpv6), interface: remotePort, state: "REACHABLE", discovery: "NS/NA", neighbor: localName };
+        remoteSession.ipv6Neighbors = [...remoteSession.ipv6Neighbors.filter((item) => !(item.interface === remotePort && item.neighbor === localName)), remoteEntry];
+      }
+    }
+  }
+  return next;
 }
 
 /**
