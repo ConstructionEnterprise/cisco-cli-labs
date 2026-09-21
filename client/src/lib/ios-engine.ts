@@ -142,6 +142,29 @@ export function applyModeledNeighborDiscovery(sessions: Record<string, Session>,
   return next;
 }
 
+function modeledDeviceMac(name: string): string {
+  const value = Array.from(name).reduce((sum, character) => ((sum * 33) + character.charCodeAt(0)) >>> 0, 0);
+  return `02AA.${((value >>> 16) & 0xffff).toString(16).padStart(4, "0")}.${(value & 0xffff).toString(16).padStart(4, "0")}`.toUpperCase();
+}
+
+/** Learn host source MACs on active switch ports after a modeled host frame arrives. */
+export function applyModeledLayer2Learning(sessions: Record<string, Session>, topology: ModeledTopology): Record<string, Session> {
+  const devices = new Map((topology.devices || []).map((device) => [device.id, device]));
+  const nameFor = (id: string) => devices.get(id)?.name || id;
+  const next = Object.fromEntries(Object.entries(sessions).map(([name, session]) => [name, { ...session, macTable: [...(session.macTable || [])] }])) as Record<string, Session>;
+  for (const link of topology.links || []) {
+    for (const [switchId, hostId, switchPort] of [[link.from, link.to, link.fromPort], [link.to, link.from, link.toPort]] as Array<[string, string, string | undefined]>) {
+      if (devices.get(switchId)?.kind !== "switch" || devices.get(hostId)?.kind !== "pc" || !switchPort) continue;
+      const switchSession = next[nameFor(switchId)];
+      const port = switchSession?.interfaces[switchPort];
+      if (!switchSession || !port || port.shutdown || port.status !== "up" || port.switchportMode !== "access") continue;
+      const entry: MacEntry = { mac: modeledDeviceMac(nameFor(hostId)), port: switchPort, vlan: port.accessVlan ?? 1, type: "dynamic", lastSeen: Date.now() };
+      switchSession.macTable = [...switchSession.macTable.filter((item) => item.port !== switchPort), entry];
+    }
+  }
+  return next;
+}
+
 /**
  * Deliberately small IOS command grammar used by both the guided labs and the
  * free sandbox. A command must be valid for the current EXEC/configuration

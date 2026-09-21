@@ -7,7 +7,7 @@ import GuidedPacketTrace, { getGuidedTraceProfile } from "@/components/GuidedPac
 import TrancheVerificationPanel from "@/components/TrancheVerificationPanel";
 import ResizeGrabBar from "@/components/ResizeGrabBar";
 import { toast } from "sonner";
-import { applyCommand, applyModeledNeighborDiscovery, boot, isCiscoCommand, modePrompt, normalizeCommand, type Mode, type Session } from "@/lib/ios-engine";
+import { applyCommand, applyModeledLayer2Learning, applyModeledNeighborDiscovery, boot, isCiscoCommand, modePrompt, normalizeCommand, type Mode, type Session } from "@/lib/ios-engine";
 import { Check, ChevronDown, ChevronUp, CircleHelp, Copy, Database, History, Minimize2, Network, Play, RotateCcw, TerminalSquare, Wrench } from "lucide-react";
 import { LAB_REGISTRY, type LabConfig } from "@/labs/labDefinitions";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -214,7 +214,7 @@ export default function Home() {
     }
 
     const nextSession = applyCommand(current, raw, [...updatedHistory, step.successMessage]);
-    const nextSessions = applyModeledNeighborDiscovery({ ...sessions, [activeDevice]: nextSession }, lab.topology);
+    const nextSessions = applyModeledLayer2Learning(applyModeledNeighborDiscovery({ ...sessions, [activeDevice]: nextSession }, lab.topology), lab.topology);
     setSessions(nextSessions);
     setStepIndex((index) => index + 1); 
     if (lab.type === "guided" && !["enable", "configure terminal", "exit", "end"].includes(normalized)) setTraceRun((run) => run + 1);

@@ -20,6 +20,7 @@
 - **IPv6 Neighbor Discovery**: Added an IPv6 Neighbors live verification tab and session-level ND state. Once an IPv6 interface has a global address, link-local address, and active link, the topology engine models a Neighbor Solicitation/Neighbor Advertisement exchange and records reciprocal state on the connected endpoint, including V6-PC1.
 - **IPv6 Link-Local Parser Fix**: Corrected interface-mode validation so valid Cisco syntax such as `ipv6 address fe80::1 link-local` is accepted without requiring an IPv6 prefix length.
 - **IPv6 CDP Neighbor Context**: Expanded TR2 IPv6 Interface Fundamentals to model `CE-R1 ⇄ CE-SW1 ⇄ V6-PC1`. CDP now has a real router-to-switch neighbor relationship while the ND model resolves the IPv6 host across the Layer 2 switch segment.
+- **VLAN MAC Learning**: Added topology-aware dynamic MAC learning for active switch access ports connected to modeled PCs. Learned entries use deterministic host MACs, the configured access VLAN, and the receiving switch port, aligning the MAC table with the packet trace's ingress-frame behavior.
 
 ### Changed
 - **Tranche Workspace Layout**: Removed legacy CSS minimum-height constraints from the IOS simulator so the resize state is honored throughout its full range instead of stopping at the old terminal-shell and terminal-output minimums.
