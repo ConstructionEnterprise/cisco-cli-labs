@@ -123,7 +123,21 @@ export default function Home() {
   const prompt = session ? modePrompt(activeDevice, session) : "";
   const complete = stepIndex >= lab.steps.length;
   const percent = Math.round((stepIndex / lab.steps.length) * 100);
-  const guidedTrace = useMemo(() => getGuidedTraceProfile(selectedLabId, lab.topology.devices.map((device: any) => device.name || device.id)), [selectedLabId, lab]);
+  const guidedTrace = useMemo(() => {
+    const profile = getGuidedTraceProfile(selectedLabId, lab.topology.devices.map((device: any) => device.name || device.id));
+    if (selectedLabId !== "tr2-trunking") return profile;
+    const uplink = sessions["CE-SW1"]?.interfaces["g0/1"];
+    if (uplink?.switchportMode === "trunk") return profile;
+    return {
+      ...profile,
+      title: "802.1Q trunk forwarding · pending configuration",
+      frames: profile.frames.map((frame, index) => index === 0
+        ? { ...frame, name: "VLAN FRAME · UNTAGGED", detail: "The inter-switch port is not yet configured as a trunk, so this modeled frame has no 802.1Q tag.", layer2: "DESTINATION MAC", layer3: "VLAN 10 / UNTAGGED" }
+        : index === 1
+          ? { ...frame, name: "TRUNK NOT ACTIVE", detail: "Configure switchport mode trunk before VLAN traffic can cross this link with an 802.1Q tag.", layer2: "NO 802.1Q TAG", layer3: "g0/1 · ACCESS/PENDING" }
+          : frame),
+    };
+  }, [selectedLabId, lab, sessions]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
