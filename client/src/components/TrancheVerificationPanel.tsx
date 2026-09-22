@@ -81,8 +81,35 @@ export default function TrancheVerificationPanel({ session, sessions, deviceName
     }
     return rows;
   }, [deviceName, session.interfaces, topology.devices, topology.links]);
+  const assignedMac = (deviceId: string, port: string) => {
+    let hash = 0;
+    for (const character of `${deviceId}:${port}`) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+    const hex = hash.toString(16).padStart(8, "0").slice(-8).toUpperCase();
+    return `02AA.${hex.slice(0, 4)}.${hex.slice(4)}`;
+  };
   const arpRows = (session.arpTable || []).map((entry) => [entry.ip, entry.mac, entry.interface, String(entry.age)]);
-  const macRows = (session.macTable || []).map((entry) => [entry.vlan, entry.mac, entry.type, entry.port, entry.lastSeen ? new Date(entry.lastSeen).toLocaleTimeString() : "—"]);
+  const macRows = useMemo(() => {
+    const devices = new Map((topology.devices || []).map((device) => [device.id, device]));
+    const nameFor = (id: string) => devices.get(id)?.name || id;
+    const rows: Array<Array<string | number>> = [];
+    const localDevice = (topology.devices || []).find((device) => (device.name || device.id) === deviceName);
+    if (localDevice) {
+      for (const link of topology.links || []) {
+        const localId = link.from === localDevice.id ? link.from : link.to === localDevice.id ? link.to : null;
+        if (!localId) continue;
+        const localPort = localId === link.from ? link.fromPort : link.toPort;
+        const remoteId = localId === link.from ? link.to : link.from;
+        const remotePort = localId === link.from ? link.toPort : link.fromPort;
+        if (!localPort) continue;
+        const localState = session.interfaces[localPort];
+        const vlan = localState?.accessVlan ?? localState?.vlanId ?? 1;
+        rows.push([vlan, assignedMac(localDevice.id, localPort), "assigned", localPort, `${deviceName} interface`, "topology inventory"]);
+        rows.push([vlan, assignedMac(remoteId, remotePort || "nic"), "assigned", localPort, `${nameFor(remoteId)} · ${remotePort || "nic"}`, "connected device"]);
+      }
+    }
+    for (const entry of session.macTable || []) rows.push([entry.vlan, entry.mac, entry.type, entry.port, entry.lastSeen ? new Date(entry.lastSeen).toLocaleTimeString() : "—", "learned forwarding entry"]);
+    return rows;
+  }, [deviceName, session.interfaces, session.macTable, topology.devices, topology.links]);
   const ipv6NeighborRows = (session.ipv6Neighbors || []).map((entry) => [entry.ipv6, entry.linkLocal || "—", entry.mac, entry.interface, entry.state, entry.discovery, entry.neighbor || "—"]);
   const trunkRows = interfaces.filter(([, state]) => state.switchportMode === "trunk").map(([name, state]) => [name, state.status, state.nativeVlan ?? "1", state.allowedVlans || "all"]);
   const etherChannelRows = interfaces.filter(([, state]) => state.channelGroup !== undefined).map(([name, state]) => {
@@ -203,7 +230,7 @@ export default function TrancheVerificationPanel({ session, sessions, deviceName
     interfaces: { description: "Live interface relationships, including parent/subinterface hierarchy, 802.1Q VLAN binding, gateway role, and derived operational state.", headers: ["Interface", "Parent", "VLAN", "Encapsulation", "IP Address", "Role", "Status", "Admin State"], rows: interfaceRows },
     vlans: { description: "Modeled VLAN relationships across routed subinterfaces, access ports, and trunk interfaces.", headers: ["VLAN", "Name", "Routed Gateway", "Access Ports", "Trunk Interfaces", "Role"], rows: vlanRows },
     arp: { description: "Modeled IP-to-MAC neighbor mappings learned by this device.", headers: ["Protocol Address", "Hardware Address", "Interface", "Age"], rows: arpRows },
-    mac: { description: "Modeled Layer 2 forwarding entries learned by this device.", headers: ["VLAN", "MAC Address", "Type", "Port", "Last Seen"], rows: macRows },
+    mac: { description: "Assigned interface MAC inventory is shown immediately from the topology; learned dynamic forwarding entries appear separately after modeled traffic is received.", headers: ["VLAN", "MAC Address", "Type", "Port", "State / Peer", "Source"], rows: macRows },
     ipv6neighbors: { description: "Modeled IPv6 Neighbor Discovery state. A configured, operational IPv6 link sends a Neighbor Solicitation and the connected endpoint responds with a Neighbor Advertisement.", headers: ["IPv6 Address", "Link-Local", "MAC Address", "Interface", "State", "Discovery", "Neighbor"], rows: ipv6NeighborRows },
     cdp: { description: "Topology-backed Cisco Discovery Protocol relationships between this device's local interfaces and network-capable neighbors.", headers: ["Local Device", "Local Interface", "Neighbor", "Remote Interface", "Neighbor Role", "Relationship"], rows: cdpRows },
     trunks: { description: "Configured trunk links, native VLAN, and allowed VLAN state.", headers: ["Interface", "Status", "Native VLAN", "Allowed VLANs"], rows: trunkRows },
