@@ -125,6 +125,24 @@ export default function Home() {
   const percent = Math.round((stepIndex / lab.steps.length) * 100);
   const guidedTrace = useMemo(() => {
     const profile = getGuidedTraceProfile(selectedLabId, lab.topology.devices.map((device: any) => device.name || device.id));
+    if (selectedLabId === "tr3-ospfv2") {
+      const ospfDevices = lab.topology.devices.filter((device: any) => ["router", "switch", "firewall"].includes(device.kind));
+      const configured = ospfDevices.filter((device: any) => Object.keys(sessions[device.name || device.id]?.ospfProcesses || {}).length > 0);
+      const networked = configured.filter((device: any) => Object.values(sessions[device.name || device.id]?.ospfProcesses || {}).some((process: any) => process.networks.length > 0));
+      const currentCommand = step?.expectedCommand || "";
+      const frames = configured.length === 0
+        ? [{ name: "OSPF PROCESS IDLE", detail: "Begin on CE-R1 by starting the OSPF process, then build each supported Layer 3 device in sequence.", layer2: "NO OSPF HELLOS", layer3: "PROCESS NOT STARTED", direction: "forward" as const, kind: "control" as const }]
+        : configured.length < ospfDevices.length
+          ? [{ name: "OSPF BUILD IN PROGRESS", detail: `${configured.length} of ${ospfDevices.length} OSPF-capable devices have a process configured. Continue building the remaining devices before adjacency formation.`, layer2: "NO FULL ADJACENCY", layer3: `${configured.map((device: any) => device.name).join(" · ")}`, direction: "forward" as const, kind: "control" as const }, { name: "HELLO ELIGIBILITY", detail: "A device can send OSPF Hellos only after its transit interface is addressed, enabled, and included in area 0.", layer2: "01:00:5E:00:00:05", layer3: "224.0.0.5 · PENDING PEERS", direction: "forward" as const, kind: "multicast" as const }]
+          : networked.length < ospfDevices.length
+            ? [{ name: "HELLO ELIGIBILITY", detail: "OSPF processes exist, but every transit interface still needs area 0 participation before the domain can form adjacencies.", layer2: "01:00:5E:00:00:05", layer3: "224.0.0.5 · AREA 0 PENDING", direction: "forward" as const, kind: "multicast" as const }]
+            : currentCommand === "show ip ospf neighbor"
+              ? [{ name: "DBD EXCHANGE", detail: "The neighbor check is now meaningful: OSPF peers exchange Database Description packets after Hellos establish bidirectional communication.", layer2: "OSPF MULTICAST", layer3: "DBD · LSDB SUMMARY", direction: "forward" as const, kind: "control" as const }, { name: "LSA ACKNOWLEDGMENT", detail: "Peers acknowledge the link-state information used to synchronize their databases.", layer2: "OSPF MULTICAST", layer3: "LS ACK · AREA 0", direction: "reverse" as const, kind: "multicast" as const }]
+              : currentCommand === "show ip route ospf"
+                ? [{ name: "ROUTE INSTALL", detail: "After adjacency and LSDB synchronization, SPF installs learned OSPF routes in the routing table.", layer2: "R1 ⇄ OSPF DOMAIN", layer3: "OSPF ROUTE · AREA 0", direction: "forward" as const, kind: "control" as const }]
+                : [{ name: "OSPF HELLO", detail: "All five OSPF-capable devices are configured on their transit links and can exchange IPv4 multicast Hellos.", layer2: "01:00:5E:00:00:05", layer3: "224.0.0.5 · AREA 0", direction: "forward" as const, kind: "multicast" as const }, { name: "LSA FLOOD", detail: "The formed OSPF domain floods link-state information so every participant can build a consistent LSDB.", layer2: "OSPF MULTICAST", layer3: "224.0.0.5 / LS UPDATE", direction: "reverse" as const, kind: "multicast" as const }, { name: "ROUTE INSTALL", detail: "The SPF result is installed as an OSPF route across the multi-platform routing domain.", layer2: "CE-R1 ⇄ CE-VR1", layer3: "OSPF AREA 0", direction: "forward" as const, kind: "control" as const }];
+      return { ...profile, title: `OSPFv2 build · ${configured.length}/${ospfDevices.length} devices`, frames };
+    }
     if (selectedLabId !== "tr2-trunking") return profile;
     const uplink = sessions["CE-SW1"]?.interfaces["g0/1"];
     if (uplink?.switchportMode === "trunk") return profile;
@@ -512,6 +530,7 @@ export default function Home() {
 
             <TrancheVerificationPanel
               session={session}
+              sessions={sessions}
               deviceName={activeDevice}
               topology={lab.topology}
               height={verificationHeight}

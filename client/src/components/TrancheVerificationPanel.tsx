@@ -29,7 +29,7 @@ function Table({ headers, rows }: { headers: string[]; rows: Array<Array<string 
   return <div className="overflow-x-auto rounded-lg border border-white/10"><table className="w-full min-w-[620px] border-collapse text-left font-mono text-[10px]"><thead className="bg-[#111f28] text-[#63e6e2]"><tr>{headers.map((header) => <th key={header} className="border-b border-white/10 px-3 py-2 font-normal uppercase tracking-wider">{header}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={`${row.join("-")}-${index}`} className="border-b border-white/[.06] last:border-0 odd:bg-[#0d1821] even:bg-[#0a141c]">{row.map((cell, cellIndex) => <td key={`${cell}-${cellIndex}`} className={`px-3 py-2 ${cellIndex === 0 ? "text-[#f4d998]" : "text-[#b7c7ca]"}`}>{cell}</td>)}</tr>)}</tbody></table></div>;
 }
 
-export default function TrancheVerificationPanel({ session, deviceName, topology, height, minimized, onToggleMinimized, onResizeStart, onResizeKeyDown }: { session: Session; deviceName: string; topology: { devices: any[]; links: any[] }; height: number; minimized: boolean; onToggleMinimized: () => void; onResizeStart: (event: React.PointerEvent<HTMLDivElement>) => void; onResizeKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void }) {
+export default function TrancheVerificationPanel({ session, sessions, deviceName, topology, height, minimized, onToggleMinimized, onResizeStart, onResizeKeyDown }: { session: Session; sessions: Record<string, Session>; deviceName: string; topology: { devices: any[]; links: any[] }; height: number; minimized: boolean; onToggleMinimized: () => void; onResizeStart: (event: React.PointerEvent<HTMLDivElement>) => void; onResizeKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void }) {
   const [activeTab, setActiveTab] = useState<VerificationTab>("interfaces");
   const interfaces = useMemo(() => Object.entries(session.interfaces || {}), [session.interfaces]);
   const defaultGateway = useMemo(() => {
@@ -130,7 +130,26 @@ export default function TrancheVerificationPanel({ session, deviceName, topology
     }
     return rows;
   }, [session.runningConfig]);
-  const ospfRows = useMemo(() => Object.values(session.ospfProcesses || {}).map((process) => [String(process.id), process.routerId || "—", process.networks.length ? process.networks.map((network) => `${network.network} / ${network.wildcard} (area ${network.area})`).join("; ") : "—", process.passiveInterfaces?.length ? process.passiveInterfaces.join(", ") : "none"]), [session.ospfProcesses]);
+  const ospfRows = useMemo(() => {
+    const rows: Array<Array<string | number>> = Object.values(session.ospfProcesses || {}).map((process) => ["Process", String(process.id), process.routerId || "—", process.networks.length ? process.networks.map((network) => `${network.network} / ${network.wildcard} (area ${network.area})`).join("; ") : "—", process.passiveInterfaces?.length ? process.passiveInterfaces.join(", ") : "none"]);
+    const devices = new Map((topology.devices || []).map((device) => [device.id, device]));
+    const nameFor = (id: string) => devices.get(id)?.name || id;
+    const localProcess = Object.values(session.ospfProcesses || {})[0];
+    if (localProcess?.routerId) for (const link of topology.links || []) {
+      const localId = nameFor(link.from) === deviceName ? link.from : nameFor(link.to) === deviceName ? link.to : null;
+      if (!localId) continue;
+      const remoteId = localId === link.from ? link.to : link.from;
+      const remoteName = nameFor(remoteId);
+      const remoteSession = sessions[remoteName];
+      const remoteProcess = remoteSession ? Object.values(remoteSession.ospfProcesses || {})[0] : undefined;
+      const localPort = localId === link.from ? link.fromPort : link.toPort;
+      const remotePort = localId === link.from ? link.toPort : link.fromPort;
+      const localState = session.interfaces[localPort];
+      const remoteState = remoteSession?.interfaces[remotePort];
+      if (remoteProcess?.routerId && localState?.status === "up" && remoteState?.status === "up" && localState.ipv4.length && remoteState.ipv4.length) rows.push(["Neighbor", remoteProcess.id, `${remoteName} · ${remoteProcess.routerId}`, `${localPort} ⇄ ${remotePort} · area 0`, "FULL"]);
+    }
+    return rows;
+  }, [deviceName, session.interfaces, session.ospfProcesses, sessions, topology.devices, topology.links]);
   const dhcpRows = useMemo(() => {
     const rows: Array<Array<string | number>> = [];
     for (const pool of Object.values(session.dhcpPools || {})) {
@@ -154,7 +173,7 @@ export default function TrancheVerificationPanel({ session, deviceName, topology
     acls: { description: "Numbered and named ACL rules currently present in the active IOS running configuration.", headers: ["ACL", "Type", "Action", "Rule / Match"], rows: aclRows },
     natpat: { description: "Configured NAT and PAT rules from the active IOS running configuration. Translation entries will appear here when the model learns them.", headers: ["Mode", "Source", "Translation", "State"], rows: natPatRows },
     dhcp: { description: "Modeled DHCP pools, leases, exclusions, and client state from the active IOS session.", headers: ["Record", "Identity", "Addressing", "Lease / State", "Gateway / MAC", "Interface / Pool"], rows: dhcpRows },
-    ospf: { description: "Configured OSPF processes, router IDs, network statements, and passive interfaces from the active IOS session. Neighbor adjacencies are not yet modeled in this panel.", headers: ["Process", "Router ID", "Advertised Networks", "Passive Interfaces"], rows: ospfRows },
+    ospf: { description: "Configured OSPF processes plus modeled FULL adjacencies across operational transit links whose two endpoints have OSPF participation.", headers: ["Record", "Process", "Router ID / Neighbor", "Networks / Link", "State / Passive"], rows: ospfRows },
   };
   const current = data[activeTab];
   return <section className="mt-6 overflow-hidden rounded-xl border border-[#63e6e2]/20 bg-[#0d1920] shadow-xl">

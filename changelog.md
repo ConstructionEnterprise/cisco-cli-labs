@@ -25,6 +25,8 @@
 - **Realistic TR2 Trunk Formation**: Rebuilt 802.1Q Trunking as a multi-device sequence: create VLAN 10 and VLAN 999 on CE-SW1 and CE-SW2, configure and align both trunk ends, assign ENG-PC1 to VLAN 10, configure CE-R1 g0/0.10 as the router-on-a-stick gateway, generate a modeled ping, and verify VLAN, MAC, trunk, and interface state on the appropriate devices.
 - **Trunk MAC Propagation**: Extended Layer 2 learning beyond directly attached hosts. Active trunks now propagate learned source MACs for permitted VLANs, and the router-on-a-stick gateway contributes a modeled VLAN 10 source MAC, allowing CE-SW1 and CE-SW2 tables to show local and remote forwarding entries.
 - **OSPF Show Grammar Fix**: Corrected privileged-EXEC validation so the base `show ip ospf` command is accepted alongside `show ip ospf neighbor` and interface-specific OSPF checks.
+- **Multi-Platform OSPF Build**: Expanded TR3 OSPFv2 into an 88-step build-first curriculum across two routers, CE-L3SW1, CE-FW1, and CE-VR1. The sequence configures transit IPs and descriptions, unique router IDs, area 0 participation, and all five devices before ten focused verification steps.
+- **Reactive OSPF Trace**: Made the OSPF operational-context animation reflect build progress. It now distinguishes process idle, incomplete device configuration, Hello eligibility, Hello/LSA exchange, DBD neighbor verification, and OSPF route installation.
 
 ### Changed
 - **Tranche Workspace Layout**: Removed legacy CSS minimum-height constraints from the IOS simulator so the resize state is honored throughout its full range instead of stopping at the old terminal-shell and terminal-output minimums.
