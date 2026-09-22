@@ -37,6 +37,7 @@ The guided IOS console is optimized for keeping the next command and the evidenc
 * **State-aware trunk trace:** The 802.1Q trunking packet trace now shows untagged/pending traffic until the uplink is configured with `switchport mode trunk`; tagged 802.1Q transit appears only after the modeled trunk state is active.
 * **Realistic trunk formation lab:** TR2 802.1Q Trunking now models `CE-R1 ⇄ CE-SW1 ⇄ CE-SW2 ⇄ ENG-PC1`. The guided sequence creates VLAN 10 and native VLAN 999 on both switches, configures both trunk ends, assigns the host access port, builds the router-on-a-stick VLAN 10 gateway, pings the modeled host, and verifies VLAN, MAC, trunk, and interface state on the correct devices.
 * **Trunk MAC propagation:** Dynamic source-MAC learning now propagates across active trunk links for allowed VLANs and includes the router-on-a-stick gateway MAC on the VLAN 10 trunk. Switch tables therefore show locally attached and remote VLAN sources on the correct ingress ports.
+* **OSPF show-command grammar:** Privileged EXEC now accepts the base `show ip ospf` command in addition to detailed neighbor and interface variants.
 * **IPv6 access-switch context:** TR2 IPv6 Interface Fundamentals now models `CE-R1 ⇄ CE-SW1 ⇄ V6-PC1`. CDP can therefore show the router-to-switch neighbor while IPv6 Neighbor Discovery traverses the Layer 2 segment to the active V6-PC1 endpoint.
 
 These behaviors preserve the Observe -> Configure -> Verify loop while reducing unnecessary page scrolling during command entry.
