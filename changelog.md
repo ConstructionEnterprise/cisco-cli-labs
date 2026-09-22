@@ -22,6 +22,7 @@
 - **IPv6 CDP Neighbor Context**: Expanded TR2 IPv6 Interface Fundamentals to model `CE-R1 ⇄ CE-SW1 ⇄ V6-PC1`. CDP now has a real router-to-switch neighbor relationship while the ND model resolves the IPv6 host across the Layer 2 switch segment.
 - **VLAN MAC Learning**: Added topology-aware dynamic MAC learning for active switch access ports connected to modeled PCs. Learned entries use deterministic host MACs, the configured access VLAN, and the receiving switch port, aligning the MAC table with the packet trace's ingress-frame behavior.
 - **State-Aware Trunk Trace**: Corrected the 802.1Q operational-context animation so pre-configuration traffic is shown as untagged/pending. The tagged trunk-transit frame is shown only after the modeled uplink reaches `switchport mode trunk`.
+- **Realistic TR2 Trunk Formation**: Rebuilt 802.1Q Trunking as a multi-device sequence: create VLAN 10 and VLAN 999 on CE-SW1 and CE-SW2, configure and align both trunk ends, assign ENG-PC1 to VLAN 10, configure CE-R1 g0/0.10 as the router-on-a-stick gateway, generate a modeled ping, and verify VLAN, MAC, trunk, and interface state on the appropriate devices.
 
 ### Changed
 - **Tranche Workspace Layout**: Removed legacy CSS minimum-height constraints from the IOS simulator so the resize state is honored throughout its full range instead of stopping at the old terminal-shell and terminal-output minimums.
