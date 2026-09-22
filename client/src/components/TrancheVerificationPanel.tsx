@@ -3,13 +3,13 @@ import { Minimize2, Network, Router, Table2 } from "lucide-react";
 import type { Session } from "@/lib/ios-engine";
 import ResizeGrabBar from "@/components/ResizeGrabBar";
 
-type VerificationTab = "interfaces" | "vlans" | "arp" | "mac" | "deviceMacs" | "ipv6neighbors" | "cdp" | "trunks" | "etherchannels" | "acls" | "natpat" | "dhcp" | "ospf" | "drbdr" | "fhrp";
+type VerificationTab = "interfaces" | "vlans" | "arp" | "mac" | "ipv6neighbors" | "cdp" | "trunks" | "etherchannels" | "acls" | "natpat" | "dhcp" | "ospf" | "drbdr" | "fhrp";
+type MacView = "device" | "learned";
 
 const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "interfaces", label: "IP Interfaces" },
   { id: "vlans", label: "VLANs" },
   { id: "arp", label: "ARP" },
-  { id: "deviceMacs", label: "Device MACs" },
   { id: "mac", label: "MAC Address" },
   { id: "ipv6neighbors", label: "IPv6 Neighbors" },
   { id: "cdp", label: "CDP" },
@@ -33,8 +33,9 @@ function Table({ headers, rows }: { headers: string[]; rows: Array<Array<string 
 }
 
 export default function TrancheVerificationPanel({ session, sessions, deviceName, topology, height, minimized, onToggleMinimized, onResizeStart, onResizeKeyDown }: { session: Session; sessions: Record<string, Session>; deviceName: string; topology: { devices: any[]; links: any[] }; height: number; minimized: boolean; onToggleMinimized: () => void; onResizeStart: (event: React.PointerEvent<HTMLDivElement>) => void; onResizeKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void }) {
-  const [activeTab, setActiveTab] = useState<VerificationTab>("deviceMacs");
-  useEffect(() => setActiveTab("deviceMacs"), [topology]);
+  const [activeTab, setActiveTab] = useState<VerificationTab>("mac");
+  const [macView, setMacView] = useState<MacView>("device");
+  useEffect(() => { setActiveTab("mac"); setMacView("device"); }, [topology]);
   const interfaces = useMemo(() => Object.entries(session.interfaces || {}), [session.interfaces]);
   const defaultGateway = useMemo(() => {
     for (const command of [...(session.runningConfig || [])].reverse()) {
@@ -214,8 +215,9 @@ export default function TrancheVerificationPanel({ session, sessions, deviceName
     interfaces: { description: "Live interface relationships, including parent/subinterface hierarchy, 802.1Q VLAN binding, gateway role, and derived operational state.", headers: ["Interface", "Parent", "VLAN", "Encapsulation", "IP Address", "Role", "Status", "Admin State"], rows: interfaceRows },
     vlans: { description: "Modeled VLAN relationships across routed subinterfaces, access ports, and trunk interfaces.", headers: ["VLAN", "Name", "Routed Gateway", "Access Ports", "Trunk Interfaces", "Role"], rows: vlanRows },
     arp: { description: "Modeled IP-to-MAC neighbor mappings learned by this device.", headers: ["Protocol Address", "Hardware Address", "Interface", "Age"], rows: arpRows },
-    deviceMacs: { description: "Every device in the selected lab has a unique hardware identity assigned at initialization. This inventory is independent of traffic, VLAN learning, ARP, and the switch forwarding database.", headers: ["Device", "Unique MAC Address", "Device Type", "Role", "Availability"], rows: deviceMacRows },
-    mac: { description: "The switch or Layer 2 forwarding database learned through modeled traffic. This is separate from the device identity inventory.", headers: ["VLAN", "MAC Address", "Type", "Port", "Last Seen"], rows: macRows },
+    mac: macView === "device"
+      ? { description: "Every device in the selected lab has a unique hardware identity assigned at initialization. This inventory is independent of traffic, VLAN learning, ARP, and the switch forwarding database.", headers: ["Device", "Unique MAC Address", "Device Type", "Role", "Availability"], rows: deviceMacRows }
+      : { description: "The learned Layer 2 forwarding database from modeled traffic. This is separate from the initialized device identity inventory.", headers: ["VLAN", "MAC Address", "Type", "Port", "Last Seen"], rows: macRows },
     ipv6neighbors: { description: "Modeled IPv6 Neighbor Discovery state. A configured, operational IPv6 link sends a Neighbor Solicitation and the connected endpoint responds with a Neighbor Advertisement.", headers: ["IPv6 Address", "Link-Local", "MAC Address", "Interface", "State", "Discovery", "Neighbor"], rows: ipv6NeighborRows },
     cdp: { description: "Topology-backed Cisco Discovery Protocol relationships between this device's local interfaces and network-capable neighbors.", headers: ["Local Device", "Local Interface", "Neighbor", "Remote Interface", "Neighbor Role", "Relationship"], rows: cdpRows },
     trunks: { description: "Configured trunk links, native VLAN, and allowed VLAN state.", headers: ["Interface", "Status", "Native VLAN", "Allowed VLANs"], rows: trunkRows },
@@ -231,7 +233,7 @@ export default function TrancheVerificationPanel({ session, sessions, deviceName
   return <section className="mt-6 overflow-hidden rounded-xl border border-[#63e6e2]/20 bg-[#0d1920] shadow-xl">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#111b24] px-5 py-4"><div className="flex items-center gap-3"><div className="rounded-lg border border-[#63e6e2]/25 bg-[#173038] p-2"><Table2 className="h-4 w-4 text-[#63e6e2]" /></div><div><div className="instrument-label text-[#63e6e2]">LIVE VERIFICATION TABLES</div><h2 className="mt-1 text-base font-semibold text-white">{deviceName} operational evidence</h2></div></div><div className="flex items-center gap-3"><div className="font-mono text-[10px] uppercase tracking-wider text-[#71878e]">updates with IOS state</div><button type="button" aria-expanded={!minimized} aria-controls="tranche-verification-body" onClick={onToggleMinimized} className="flex items-center gap-1.5 rounded border border-[#f5b74b]/25 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-[#f4d998] transition hover:border-[#f5b74b]/60 hover:bg-[#2a2112]"><Minimize2 className="h-3.5 w-3.5" /> {minimized ? "Restore tables" : "Minimize tables"}</button></div></div>
     {!minimized && <div id="tranche-verification-body"><div className="flex flex-wrap gap-2 border-b border-white/10 px-5 py-3">{tabs.map((tab) => <button key={tab.id} type="button" onClick={() => setActiveTab(tab.id)} className={`rounded-md border px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider transition ${activeTab === tab.id ? "border-[#63e6e2]/55 bg-[#173038] text-[#b9eeee]" : "border-white/10 text-[#71828a] hover:border-[#63e6e2]/35 hover:text-white"}`}><span className="inline-flex items-center gap-1.5">{tab.id === "interfaces" || tab.id === "trunks" || tab.id === "etherchannels" ? <Router className="h-3 w-3" /> : <Network className="h-3 w-3" />}{tab.label}</span></button>)}</div>
-    <div className="overflow-y-auto px-5 py-4" style={{ height }}><p className="mb-3 text-xs text-[#8fa0a7]">{current.description}</p><Table headers={current.headers} rows={current.rows} /></div></div>}
+    <div className="overflow-y-auto px-5 py-4" style={{ height }}>{activeTab === "mac" && <div className="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-[#0a141c] p-2"><span className="mr-2 font-mono text-[9px] uppercase tracking-wider text-[#71878e]">MAC view</span>{(["device", "learned"] as MacView[]).map((view) => <button key={view} type="button" onClick={() => setMacView(view)} className={`rounded border px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider transition ${macView === view ? "border-[#63e6e2]/55 bg-[#173038] text-[#b9eeee]" : "border-white/10 text-[#71828a] hover:border-[#63e6e2]/35 hover:text-white"}`}>{view === "device" ? "Initialized Device MACs" : "Learned MAC Table"}</button>)}</div>}<p className="mb-3 text-xs text-[#8fa0a7]">{current.description}</p><Table headers={current.headers} rows={current.rows} /></div></div>}
     {!minimized && <ResizeGrabBar label="Resize live verification tables" value={height} min={220} max={760} onPointerDown={onResizeStart} onKeyDown={onResizeKeyDown} />}
   </section>;
 }
