@@ -40,6 +40,8 @@ The guided IOS console is optimized for keeping the next command and the evidenc
 * **OSPF show-command grammar:** Privileged EXEC now accepts the base `show ip ospf` command in addition to detailed neighbor and interface variants.
 * **Multi-platform OSPF build:** TR3 OSPFv2 is now an extensive 88-step curriculum that builds OSPF across CE-R1, CE-R2, CE-L3SW1, CE-FW1, and CE-VR1. Each device receives Layer 3 transit addressing, interface descriptions, unique router IDs, area 0 network statements, and an explicit build completion before focused verification begins.
 * **Reactive OSPF packet trace:** The operational context now progresses from process idle, through build-in-progress and Hello eligibility, to Hello/LSA/route-install milestones. The `show ip ospf neighbor` evidence pass emphasizes DBD exchange, while `show ip route ospf` emphasizes route installation.
+* **OSPF DR/BDR lab:** Added a dedicated multi-access Ethernet scenario with CE-R1, CE-R2, CE-R3, and CE-SW1. The lab teaches `ip ospf priority`, `ip ospf network broadcast`, and `ip ospf cost`, and the live tables expose router ID, network type, priority, cost, and modeled DR/BDR/DROTHER roles.
+* **FHRP module:** Added a separate First Hop Redundancy Protocol lab covering HSRP, VRRP, and GLBP virtual IPs, priorities, preemption, active/standby or master/backup roles, and failover-oriented operational context.
 * **IPv6 access-switch context:** TR2 IPv6 Interface Fundamentals now models `CE-R1 ⇄ CE-SW1 ⇄ V6-PC1`. CDP can therefore show the router-to-switch neighbor while IPv6 Neighbor Discovery traverses the Layer 2 segment to the active V6-PC1 endpoint.
 
 These behaviors preserve the Observe -> Configure -> Verify loop while reducing unnecessary page scrolling during command entry.

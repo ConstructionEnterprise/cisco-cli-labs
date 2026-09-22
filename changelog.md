@@ -27,6 +27,8 @@
 - **OSPF Show Grammar Fix**: Corrected privileged-EXEC validation so the base `show ip ospf` command is accepted alongside `show ip ospf neighbor` and interface-specific OSPF checks.
 - **Multi-Platform OSPF Build**: Expanded TR3 OSPFv2 into an 88-step build-first curriculum across two routers, CE-L3SW1, CE-FW1, and CE-VR1. The sequence configures transit IPs and descriptions, unique router IDs, area 0 participation, and all five devices before ten focused verification steps.
 - **Reactive OSPF Trace**: Made the OSPF operational-context animation reflect build progress. It now distinguishes process idle, incomplete device configuration, Hello eligibility, Hello/LSA exchange, DBD neighbor verification, and OSPF route installation.
+- **OSPF DR/BDR and Network Types**: Added a dedicated multi-access Ethernet lab for CE-R1, CE-R2, and CE-R3 through CE-SW1. It models broadcast network behavior, priority-based DR/BDR/DROTHER election, interface cost, router IDs, and neighbor-state evidence.
+- **FHRP Module**: Added a separate HSRP, VRRP, and GLBP lab with virtual IPs, priority, preemption, active/standby and master/backup roles, and a failover-focused packet trace and live verification tab.
 
 ### Changed
 - **Tranche Workspace Layout**: Removed legacy CSS minimum-height constraints from the IOS simulator so the resize state is honored throughout its full range instead of stopping at the old terminal-shell and terminal-output minimums.

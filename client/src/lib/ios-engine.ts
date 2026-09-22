@@ -9,6 +9,7 @@ export type Route = { prefix: string; nextHop?: string; interface?: string; prot
 export type DhcpPool = { name: string; network?: string; mask?: string; defaultRouter?: string; dnsServer?: string; domainName?: string };
 export type DhcpLease = { mac: string; ip: string; clientId: string; state: "active" | "expired"; pool: string; leaseStart: string; leaseEnd: string };
 export type OspfProcess = { id: number; routerId?: string; networks: { network: string; wildcard: string; area: number }[]; passiveInterfaces?: string[] };
+export type FhrpGroup = { protocol: "HSRP" | "VRRP" | "GLBP"; group: number; virtualIp?: string; priority?: number; preempt?: boolean; state?: "active" | "standby" | "master" | "backup" };
 
 export type InterfaceState = {
   ipv4: string[];
@@ -31,6 +32,9 @@ export type InterfaceState = {
   dhcpClient?: boolean;
   nameif?: string;
   securityLevel?: number;
+  ospfPriority?: number;
+  ospfNetworkType?: "broadcast" | "point-to-point" | "non-broadcast";
+  ospfCost?: number;
 };
 
 export type DhcpClientState = { mac: string; interface: string; state: "INIT" | "OFFERED" | "BOUND" | "EXPIRED"; ip?: string; mask?: string; gateway?: string; dns?: string; poolName?: string; leaseStart?: string; leaseEnd?: string };
@@ -56,6 +60,7 @@ export type Session = {
   dnsRecords: Record<string, string>;
   dnsCache: Record<string, string>;
   ospfProcesses: Record<string, OspfProcess>;
+  fhrpGroups: Record<string, FhrpGroup>;
 };
 
 export function boot(name: string, role: string): Session {
@@ -79,6 +84,7 @@ export function boot(name: string, role: string): Session {
     dnsRecords: {},
     dnsCache: {},
     ospfProcesses: {},
+    fhrpGroups: {},
     history: [
       "Cisco IOS Software, CCNA Lab Simulator",
       `${name} · ${role}`,
@@ -235,7 +241,7 @@ export function isCiscoCommand(command: string, mode: Mode): boolean {
   if (mode === "vlan") return /^(name [a-z0-9][a-z0-9 _.-]{0,31}|exit)$/.test(command);
   if (mode === "interface-range") return /^(description .+|switchport (?:mode (?:access|trunk)|access vlan \d+|trunk (?:native vlan \d+|allowed vlan .+))|channel-group \d+ mode (?:active|passive|on)|spanning-tree portfast|spanning-tree bpduguard enable|(?:no )?shutdown)$/.test(command);
   if (mode === "interface" || mode === "subinterface") {
-    return /^(description .+|nameif (?:outside|inside|dmz)|security-level (?:0|[1-9]\d{0,2})|switchport (?:mode (?:access|trunk)|access vlan \d+|trunk (?:native vlan \d+|allowed vlan .+)|port-security(?: (?:maximum \d+|violation (?:shutdown|restrict|protect)|mac-address sticky))?)|encapsulation dot1q \d+(?: native)?|ip address (?:dhcp|[0-9.]+ [0-9.]+)|ip helper-address [0-9.]+|ip nat (?:inside|outside)|ip access-group (?:\d+|\S+) (?:in|out)|ip pim sparse-mode|ipv6 address (?:[0-9a-f:]+\/\d+|[0-9a-f:]+ link-local)|ipv6 ospf \d+ area \d+|ipv6 pim(?: enable)?|ipv6 mld join-group [0-9a-f:]+|ip igmp join-group [0-9.]+|ipv6 nd prefix [0-9a-f:]+\/\d+|ip directed-broadcast|spanning-tree (?:portfast|bpduguard enable)|channel-group \d+ mode (?:active|passive|on)|(?:no )?shutdown)$/.test(command);
+    return /^(description .+|nameif (?:outside|inside|dmz)|security-level (?:0|[1-9]\d{0,2})|switchport (?:mode (?:access|trunk)|access vlan \d+|trunk (?:native vlan \d+|allowed vlan .+)|port-security(?: (?:maximum \d+|violation (?:shutdown|restrict|protect)|mac-address sticky))?)|encapsulation dot1q \d+(?: native)?|ip address (?:dhcp|[0-9.]+ [0-9.]+)|ip helper-address [0-9.]+|ip nat (?:inside|outside)|ip access-group (?:\d+|\S+) (?:in|out)|ip pim sparse-mode|ipv6 address (?:[0-9a-f:]+\/\d+|[0-9a-f:]+ link-local)|ipv6 ospf \d+ area \d+|ipv6 pim(?: enable)?|ipv6 mld join-group [0-9a-f:]+|ip igmp join-group [0-9.]+|ipv6 nd prefix [0-9a-f:]+\/\d+|ip directed-broadcast|ip ospf (?:cost \d+|priority \d+|network (?:broadcast|point-to-point|non-broadcast))|standby \d+ (?:ip [0-9.]+|priority \d+|preempt)|vrrp \d+ (?:ip [0-9.]+|priority \d+|preempt)|glbp \d+ (?:ip [0-9.]+|priority \d+|preempt)|spanning-tree (?:portfast|bpduguard enable)|channel-group \d+ mode (?:active|passive|on)|(?:no )?shutdown)$/.test(command);
   }
   if (mode === "router") return /^(router-id [0-9.]+|network [0-9.]+ [0-9.]+ area \d+|passive-interface (?:default|loopback ?\d+|(?:g|gigabitethernet) ?\d+\/\d+)|ipv6 router ospf \d+|area \d+ (?:range [0-9a-f:]+\/\d+|stub)|default-information originate)$/.test(command);
   if (mode === "dhcp") return /^(network [0-9.]+ [0-9.]+|default-router [0-9.]+|dns-server [0-9.]+|domain-name \S+|ipv6 dhcp (?:server|pool) \S+)$/.test(command);
@@ -378,6 +384,22 @@ export function applyCommand(session: Session, command: string, history: string[
     if (canonical.startsWith("switchport trunk allowed vlan ")) state.allowedVlans = typed.slice("switchport trunk allowed vlan ".length);
     const channelGroup = canonical.match(/^channel-group (\d+) mode (active|passive|on)$/);
     if (channelGroup) { state.channelGroup = Number(channelGroup[1]); state.channelMode = channelGroup[2] as "active" | "passive" | "on"; }
+    const ospfCost = canonical.match(/^ip ospf cost (\d+)$/);
+    if (ospfCost) state.ospfCost = Number(ospfCost[1]);
+    const ospfPriority = canonical.match(/^ip ospf priority (\d+)$/);
+    if (ospfPriority) state.ospfPriority = Number(ospfPriority[1]);
+    const ospfNetwork = canonical.match(/^ip ospf network (broadcast|point-to-point|non-broadcast)$/);
+    if (ospfNetwork) state.ospfNetworkType = ospfNetwork[1] as InterfaceState["ospfNetworkType"];
+    const fhrp = canonical.match(/^(standby|vrrp|glbp) (\d+) (ip ([0-9.]+)|priority (\d+)|preempt)$/);
+    if (fhrp) {
+      const protocol = fhrp[1] === "standby" ? "HSRP" : fhrp[1] === "vrrp" ? "VRRP" : "GLBP";
+      const key = `${name}:${protocol}:${fhrp[2]}`;
+      const group = next.fhrpGroups[key] || { protocol, group: Number(fhrp[2]) };
+      if (fhrp[4]) group.virtualIp = fhrp[4];
+      if (fhrp[5]) group.priority = Number(fhrp[5]);
+      if (fhrp[3] === "preempt") group.preempt = true;
+      next.fhrpGroups[key] = group;
+    }
     if (!canonical.startsWith("exit") && !canonical.startsWith("end")) state.commands.push(typed);
     next.interfaces[name] = state;
   }

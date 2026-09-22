@@ -3,7 +3,7 @@ import { Minimize2, Network, Router, Table2 } from "lucide-react";
 import type { Session } from "@/lib/ios-engine";
 import ResizeGrabBar from "@/components/ResizeGrabBar";
 
-type VerificationTab = "interfaces" | "vlans" | "arp" | "mac" | "ipv6neighbors" | "cdp" | "trunks" | "etherchannels" | "acls" | "natpat" | "dhcp" | "ospf";
+type VerificationTab = "interfaces" | "vlans" | "arp" | "mac" | "ipv6neighbors" | "cdp" | "trunks" | "etherchannels" | "acls" | "natpat" | "dhcp" | "ospf" | "drbdr" | "fhrp";
 
 const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "interfaces", label: "IP Interfaces" },
@@ -18,6 +18,8 @@ const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "natpat", label: "NAT / PAT" },
   { id: "dhcp", label: "DHCP" },
   { id: "ospf", label: "OSPF" },
+  { id: "drbdr", label: "DR / BDR" },
+  { id: "fhrp", label: "FHRP" },
 ];
 
 function EmptyState({ message }: { message: string }) {
@@ -161,6 +163,42 @@ export default function TrancheVerificationPanel({ session, sessions, deviceName
     for (const [name, state] of Object.entries(session.interfaces || {})) if (state.dhcpClient && !session.dhcpClient) rows.push(["Client", name, "address pending", "INIT", "—", name]);
     return rows;
   }, [session.dhcpClient, session.dhcpExcludedAddresses, session.dhcpLeases, session.dhcpPools, session.interfaces]);
+  const drbdrRows = useMemo(() => {
+    const rows: Array<Array<string | number>> = [];
+    const candidates = (topology.devices || []).flatMap((device) => {
+      const name = device.name || device.id;
+      const peer = sessions[name];
+      const entry = Object.entries(peer?.interfaces || {}).find(([, state]) => state.ospfNetworkType || state.ospfPriority !== undefined);
+      if (!entry) return [];
+      const process = Object.values(peer.ospfProcesses || {})[0];
+      return [{ name, process, state: entry[1] }];
+    }).filter((entry) => entry.process);
+    const eligible = candidates.filter((entry) => (entry.state.ospfPriority ?? 1) > 0).sort((a, b) => (b.state.ospfPriority ?? 1) - (a.state.ospfPriority ?? 1) || String(b.process?.routerId || "").localeCompare(String(a.process?.routerId || "")));
+    const dr = eligible[0]?.name;
+    const bdr = eligible[1]?.name;
+    for (const device of topology.devices || []) {
+      const name = device.name || device.id;
+      const peer = sessions[name];
+      if (!peer) continue;
+      for (const [interfaceName, state] of Object.entries(peer.interfaces || {})) {
+        if (!state.ospfNetworkType && state.ospfPriority === undefined) continue;
+        const process = Object.values(peer.ospfProcesses || {})[0];
+        const priority = state.ospfPriority ?? 1;
+        const role = priority === 0 ? "DROTHER" : name === dr ? "DR" : name === bdr ? "BDR" : "DROTHER";
+        rows.push([name, interfaceName, process?.routerId || "—", state.ospfNetworkType || "broadcast", priority, state.ospfCost ?? "default", role]);
+      }
+    }
+    return rows;
+  }, [sessions, topology.devices]);
+  const fhrpRows = useMemo(() => {
+    const groups = Object.entries(sessions).flatMap(([name, peer]) => Object.values(peer.fhrpGroups || {}).map((group) => ({ name, group })));
+    return groups.map(({ name, group }) => {
+      const peers = groups.filter((item) => item.group.protocol === group.protocol && item.group.group === group.group);
+      const highest = Math.max(...peers.map((item) => item.group.priority ?? 100));
+      const role = group.protocol === "HSRP" ? ((group.priority ?? 100) === highest ? "active" : "standby") : group.protocol === "VRRP" ? ((group.priority ?? 100) === highest ? "master" : "backup") : ((group.priority ?? 100) === highest ? "active virtual gateway" : "active forwarder");
+      return [group.protocol, group.group, name, group.virtualIp || "—", group.priority ?? 100, group.preempt ? "yes" : "no", role];
+    });
+  }, [sessions]);
   const data: Record<VerificationTab, { description: string; headers: string[]; rows: Array<Array<string | number>> }> = {
     interfaces: { description: "Live interface relationships, including parent/subinterface hierarchy, 802.1Q VLAN binding, gateway role, and derived operational state.", headers: ["Interface", "Parent", "VLAN", "Encapsulation", "IP Address", "Role", "Status", "Admin State"], rows: interfaceRows },
     vlans: { description: "Modeled VLAN relationships across routed subinterfaces, access ports, and trunk interfaces.", headers: ["VLAN", "Name", "Routed Gateway", "Access Ports", "Trunk Interfaces", "Role"], rows: vlanRows },
@@ -174,6 +212,8 @@ export default function TrancheVerificationPanel({ session, sessions, deviceName
     natpat: { description: "Configured NAT and PAT rules from the active IOS running configuration. Translation entries will appear here when the model learns them.", headers: ["Mode", "Source", "Translation", "State"], rows: natPatRows },
     dhcp: { description: "Modeled DHCP pools, leases, exclusions, and client state from the active IOS session.", headers: ["Record", "Identity", "Addressing", "Lease / State", "Gateway / MAC", "Interface / Pool"], rows: dhcpRows },
     ospf: { description: "Configured OSPF processes plus modeled FULL adjacencies across operational transit links whose two endpoints have OSPF participation.", headers: ["Record", "Process", "Router ID / Neighbor", "Networks / Link", "State / Passive"], rows: ospfRows },
+    drbdr: { description: "Multi-access OSPF election evidence: network type, priority, interface cost, router ID, and modeled DR/BDR candidate role.", headers: ["Device", "Interface", "Router ID", "Network Type", "Priority", "Cost", "Role"], rows: drbdrRows },
+    fhrp: { description: "Modeled HSRP, VRRP, and GLBP gateway redundancy state, including virtual IP, priority, preemption, and active/standby or master/backup role.", headers: ["Protocol", "Group", "Device", "Virtual IP", "Priority", "Preempt", "Role"], rows: fhrpRows },
   };
   const current = data[activeTab];
   return <section className="mt-6 overflow-hidden rounded-xl border border-[#63e6e2]/20 bg-[#0d1920] shadow-xl">

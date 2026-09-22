@@ -85,6 +85,22 @@ const PROFILES: Record<string, GuidedTraceProfile> = {
       { name: "ROUTE INSTALL", detail: "The SPF result is installed as an OSPF route.", layer2: "R1 ⇄ R2", layer3: "OSPF AREA 0", direction: "forward", kind: "control" },
     ],
   },
+  "tr3-ospf-drbdr": {
+    title: "OSPF DR/BDR election",
+    frames: [
+      { name: "OSPF HELLO", detail: "Routers send Hellos to 224.0.0.5 across the shared Ethernet segment.", layer2: "01:00:5E:00:00:05", layer3: "224.0.0.5 / MULTI-ACCESS", direction: "forward", kind: "multicast" },
+      { name: "DR ELECTION", detail: "The highest eligible priority becomes DR; the next eligible router becomes BDR. Priority 0 routers remain DROTHER.", layer2: "OSPF MULTICAST", layer3: "DR · BDR · DROTHER", direction: "reverse", kind: "control" },
+      { name: "ADJACENCY", detail: "Neighbors synchronize through the elected DR/BDR roles on the broadcast network.", layer2: "OSPF MULTICAST", layer3: "FULL / AREA 0", direction: "forward", kind: "control" },
+    ],
+  },
+  "tr3-fhrp": {
+    title: "First Hop Redundancy failover",
+    frames: [
+      { name: "VIRTUAL GATEWAY", detail: "Hosts forward traffic to a shared virtual IP rather than depending on one physical router.", layer2: "VIRTUAL MAC", layer3: "HSRP · VRRP · GLBP", direction: "forward", kind: "control" },
+      { name: "ACTIVE / STANDBY", detail: "Priority determines the preferred active, master, or virtual-gateway role while peers remain ready for failover.", layer2: "FHRP CONTROL", layer3: "PRIORITY · PREEMPT", direction: "reverse", kind: "multicast" },
+      { name: "FAILOVER", detail: "If the active gateway fails, a standby, backup, or forwarder assumes service for the same virtual IP.", layer2: "VIRTUAL MAC", layer3: "GATEWAY CONTINUITY", direction: "forward", kind: "control" },
+    ],
+  },
   "tr3-ospfv3": {
     title: "OSPFv3 adjacency",
     frames: [
