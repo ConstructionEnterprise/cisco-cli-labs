@@ -29,7 +29,7 @@
 - **Reactive OSPF Trace**: Made the OSPF operational-context animation reflect build progress. It now distinguishes process idle, incomplete device configuration, Hello eligibility, Hello/LSA exchange, DBD neighbor verification, and OSPF route installation.
 - **OSPF DR/BDR and Network Types**: Added a dedicated multi-access Ethernet lab for CE-R1, CE-R2, and CE-R3 through CE-SW1. It models broadcast network behavior, priority-based DR/BDR/DROTHER election, interface cost, router IDs, and neighbor-state evidence.
 - **FHRP Module**: Added a separate HSRP, VRRP, and GLBP lab with virtual IPs, priority, preemption, active/standby and master/backup roles, and a failover-focused packet trace and live verification tab.
-- **MAC Assignment Inventory**: Expanded the live MAC table to show topology-assigned interface and connected-peer MAC addresses immediately, while preserving a separate distinction for dynamic entries learned through modeled Layer 2 traffic.
+- **Device MAC Identity Inventory**: Corrected the MAC presentation model. Every topology device now has a deterministic unique MAC identity available at lab initialization, and a default **Device MACs** tab lists the complete lab-wide inventory independently of traffic, VLAN learning, ARP, and the separate learned forwarding database.
 
 ### Changed
 - **Tranche Workspace Layout**: Removed legacy CSS minimum-height constraints from the IOS simulator so the resize state is honored throughout its full range instead of stopping at the old terminal-shell and terminal-output minimums.
