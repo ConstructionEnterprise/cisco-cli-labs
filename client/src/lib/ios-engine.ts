@@ -152,6 +152,16 @@ export function applyModeledLayer2Learning(sessions: Record<string, Session>, to
   const devices = new Map((topology.devices || []).map((device) => [device.id, device]));
   const nameFor = (id: string) => devices.get(id)?.name || id;
   const next = Object.fromEntries(Object.entries(sessions).map(([name, session]) => [name, { ...session, macTable: [...(session.macTable || [])] }])) as Record<string, Session>;
+  const learnedBySwitch = new Map<string, MacEntry[]>();
+  const addLearned = (switchName: string, entry: MacEntry) => {
+    const entries = learnedBySwitch.get(switchName) || [];
+    learnedBySwitch.set(switchName, [...entries.filter((item) => !(item.mac === entry.mac && item.port === entry.port)), entry]);
+  };
+  const activePort = (deviceName: string, portName: string | undefined) => {
+    const port = portName ? next[deviceName]?.interfaces[portName] : undefined;
+    return Boolean(port && !port.shutdown && port.status === "up");
+  };
+  const allows = (port: InterfaceState, vlan: number) => !port.allowedVlans || port.allowedVlans.split(",").some((value) => value.trim() === String(vlan));
   for (const link of topology.links || []) {
     for (const [switchId, hostId, switchPort] of [[link.from, link.to, link.fromPort], [link.to, link.from, link.toPort]] as Array<[string, string, string | undefined]>) {
       if (devices.get(switchId)?.kind !== "switch" || devices.get(hostId)?.kind !== "pc" || !switchPort) continue;
@@ -159,9 +169,41 @@ export function applyModeledLayer2Learning(sessions: Record<string, Session>, to
       const port = switchSession?.interfaces[switchPort];
       if (!switchSession || !port || port.shutdown || port.status !== "up" || port.switchportMode !== "access") continue;
       const entry: MacEntry = { mac: modeledDeviceMac(nameFor(hostId)), port: switchPort, vlan: port.accessVlan ?? 1, type: "dynamic", lastSeen: Date.now() };
-      switchSession.macTable = [...switchSession.macTable.filter((item) => item.port !== switchPort), entry];
+      addLearned(nameFor(switchId), entry);
     }
   }
+  for (const link of topology.links || []) {
+    const from = devices.get(link.from);
+    const to = devices.get(link.to);
+    const fromName = nameFor(link.from);
+    const toName = nameFor(link.to);
+    if (from?.kind === "router" && to?.kind === "switch" && activePort(fromName, link.fromPort) && activePort(toName, link.toPort)) {
+      const subinterface = Object.values(next[fromName]?.interfaces || {}).find((state) => state.vlanId !== undefined && state.ipv4.length);
+      const port = link.toPort ? next[toName]?.interfaces[link.toPort] : undefined;
+      if (subinterface && port && allows(port, subinterface.vlanId!)) addLearned(toName, { mac: modeledDeviceMac(fromName), port: link.toPort!, vlan: subinterface.vlanId!, type: "dynamic", lastSeen: Date.now() });
+    }
+    if (to?.kind === "router" && from?.kind === "switch" && activePort(toName, link.toPort) && activePort(fromName, link.fromPort)) {
+      const subinterface = Object.values(next[toName]?.interfaces || {}).find((state) => state.vlanId !== undefined && state.ipv4.length);
+      const port = link.fromPort ? next[fromName]?.interfaces[link.fromPort] : undefined;
+      if (subinterface && port && allows(port, subinterface.vlanId!)) addLearned(fromName, { mac: modeledDeviceMac(toName), port: link.fromPort!, vlan: subinterface.vlanId!, type: "dynamic", lastSeen: Date.now() });
+    }
+  }
+  // Propagate learned VLAN source MACs across each operational trunk in both directions.
+  for (let pass = 0; pass < topology.links.length; pass += 1) {
+    for (const link of topology.links || []) {
+      const from = devices.get(link.from);
+      const to = devices.get(link.to);
+      if (from?.kind !== "switch" || to?.kind !== "switch") continue;
+      const fromName = nameFor(link.from);
+      const toName = nameFor(link.to);
+      const fromPort = link.fromPort ? next[fromName]?.interfaces[link.fromPort] : undefined;
+      const toPort = link.toPort ? next[toName]?.interfaces[link.toPort] : undefined;
+      if (!fromPort || !toPort || fromPort.switchportMode !== "trunk" || toPort.switchportMode !== "trunk" || !activePort(fromName, link.fromPort) || !activePort(toName, link.toPort)) continue;
+      for (const entry of learnedBySwitch.get(fromName) || []) if (allows(toPort, entry.vlan)) addLearned(toName, { ...entry, port: link.toPort!, lastSeen: Date.now() });
+      for (const entry of learnedBySwitch.get(toName) || []) if (allows(fromPort, entry.vlan)) addLearned(fromName, { ...entry, port: link.fromPort!, lastSeen: Date.now() });
+    }
+  }
+  Array.from(learnedBySwitch.entries()).forEach(([switchName, entries]) => { next[switchName].macTable = entries; });
   return next;
 }
 
