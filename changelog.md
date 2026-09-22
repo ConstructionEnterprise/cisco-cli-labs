@@ -1,5 +1,12 @@
 # Changelog
 
+## [2026-09-22] - State-Driven NAT/PAT Packet Trace
+### Changed
+- **NAT/PAT trace trigger:** TR4-NAT-PAT now keeps the operational-context animation in standby while the learner marks inside/outside interfaces and prepares the router. Playback begins only after the accepted `ip nat inside source list 1 interface g0/1 overload` command is entered, aligning the visual flow with the command that actually creates the PAT rule.
+
+### Validation
+- Confirmed the trigger is scoped to TR4-NAT-PAT and does not change packet-trace playback for other guided tranche labs.
+
 ## [2026-09-19] - Tranche Verification Workspace
 ### Added
 - **Live Verification Tables**: Added a tranche-only panel below the IOS simulator with IP interface, ARP, MAC address, trunk, and EtherChannel tabs. The tables derive from the active IOS session and display explicit empty states when no modeled entries are present.

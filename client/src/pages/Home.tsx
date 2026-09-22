@@ -123,6 +123,11 @@ export default function Home() {
   const prompt = session ? modePrompt(activeDevice, session) : "";
   const complete = stepIndex >= lab.steps.length;
   const percent = Math.round((stepIndex / lab.steps.length) * 100);
+  const tracePlaybackRun = selectedLabId === "tr4-nat-pat"
+    ? Object.values(sessions).some((deviceSession) => deviceSession.runningConfig.some((command) => normalizeCommand(command) === "ip nat inside source list 1 interface g0/1 overload"))
+      ? Math.max(traceRun, 1)
+      : 0
+    : traceRun;
   const guidedTrace = useMemo(() => {
     const profile = getGuidedTraceProfile(selectedLabId, lab.topology.devices.map((device: any) => device.name || device.id));
     if (selectedLabId === "tr3-ospfv2") {
@@ -426,7 +431,7 @@ export default function Home() {
                   <span className="mx-4">{lab.topology.devices.map((d: any) => d.name || d.id).join(" ⇄ ")}</span>
                   <span className="h-px flex-1 bg-gradient-to-l from-[#63e6e2] to-transparent" />
                 </div>
-                {lab.type === "guided" && <GuidedPacketTrace profile={guidedTrace} run={traceRun} leftLabel={lab.topology.devices[0]?.name || "SOURCE"} rightLabel={lab.topology.devices[lab.topology.devices.length - 1]?.name || "DESTINATION"} />}
+                {lab.type === "guided" && <GuidedPacketTrace profile={guidedTrace} run={tracePlaybackRun} leftLabel={lab.topology.devices[0]?.name || "SOURCE"} rightLabel={lab.topology.devices[lab.topology.devices.length - 1]?.name || "DESTINATION"} />}
               </div>
 
               <div className="panel-surface p-4">
