@@ -3,7 +3,7 @@ import { Minimize2, Network, Router, Table2 } from "lucide-react";
 import type { Session } from "@/lib/ios-engine";
 import ResizeGrabBar from "@/components/ResizeGrabBar";
 
-type VerificationTab = "interfaces" | "vlans" | "arp" | "mac" | "ipv6neighbors" | "cdp" | "trunks" | "etherchannels" | "acls" | "natpat" | "dhcp" | "ospf" | "drbdr" | "fhrp";
+type VerificationTab = "interfaces" | "vlans" | "arp" | "mac" | "ipv6neighbors" | "cdp" | "trunks" | "etherchannels" | "acls" | "natpat" | "transport" | "dhcp" | "ospf" | "drbdr" | "fhrp";
 type MacView = "device" | "learned";
 
 const tabs: Array<{ id: VerificationTab; label: string }> = [
@@ -17,6 +17,7 @@ const tabs: Array<{ id: VerificationTab; label: string }> = [
   { id: "etherchannels", label: "EtherChannels" },
   { id: "acls", label: "ACLs" },
   { id: "natpat", label: "NAT / PAT" },
+  { id: "transport", label: "Transport / Flows" },
   { id: "dhcp", label: "DHCP" },
   { id: "ospf", label: "OSPF" },
   { id: "drbdr", label: "DR / BDR" },
@@ -175,6 +176,7 @@ export default function TrancheVerificationPanel({ session, sessions, deviceName
     for (const [name, state] of Object.entries(session.interfaces || {})) if (state.dhcpClient && !session.dhcpClient) rows.push(["Client", name, "address pending", "INIT", "—", name]);
     return rows;
   }, [session.dhcpClient, session.dhcpExcludedAddresses, session.dhcpLeases, session.dhcpPools, session.interfaces]);
+  const transportRows = useMemo(() => (session.transportFlows || []).map((flow) => [flow.protocol, flow.application, flow.source, flow.destination, flow.state, flow.evidence]), [session.transportFlows]);
   const drbdrRows = useMemo(() => {
     const rows: Array<Array<string | number>> = [];
     const candidates = (topology.devices || []).flatMap((device) => {
@@ -224,6 +226,7 @@ export default function TrancheVerificationPanel({ session, sessions, deviceName
     etherchannels: { description: "Configured EtherChannel members, explicitly identifying LACP active/passive negotiation versus static mode-on bundling.", headers: ["Port-Channel", "Member", "Protocol", "Mode", "Status", "Switchport"], rows: etherChannelRows },
     acls: { description: "Numbered and named ACL rules currently present in the active IOS running configuration.", headers: ["ACL", "Type", "Action", "Rule / Match"], rows: aclRows },
     natpat: { description: "Configured NAT and PAT rules from the active IOS running configuration. Translation entries will appear here when the model learns them.", headers: ["Mode", "Source", "Translation", "State"], rows: natPatRows },
+    transport: { description: "Modeled Layer 4 evidence, including transport protocol, application context, endpoint ports, session state, and the IOS action that produced the flow.", headers: ["Protocol", "Application", "Source", "Destination", "State", "Evidence"], rows: transportRows },
     dhcp: { description: "Modeled DHCP pools, leases, exclusions, and client state from the active IOS session.", headers: ["Record", "Identity", "Addressing", "Lease / State", "Gateway / MAC", "Interface / Pool"], rows: dhcpRows },
     ospf: { description: "Configured OSPF processes plus modeled FULL adjacencies across operational transit links whose two endpoints have OSPF participation.", headers: ["Record", "Process", "Router ID / Neighbor", "Networks / Link", "State / Passive"], rows: ospfRows },
     drbdr: { description: "Multi-access OSPF election evidence: network type, priority, interface cost, router ID, and modeled DR/BDR candidate role.", headers: ["Device", "Interface", "Router ID", "Network Type", "Priority", "Cost", "Role"], rows: drbdrRows },

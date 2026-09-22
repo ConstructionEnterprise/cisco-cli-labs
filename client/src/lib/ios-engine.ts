@@ -8,6 +8,7 @@ export type Ipv6NeighborEntry = { ipv6: string; linkLocal?: string; mac: string;
 export type Route = { prefix: string; nextHop?: string; interface?: string; protocol: "connected" | "static" | "ospf" };
 export type DhcpPool = { name: string; network?: string; mask?: string; defaultRouter?: string; dnsServer?: string; domainName?: string };
 export type DhcpLease = { mac: string; ip: string; clientId: string; state: "active" | "expired"; pool: string; leaseStart: string; leaseEnd: string };
+export type TransportFlow = { protocol: "TCP" | "UDP"; application: string; source: string; destination: string; state: string; evidence: string };
 export type OspfProcess = { id: number; routerId?: string; networks: { network: string; wildcard: string; area: number }[]; passiveInterfaces?: string[] };
 export type FhrpGroup = { protocol: "HSRP" | "VRRP" | "GLBP"; group: number; virtualIp?: string; priority?: number; preempt?: boolean; state?: "active" | "standby" | "master" | "backup" };
 
@@ -56,6 +57,7 @@ export type Session = {
   dhcpLeases: DhcpLease[];
   dhcpExcludedAddresses: string[];
   dhcpClient?: DhcpClientState;
+  transportFlows: TransportFlow[];
   dnsServerEnabled: boolean;
   dnsRecords: Record<string, string>;
   dnsCache: Record<string, string>;
@@ -80,6 +82,7 @@ export function boot(name: string, role: string): Session {
     dhcpLeases: [],
     dhcpExcludedAddresses: [],
     dhcpClient: undefined,
+    transportFlows: [],
     dnsServerEnabled: false,
     dnsRecords: {},
     dnsCache: {},
@@ -290,6 +293,7 @@ export function applyCommand(session: Session, command: string, history: string[
     dhcpLeases: (session.dhcpLeases || []).map((lease) => ({ ...lease })),
     dhcpExcludedAddresses: [...(session.dhcpExcludedAddresses || [])],
     dhcpClient: session.dhcpClient ? { ...session.dhcpClient } : undefined,
+    transportFlows: (session.transportFlows || []).map((flow) => ({ ...flow })),
     dnsServerEnabled: session.dnsServerEnabled || false,
     dnsRecords: { ...(session.dnsRecords || {}) },
     dnsCache: { ...(session.dnsCache || {}) },
@@ -312,6 +316,16 @@ export function applyCommand(session: Session, command: string, history: string[
   if (session.mode === "config" && canonical.startsWith("ip dhcp excluded-address ")) {
     const address = typed.slice("ip dhcp excluded-address ".length).trim();
     if (!next.dhcpExcludedAddresses.includes(address)) next.dhcpExcludedAddresses.push(address);
+  }
+  if (session.mode === "config" && canonical === "ip nat inside source list 1 interface g0/1 overload") {
+    next.transportFlows = [...next.transportFlows.filter((flow) => flow.application !== "HTTPS / PAT"), {
+      protocol: "TCP",
+      application: "HTTPS / PAT",
+      source: "192.168.40.10:51514",
+      destination: "198.51.100.80:443",
+      state: "ESTABLISHED",
+      evidence: "modeled NAT overload flow",
+    }];
   }
   if (session.mode === "config" && canonical === "ip dns server") next.dnsServerEnabled = true;
   if (session.mode === "config" && canonical.startsWith("ip host ")) {
@@ -370,7 +384,18 @@ export function applyCommand(session: Session, command: string, history: string[
     if (canonical.startsWith("ip address ")) state.ipv4.push(typed.slice("ip address ".length));
     if (canonical.startsWith("nameif ")) state.nameif = typed.slice("nameif ".length).trim();
     if (canonical.startsWith("security-level ")) state.securityLevel = Number(canonical.slice("security-level ".length));
-    if (canonical === "ip address dhcp") { state.dhcpClient = true; state.ipv4 = []; }
+    if (canonical === "ip address dhcp") {
+      state.dhcpClient = true;
+      state.ipv4 = [];
+      next.transportFlows = [...next.transportFlows.filter((flow) => flow.application !== "DHCP"), {
+        protocol: "UDP",
+        application: "DHCP",
+        source: "0.0.0.0:68",
+        destination: "255.255.255.255:67",
+        state: "DISCOVER",
+        evidence: "modeled DHCP client request",
+      }];
+    }
     if (canonical.startsWith("ipv6 address ")) state.ipv6.push(typed.slice("ipv6 address ".length));
     const dot1q = canonical.match(/^encapsulation dot1q (\d+)$/);
     if (dot1q) { state.encapsulation = "dot1q"; state.vlanId = Number(dot1q[1]); }

@@ -3,6 +3,7 @@
 ## [2026-09-22] - State-Driven NAT/PAT Packet Trace
 ### Changed
 - **NAT/PAT trace trigger:** TR4-NAT-PAT now keeps the operational-context animation in standby while the learner marks inside/outside interfaces and prepares the router. Playback begins only after the accepted `ip nat inside source list 1 interface g0/1 overload` command is entered, aligning the visual flow with the command that actually creates the PAT rule.
+- **Transport / Flows verification:** Added a live table for modeled Layer 4 evidence. NAT/PAT creates a deterministic TCP/HTTPS flow with source and destination ports, while DHCP client addressing records a UDP DHCP discovery with its broadcast endpoints.
 
 ### Validation
 - Confirmed the trigger is scoped to TR4-NAT-PAT and does not change packet-trace playback for other guided tranche labs.
