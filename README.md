@@ -6,6 +6,108 @@
 
 The simulator is presented as a Construction Enterprises training console. It models a focused set of command contexts, device states, and verification outputs to provide a repeatable, low-stakes environment for mastering the Cisco CLI.
 
+## Learning Platform Improvements
+
+### Master Tranche One: Curriculum Sequence
+
+Master Tranche One's Tranches One-Four include **160 original vocabulary matching cards** across 22 labs and their generated sandbox counterparts. Single four-choice cards are interleaved with existing steps rather than grouped into quiz blocks. The **Networking Vocabulary** ribbon button also provides a standalone, sequential review deck containing every authored card. They cover addressing, switching, routing, services, and introductory security, wireless, and automation terminology. Security vocabulary is previewed before Tranche Five, which remains IOS-only. Guided mode keeps worked explanations visible; Assisted mode provides them on request; Assessment mode hides walkthroughs. When assistance is enabled, checking an answer explains all four choices. Correct card completion contributes to saved lesson evidence. These are learning questions, not actual exam items or a claim of complete CCNA exam coverage.
+
+Original command and worksheet IDs are preserved. Existing checkpoints retain device configurations and answer evidence, but their numeric step position may point to a different section after cards are inserted; use Lab Path to resume the desired section. New vocabulary requires its own completion evidence.
+
+Tranche One retains its four fundamentals lessons followed by VLAN Basics. The remaining existing labs follow this prerequisite-based sequence:
+
+| Tranche | Focus | Lab order |
+| --- | --- | --- |
+| Two | Applied addressing and discovery | IPv4 Interface Fundamentals; Binary, CIDR, and Broadcast Boundaries; IPv6 Interface Fundamentals; IPv6 Subnetting and Point-to-Point Links; VLSM Dual-Stack Address Plan; Broadcasts and IPv6 Neighbor Discovery |
+| Three | Switching and LAN services | VLAN Access Ports; 802.1Q Trunking; STP Root Bridge Basics; Router-on-a-Stick Inter-VLAN Routing; DHCPv4 Server Basics |
+| Four | Routing and resilience | Static Route Fundamentals; OSPFv2 Multi-Platform Single-Area Routing; OSPF DR/BDR and Network Types; OSPFv3 IPv6 Routing; First Hop Redundancy Protocols; IPv4 and IPv6 Multicast Foundations |
+| Five | Security and edge policy | Switch Port Security; Secure Remote Access with SSH; Standard ACL Filtering; Extended ACL Web Policy; NAT Overload with PAT |
+
+Addressing practice now precedes routed networks, VLANs and trunks precede inter-VLAN routing, static routes precede OSPF, and ACLs precede ACL-based PAT. The older binary/CIDR lab is retained as applied IOS practice after the new worksheet foundations. All 22 existing labs in Tranches Two-Five remain available (6/5/6/5 labs); none were dropped to force equal counts. Sandbox counterparts follow the same placement and order, with older companion scenarios following their related lesson. Stable lab IDs retain their historical prefixes for saved-attempt compatibility; use curriculum placement, not the ID prefix, to identify the current tranche. Master Tranches Two-Five are unchanged by this reorganization.
+
+### Master Tranche One / Tranche One: Addressing Fundamentals
+
+Four additional lessons preserve the existing curriculum and also have Network Sandbox counterparts:
+
+- **Binary and Addressing Foundations:** bits, octets, decimal/binary conversion, hexadecimal, and binary AND.
+- **IPv4 Addressing: Every Prefix /0 to /32:** all 33 prefixes, masks, wildcards, boundaries, host-address exceptions, and public/private, multicast, broadcast, and special-purpose ranges.
+- **IPv4 Subnet Planning and Wildcard Masks:** capacity, equal-sized subnets, VLSM, overlap, wildcard matching, aggregation, and longest-prefix selection.
+- **IPv6 Addressing and Subnetting Masterclass:** notation, subnet IDs, FE80 link-local, ULA, global unicast, multicast scopes, anycast, special-purpose and legacy ranges, NDP, SLAAC, DHCPv6, and interface identifiers.
+
+These lessons use answer-checked worksheets followed by practical router configuration. Guided mode retains full worked explanations throughout; Assisted mode offers explanations on request, and Assessment mode hides walkthroughs. Assistance never fades automatically. Worksheet completion is saved with session/checkpoint evidence, and each lesson ends with IOS address configuration and verification. Standards references are linked within the worksheets.
+
+Successful IPv4 `ping` commands in the Network Sandbox start a persistent cyan request and amber reply flow along the validated cables in Schematic, Logical, and 3D views. The flow includes the checked return route and keeps circulating while its modeled path remains valid. Switching views preserves its timeline. A change that breaks forwarding stops the flow and reports the diagnostic state.
+
+The **Learning workspace** in guided labs and their Network Sandbox counterparts provides:
+
+- **Outcomes:** configuration-state grading, including equivalent VLAN lists, rather than requiring one exact command sequence in assisted and assessment modes.
+- **Learning modes:** guided command practice, assisted configuration, and a fresh assessment with command assistance disabled. Starting fresh preserves the previous state as a checkpoint.
+- **Diagnostics:** Layer 2 VLAN-path checks and modeled IPv4 hop diagnostics with blocking-port and selected firewall-policy evidence.
+- **Protocols:** shared OSPFv2/OSPFv3 process, area, interface, neighbor, LSDB, SPF/timer, capability, event, cost-based route, and segment-local DR/BDR evidence; LACP negotiation; DHCP client/lease evidence; and FHRP state. The FHRP tab models HSRP/VRRP roles and GLBP virtual IPs, AVG election, AVFs, load-sharing algorithm, and forwarding weights. OSPF routes and adjacencies react to modeled configuration faults.
+- **Checkpoints:** named local snapshots, configuration comparisons, and restore with an automatic undo snapshot.
+- **Skills:** browser-local attempt scores, hint/error counts, and practice recommendations.
+- **Authoring:** isolated JSON drafts, validation, and export. Saving a draft does not install it into the curriculum.
+
+### Master Tranche Five: Troubleshooting
+
+Each of the five sub-tranches starts with one seeded-fault exercise: Silent Access Port, Wrong Department VLAN, Pruned Trunk, LACP Passive Deadlock, and OSPF Area Mismatch. Each also has a Network Sandbox counterpart. These additions do not reorganize Master Tranche One.
+
+LACP Passive Deadlock starts with a configured office network on both switches: Engineering VLAN 10, Services VLAN 20, Management VLAN 99, and unused native VLAN 999. The AP access port belongs to VLAN 10 and the application server belongs to VLAN 20. Matching physical-member/Port-channel trunk settings and management SVIs are seeded; passive/passive negotiation is the intended fault. The repair must preserve the existing VLANs, allowed list, and native VLAN. The spare g0/1 cable remains unused; g0/2 is the modeled channel member under investigation. Existing saved attempts need a checkpoint and lab reset to load this expanded baseline.
+
+### Master Tranche Four: IT Tech Support
+
+Five support-ticket exercises are distributed across the five sub-tranches, each with an automatically derived Network Sandbox counterpart and the existing guided/help-if-asked/assessment workspace:
+
+| Sub-Tranche | Exercise | Commands |
+| --- | --- | --- |
+| One | New Employee Workstation Onboarding: access VLAN, endpoint addressing, gateway, and application reachability | 32 |
+| Two | DHCP and Internal DNS Service Desk: infrastructure exclusions, scope options, client lease, and internal name resolution | 37 |
+| Three | Shared Printer Connectivity Support: incorrect subnet repair, printer gateway, and employee/control-printer tests | 32 |
+| Four | Wireless Access Point Support: disabled management uplink and documented SSID/band/channel/power profile | 32 |
+| Five | Secure Remote Administration Handoff: management SVI, local account, SSH-only VTY intent, and configuration persistence | 30 |
+
+Each ticket starts with an incomplete or faulty state, provides device-specific inspection/configuration/verification steps, and grades explicit configuration outcomes. Topologies include relevant workstations, switches, gateways, servers, printers, and an access point. This adds five initial labs, not five labs per sub-tranche. Master Tranche One's curriculum definitions are unchanged.
+
+Each Master Tranche Four sub-tranche now also includes a defensive cybersecurity incident: rogue access-device containment, unauthorized remote-access hardening, rogue wireless-profile review, phishing DNS recovery, and malware containment policy. These labs use the same guided and sandbox behavior as support tickets, with an emphasis on careful evidence collection, scoped remediation, escalation context, and post-change verification.
+
+### Master Tranche Five: Advanced Network Defense
+
+Master Tranche Five retains its original troubleshooting sequence and now adds one advanced defensive-security investigation in every sub-tranche: simulated MITM/ARP defense, VLAN-hopping defense, rogue-DHCP recovery, OSPF route-injection defense, and TLS reverse-proxy hardening. The scenarios model the controls and verification workflow required to detect, contain, and recover from these incident classes. They do not simulate exploit execution, packet interception, credential theft, or real-world attack operations.
+
+### Master Tranche Six: Authorized Red Team and Blue Team
+
+Master Tranche Six is a simulator-only ethical-hacking curriculum with Blue Team remediation, Red Team authorized-validation, Red Team pentesting-simulation, and Target Range Purple Team labs. Blue Team exercises cover asset-edge defense, web/API boundaries, remote-access controls, lateral-movement controls, and routing-incident response. Red Team validation exercises cover passive reconnaissance, web/API exposure validation, identity-policy review, segmentation-path review, and control-plane review. The simulated pentesting track covers scoped service exposure, web-boundary validation, remote-access policy, segmentation proof of control, and routing-control-plane findings.
+
+Red Team activities are deliberately evidence-only and scoped to this application. The pentesting simulations use deliberately labeled, in-app conditions and stop at a documented proof of control; they do not include scanning, exploitation, packet interception, credential attacks, route injection, payloads, packet crafting, pivoting, bypass activity, or any interaction with real systems. Every Red Team finding is paired with modeled Blue Team documentation, hardening, or verification behavior.
+
+Fourteen Target Range Purple Team scenarios use the shared fictional assets: CAM-01 VLAN boundary, SENSOR-01 DHCP integrity, BADGE-01 ARP integrity, CAM-01 OT boundary, `training-api.example` service boundary, PRINT-01 synthetic recovery drill, LEGACY-FTP-01 service retirement, FILE-01 shared access policy, BASTION-01 remote administration hygiene, KDC-01 directory trust boundary, CACHE-01 authentication-anomaly response, DNS-01 service inventory, CONTAINER-API-01 runtime boundary, and MONITOR-01 SNMP management state. They pair Red Team evidence collection with Blue Team remediation and retest. DHCP snooping, Dynamic ARP Inspection, modeled API rate limiting, modeled API token enforcement, SSH-only administration, SNMP management state, and explicit service-boundary ACLs are deterministic IOS configuration and verification state; lease exhaustion, rogue offers, ARP anomalies, OT impact, API findings, service inventory, identity risk, authentication anomalies, container policy drift, and file-integrity alerts remain synthetic telemetry rather than external actions.
+
+Target-range labs separate the two operating environments: Cisco nodes expose an IOS-only console, while ATTACKER-KALI exposes a dedicated synthetic Linux attack console. The attacker console supports real-tool-shaped Nmap service and targeted-port inventory, SNMP walk and session-scoped SNMP set, Metasploit console/search/info/module/RHOSTS/run workflow, Python reporting scripts, TLS inspection with `openssl s_client`, HTTP checks with `curl`, and socket, process-status, and journal inspection through `ss`, `/proc`, and `journalctl`. Both consoles observe the same deterministic target and ACL state, so a Cisco ACL can change a later synthetic Nmap result from open to filtered.
+
+Every Master Tranche Six Red Team, Red Team Simulation, and Purple Team lab now uses this target-range architecture. Each has an `ATTACKER-KALI` shell endpoint, a named fictional target, and shell-mode evidence steps backed by that target's address, VLAN, zone, permitted-work boundary, and modeled listener inventory. Cisco commands stay on Cisco devices for configuration and verification; the assessment workstation never accepts IOS commands, and Cisco devices never accept Linux assessment tools.
+
+CONTAINER-API-01 uses a behavioral synthetic runtime rather than an image or live container. It models ingress TLS and certificate state, bearer-token enforcement, a token-bucket rate limit, health, audit events, a TCP listener/backlog, Linux-style namespaces, cgroup resource counters, capabilities, seccomp identity, and allowed/blocked syscall evidence. Commands update only this in-memory model, so a TLS enablement, authorization policy, or ACL deterministically changes later attacker-console results and runtime telemetry. Every attack-console command accepts only a fictional range alias. No image pull, container shell, packet, DNS query, socket, process, host resolution, external tool, account, credential, file, ticket, or network action exists outside the current application session.
+
+Endpoint commands use the simulator's IOS-style console, not real Windows/Linux shell syntax. Printer drivers/spoolers, RF coverage/interference, WPA authentication, real SSH sessions, and production cryptographic key generation are outside these exercises. Training credentials must never be reused on real devices.
+
+### Training Data Range
+
+The `Data` menu opens the simulated traffic fabric and an in-app target range. The target range contains nineteen fictional websites, PCs, servers, containers, and IoT devices, each with a modeled address, VLAN, zone, condition, and explicit authorized learning boundary. CONTAINER-API-01 additionally exposes fictional image, runtime, network, port, environment, health, restart, volume, log, and finding metadata. These entries are curriculum context for ethical-security labs, not live hosts, live websites, or actionable target information.
+
+### Validation and Model Boundaries
+
+Run `pnpm run check`, `pnpm run test:learning`, `pnpm run audit:labs`, and `pnpm run build` from the project root. The walkthrough audit replays authored commands through the shared executor and checks modeled outcomes; it is not an independent test of real Cisco hardware behavior. Exercises without measurable outcomes are explicitly warned about.
+
+This remains an instructional simulator. OSPF uses a deterministic command-driven clock rather than wall-clock packet scheduling, but it models process lifecycle, SPF events, pacing timers, adjacency compatibility, area types, DR/BDR roles, multi-area summaries, and an instructional LSDB. IPv4 probes use longest-prefix forwarding, detect routing loops, check both request and reply paths, and evaluate ordered standard/extended ICMP ACL rules with implicit deny. Unsupported ACL matches are reported conservatively, not treated as verified delivery. These checks do not emulate every IOS ACL, NAT, transport, or RFC implementation detail. DHCP expiry is evaluated when evidence is rendered or requested, not by a background lease-renewal service. Progress, drafts, and checkpoints are browser-local and are not account-synchronized.
+
+Trunk allowed-VLAN state supports complete lists and `add`/`remove` operations. The sandbox compresses the resulting set into ranges for evidence and path checks; it does not attempt to reproduce every IOS switchport negotiation nuance.
+
+Packet diagnostics infer host VLANs from configured access ports and reject destination addresses on disabled interfaces. Shared OSPF neighbor checks respect adjacency faults; `show ip ospf database` and `show ipv6 ospf database` render the same deterministic per-area LSDB used by live evidence. `show vlan brief` lists configured access-port membership while excluding trunk ports.
+
+The **IPv4 Routes** verification tab and modeled route commands share connected, static, and OSPF route evidence. The **MAC Address > Learned MAC Table** view uses the same identity and forwarding model as the CLI in both guided labs and sandboxes. Troubleshooting baselines seed active endpoints and healthy links: Silent Access Port shows the phone and camera on VLAN 10 before repair, while the workstation is learned only after its port is enabled. Learning represents deterministic modeled source traffic, not captured packets. Existing saved attempts retain their original configuration; reset the lab to load a new baseline, after preserving any work in a checkpoint.
+
+The ten-improvement initiative has working foundations across all ten areas. Packet diagnostics, cross-view evidence consistency, and protocol fidelity remain in hardening; their initial implementation should not be mistaken for complete network emulation.
+
 ## Guided Packet Visualization
 
 Every tranche lab can present a compact, protocol-aware packet trace alongside the command objective. The shared `GuidedPacketTrace` component keeps the animation visible in a fixed-height frame so packet movement never pushes the IOS console out of view. Frames are initially shown in standby, then activate as the learner enters meaningful configuration or verification commands.
@@ -19,7 +121,7 @@ The guided IOS console is optimized for keeping the next command and the evidenc
 * **Three-line live viewport:** The terminal shows the latest three rendered command/result lines. An invalid command consumes two lines, making mistakes visible without allowing old output to crowd out the current task.
 * **Scrolling startup context:** The Cisco IOS banner and device identity enter the same scrolling history as later commands instead of remaining as a permanent block.
 * **Command History:** The terminal header opens a full per-device command history overlay without changing the console height.
-* **Live verification tables:** A dedicated panel below the IOS simulator exposes the active device's IP interface, IP address, default gateway, ARP, MAC address, trunk, EtherChannel, explicit LACP/static bundle protocol, ACL, NAT/PAT, Transport / Flows, and OSPF state while the learner builds that state through the CLI. Tables are modeled from the current session and show honest empty states when no entries have been learned or configured.
+* **Live verification tables:** A dedicated panel below the IOS simulator exposes the active device's modeled interface inventory, IP address, default gateway, ARP, MAC address, trunk, EtherChannel, explicit LACP/static bundle protocol, ACL, NAT/PAT, Transport / Flows, and OSPF state while the learner builds that state through the CLI. The OSPF dashboard includes process, area, interface, neighbor, LSDB, LSA accounting, SPF/pacing timer, capability, and event-log sections. Interface evidence includes every modeled port, parent/VLAN/encapsulation relationships, description, role, status, administrative state, speed/duplex, and error counters. Tables are modeled from the current session and show honest empty states when no entries have been learned or configured.
 * **Resizable verification workspace:** Grab bars allow the IOS simulator and verification-table panel to be resized upward or downward within bounded heights. Each grab bar also supports keyboard adjustment with the arrow, Home, and End keys.
 * **Independent panel minimization:** The IOS simulator and Live Verification Tables each have their own minimize and restore control, preserving the header while collapsing the panel body to reclaim workspace.
 * **NAT/PAT command validation:** The guided IOS grammar accepts `ip nat inside source list <number> interface <interface> overload` in Global Configuration mode while continuing to reject the global command from interface configuration mode. Existing `ip nat inside` interface behavior remains supported.
@@ -40,19 +142,41 @@ The guided IOS console is optimized for keeping the next command and the evidenc
 * **Trunk MAC propagation:** Dynamic source-MAC learning now propagates across active trunk links for allowed VLANs and includes the router-on-a-stick gateway MAC on the VLAN 10 trunk. Switch tables therefore show locally attached and remote VLAN sources on the correct ingress ports.
 * **OSPF show-command grammar:** Privileged EXEC now accepts the base `show ip ospf` command in addition to detailed neighbor and interface variants.
 * **Multi-platform OSPF build:** TR3 OSPFv2 is now an extensive 88-step curriculum that builds OSPF across CE-R1, CE-R2, CE-L3SW1, CE-FW1, and CE-VR1. Each device receives Layer 3 transit addressing, interface descriptions, unique router IDs, area 0 network statements, and an explicit build completion before focused verification begins.
+* **Guided OSPFv2 Network Sandbox:** Added a dedicated OSPFv2 Multi-Platform Sandbox with the same guided objects, configuration objectives, activation steps, and evidence checks as TR3-OSPFV2, while preserving the sandbox's editable topology and device state.
 * **Reactive OSPF packet trace:** The operational context now progresses from process idle, through build-in-progress and Hello eligibility, to Hello/LSA/route-install milestones. The `show ip ospf neighbor` evidence pass emphasizes DBD exchange, while `show ip route ospf` emphasizes route installation.
 * **OSPF DR/BDR lab:** Added a dedicated multi-access Ethernet scenario with CE-R1, CE-R2, CE-R3, and CE-SW1. The lab teaches `ip ospf priority`, `ip ospf network broadcast`, and `ip ospf cost`, and the live tables expose router ID, network type, priority, cost, and modeled DR/BDR/DROTHER roles.
 * **FHRP module:** Added a separate First Hop Redundancy Protocol lab covering HSRP, VRRP, and GLBP virtual IPs, priorities, preemption, active/standby or master/backup roles, and failover-oriented operational context.
 * **Combined MAC verification:** The **MAC Address** tab opens by default with a toggle between **Initialized Device MACs**—the complete unique identity inventory for every topology device—and **Learned MAC Table**—the dynamic Layer 2 forwarding database populated by modeled traffic. These are intentionally separate views inside one tab.
 * **IPv6 access-switch context:** TR2 IPv6 Interface Fundamentals now models `CE-R1 ⇄ CE-SW1 ⇄ V6-PC1`. CDP can therefore show the router-to-switch neighbor while IPv6 Neighbor Discovery traverses the Layer 2 segment to the active V6-PC1 endpoint.
+* **CCTV and VLAN fidelity:** The Master Tranche Two CCTV lab models a dedicated surveillance VLAN 50, an explicitly permitted trunk, camera access ports, multicast-ready routing, and switch-specific verification with `show vlan brief`, `show interfaces trunk`, and `show interfaces g0/1 switchport`. The VLAN access lab also assigns the modeled Sales endpoint to VLAN 20 before verification.
+* **Expanded logical canvas:** The Network Sandbox logical diagram uses a 1440x760 grid with additional room around devices and links. The Controls menu provides bounded viewport zoom so larger topologies can be inspected without clipping or edge crowding.
+* **Small Business Enterprise exercise:** The Legacy Small Business Enterprise scenario now has a full guided configuration path covering router-on-a-stick gateways, DHCP scopes, switch VLANs, trunks, LACP, wireless RF profiles, firewall zones/PAT/ACL policy, server DNS, endpoint leases, reachability, and operational verification.
 
 These behaviors preserve the Observe -> Configure -> Verify loop while reducing unnecessary page scrolling during command entry.
 
 ### Startup and Curriculum Navigation
 
-The application returns the browser viewport to the top when it boots, when a guided lab is selected, and when the user enters or exits a sandbox view. The Curriculum ribbon provides five master tranche menus. **Master Tranche One** exposes the existing guided labs through nested Tranche One–Five menus; Master Tranches Two–Five establish the same curriculum hierarchy with disabled `Placeholder Lab` entries until those future lab sets are implemented.
+Both Cisco IOS terminal surfaces support context-sensitive help. Enter `?` at a prompt to list valid commands, or append it after a partial path such as `show ?`, `show ip ?`, `show interfaces ?`, or `switchport ?`. Help is read-only, respects the current IOS mode, and does not advance a guided lab. Each terminal retains full device-local scrollback and follows the active prompt when commands run. The guided CLI opens at its original 380px height with a persistent scroll lane; earlier output, including the startup banner, scrolls out of view as commands are entered. Its output can also be scrolled or resized manually.
+
+The operational-evidence panel includes a modeled **STP** tab. It reports per-VLAN root and bridge identity, Rapid PVST mode, standard timer values, and topology-derived port role/state evidence, including edge-port, PortFast, and BPDU Guard context.
+
+The application returns the browser viewport to the top when it boots, when a guided lab is selected, and when the user enters or exits a sandbox view. The Curriculum ribbon provides six master tranche menus. **Master Tranche One** exposes the existing guided labs through nested Tranche One–Five menus. **Master Tranche Two** contains active networking labs distributed across all five sub-tranches. **Master Tranche Four** contains IT Tech Support and defensive security incidents, **Master Tranche Five** contains troubleshooting and advanced network-defense investigations, and **Master Tranche Six** contains the authorized Red Team / Blue Team curriculum. Each active guided lab has a derived editable Network Sandbox counterpart; unused curriculum slots remain placeholders.
+
+### Master Tranche Two
+
+Master Tranche Two spreads its networking objectives across the five sub-tranches rather than concentrating them in one menu:
+
+* **Tranche One:** Enterprise Voice and QoS; CCTV; NTP/PTP time services; SSL/TLS service delivery; and ICMP diagnostics.
+* **Tranche Two:** Wireless and RF; wireless capacity and roaming; PPP/LCP WAN negotiation; enterprise server services; and WAN path engineering.
+* **Tranche Three:** CDP/LLDP/LACP operations; Ansible readiness; REST/CRUD API operations; container service networking; and VRF segmentation.
+* **Tranche Four:** Load balancing and vPC; flexible application load balancing; GLBP gateway load sharing; virtual router redundancy; and TLS reverse proxy delivery.
+* **Tranche Five:** OSPFv2 multi-area routing; BGP peering; BGP route reflection; VRF-aware WAN routing; and VLSM/supernet route policy.
+
+This intentionally avoids duplicating Master Tranche One's introductory VLSM, supernetting, and FHRP instruction. Those concepts return here only as applied enterprise designs: BGP aggregation policy and gateway resilience. These labs use the same guided packet traces, collapsible headers, IOS command history, live verification tables, and Observe -> Configure -> Verify workflow as Master Tranche One. The Network Sandbox and Operations Sandbox remain separate products with their own open-topology and field-operations workflows.
 
 The Network Sandbox opens with its workspace and Devices panel collapsed, while retaining the first device as the IOS console target. The IOS console remains visible in a compact expanded dock at a 150px default height, and can be minimized, restored, resized, or closed by the user. Device selection and other expandable controls are user-driven rather than automatically opening additional inspection content.
+
+The Network Sandbox **Scenarios** browser follows the same curriculum shape: Master Tranche One through Master Tranche Six each contain Tranche One through Tranche Five submenus. Every guided tranche lab also receives an editable sandbox counterpart with the same topology, device names, objectives, and IOS command path, while standalone scenarios with no tranche-lab counterpart remain under **Legacy**.
 
 ## Firewall and Traffic Fabric
 
@@ -90,13 +214,14 @@ The sandbox is designed as a state-driven network workspace rather than a static
 *   **Inspector:** Select a device, port, or cable to view current dimensions, tags, port type, speed, endpoint, and link state. Ctrl/Cmd-click supports multi-selection.
 *   **Filtering:** Search the catalog and use expandable multi-select tag filters. Filters affect the device palette and the visible 3D topology.
 *   **Switching state:** The IOS model tracks access mode, trunk mode, native VLAN, allowed VLANs, and EtherChannel membership. Trunk and EtherChannel state changes are reflected in cable presentation.
+*   **VLAN overlay and port identity:** In Network Sandbox Controls, enable **VLAN overlay (2D)** to label Logical/Schematic ports and links with access VLANs or native/allowed trunk VLANs. Select a VLAN to dim unrelated membership. Endpoint VLANs are inferred from directly connected access ports; unknown or disconnected membership is not guessed. Membership does not imply forwarding, and Logical link colors retain operational state. Hover a port for its cable peer device/port, local and cabled-device IPv4 state, deterministic modeled MAC identities, VLAN membership, configured VLAN SVI, port state, and EtherChannel state. Layer 2 access ports correctly report no local IP; the connected endpoint's address is shown independently. Hover a link for both endpoint VLAN contexts and its operational state.
 *   **Verification:** The simulator models commands such as `show interfaces trunk` and `show etherchannel summary` from the current session state.
 *   **Protocol state foundation:** Router DHCP-server configuration tracks pools, networks, default gateways, DNS servers, and excluded addresses. The DHCP inspector and `show ip dhcp pool` expose that state.
 *   **VLAN-aware DHCP path:** Modeled DHCP client requests identify the client VLAN and validate access ports, trunks, allowed VLANs, and router subinterfaces before allocating a lease. Blocked VLAN paths do not bind.
 *   **ARP and MAC state:** Successful modeled leases populate gateway/client ARP mappings and dynamic switch MAC entries. Entries are removed when the learned port is shut down or its link is removed, and age after the modeled aging interval.
 *   **Router-on-a-stick validation:** Cross-VLAN modeled probes require active router subinterfaces with `encapsulation dot1q` and an IP address on both VLAN paths.
 *   **DNS and PoE state:** DNS host records and resolver cache state are modeled through `ip dns server`, `ip host`, and `nslookup`; switch `power inline auto` negotiates a connected AP's modeled class and wattage within the switch budget.
-*   **OSPF and modeled ping:** Router OSPF processes, router IDs, network statements, matched neighbor state, and modeled OSPF routes are inspectable through `show ip ospf neighbor`, `show ip ospf database`, and `show ip route`. Resolved ping paths produce Cisco-style modeled results and use the existing port-to-port packet visualization.
+*   **OSPF and modeled ping:** OSPFv2 and OSPFv3 processes, router IDs, areas, interfaces, neighbors, timers, capabilities, LSAs, SPF events, and modeled routes are inspectable through the corresponding `show ip ospf` and `show ipv6 ospf` command families. Resolved ping paths produce Cisco-style modeled results and use the existing port-to-port packet visualization.
 *   **Explicit interface activation practice:** Networked physical interfaces, VLAN SVIs, and port-channels remain administratively down until the learner enters `no shutdown`. Guided labs include that command as an explicit objective so the Logical Diagram visibly reflects the transition from down to up.
 
 The simulator does not automatically bring interfaces online for convenience. Learners must use the same activation workflow expected on Cisco IOS: enter the correct interface context, issue `no shutdown`, and verify the resulting state.
@@ -266,7 +391,7 @@ The engine preserves IOS submode context until `exit` or `end` is entered and no
 
 ### Accuracy Boundaries
 
-The protocol features above are modeled state transitions, not claims of real network access. Packet particles visualize a resolved modeled path; they do not represent live ICMP, DHCP, DNS, OSPF, TCP, or UDP traffic. OSPF currently covers directly connected neighbor matching and modeled route installation; timers, authentication, full SPF behavior, multi-area operation, and external reachability remain out of scope.
+The protocol features above are modeled state transitions, not claims of real network access. Packet particles visualize a resolved modeled path; they do not represent live ICMP, DHCP, DNS, OSPF, TCP, or UDP traffic. OSPF uses a deterministic simulator clock and command-derived LSDB rather than live Hello packets, yet exposes modeled timer compatibility, authentication type, SPF execution, multi-area summaries, external/default origination, and route installation from one shared control-plane state.
 
 ### Resume Point: Validation and UI/UX Pass
 

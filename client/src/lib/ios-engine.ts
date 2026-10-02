@@ -1,16 +1,48 @@
 /** Packet Observatory shared IOS model: one prompt, one mode machine, reused by curriculum labs and the free topology sandbox. */
 
-export type Mode = "user" | "privileged" | "config" | "vlan" | "interface" | "interface-range" | "subinterface" | "router" | "dhcp" | "line" | "acl" | "object-network";
+export type Mode = "user" | "privileged" | "config" | "vlan" | "interface" | "interface-range" | "subinterface" | "router" | "bgp" | "dhcp" | "line" | "acl" | "object-network" | "shell";
 
 export type MacEntry = { mac: string; port: string; vlan: number; type: "dynamic" | "static"; lastSeen?: number };
 export type ArpEntry = { ip: string; mac: string; interface: string; age: number };
 export type Ipv6NeighborEntry = { ipv6: string; linkLocal?: string; mac: string; interface: string; state: "REACHABLE" | "STALE"; discovery: "NS/NA"; neighbor?: string };
-export type Route = { prefix: string; nextHop?: string; interface?: string; protocol: "connected" | "static" | "ospf" };
+export type Route = { prefix: string; nextHop?: string; interface?: string; protocol: "connected" | "static" | "ospf"; metric?: number };
 export type DhcpPool = { name: string; network?: string; mask?: string; defaultRouter?: string; dnsServer?: string; domainName?: string };
 export type DhcpLease = { mac: string; ip: string; clientId: string; state: "active" | "expired"; pool: string; leaseStart: string; leaseEnd: string };
 export type TransportFlow = { protocol: "TCP" | "UDP"; application: string; source: string; destination: string; state: string; evidence: string };
-export type OspfProcess = { id: number; routerId?: string; networks: { network: string; wildcard: string; area: number }[]; passiveInterfaces?: string[] };
-export type FhrpGroup = { protocol: "HSRP" | "VRRP" | "GLBP"; group: number; virtualIp?: string; priority?: number; preempt?: boolean; state?: "active" | "standby" | "master" | "backup" };
+export type OspfArea = { id: number; type: "normal" | "stub" | "nssa"; authentication: "none" | "simple" | "message-digest"; ranges: string[] };
+export type OspfEvent = { tick: number; event: string };
+export type OspfProcess = {
+  id: number;
+  addressFamily?: "ipv4" | "ipv6";
+  routerId?: string;
+  networks: { network: string; wildcard: string; area: number }[];
+  ipv6Interfaces?: Record<string, number>;
+  passiveInterfaces?: string[];
+  areas?: Record<string, OspfArea>;
+  startedTick?: number;
+  spfExecutions?: number;
+  lastSpfTick?: number;
+  lsaSequence?: number;
+  eventLog?: OspfEvent[];
+  referenceBandwidthMbps?: number;
+  timers?: { spfInitialMs: number; spfHoldMs: number; spfMaxWaitMs: number; lsaMinIntervalMs: number; lsaArrivalMs: number; groupPacingSeconds: number; floodPacingMs: number; retransmissionPacingMs: number };
+  capabilities?: { tos0Only: boolean; opaqueLsa: boolean; lls: boolean; areaTransit: boolean; nssaRfc3101: boolean; databaseExchangeOptimization: boolean; ietfNsfHelper: boolean; ciscoNsfHelper: boolean };
+  incrementalSpf?: boolean;
+  maxMetricRouterLsa?: boolean;
+  defaultInformationOriginate?: boolean;
+  adjacencyLimit?: { initial: number; maximum: number };
+};
+export type FhrpGroup = {
+  protocol: "HSRP" | "VRRP" | "GLBP";
+  group: number;
+  virtualIp?: string;
+  priority?: number;
+  preempt?: boolean;
+  state?: "active" | "standby" | "master" | "backup";
+  glbpLoadBalancing?: "round-robin" | "weighted" | "host-dependent";
+  glbpForwarder?: number;
+  glbpWeight?: number;
+};
 
 export type InterfaceState = {
   ipv4: string[];
@@ -36,13 +68,34 @@ export type InterfaceState = {
   ospfPriority?: number;
   ospfNetworkType?: "broadcast" | "point-to-point" | "non-broadcast";
   ospfCost?: number;
+  ospfHelloInterval?: number;
+  ospfDeadInterval?: number;
+  ospfRetransmitInterval?: number;
+  ospfAuthentication?: "none" | "simple" | "message-digest";
 };
 
 export type DhcpClientState = { mac: string; interface: string; state: "INIT" | "OFFERED" | "BOUND" | "EXPIRED"; ip?: string; mask?: string; gateway?: string; dns?: string; poolName?: string; leaseStart?: string; leaseEnd?: string };
+export type SyntheticContainerEvent = { tick: number; level: "info" | "warn" | "error"; source: string; message: string };
+export type SyntheticSocketEvent = { tick: number; type: "syn-received" | "accept" | "close" | "refused" | "throttled"; remoteIp: string; remotePort: number; reason?: string };
+export type SyntheticContainerRuntime = {
+  health: "healthy" | "degraded" | "unavailable";
+  ingress: { tlsEnabled: boolean; tlsCertValid: boolean; tokenRequired: boolean; tokenValid: boolean; rateLimitRps: number; burst: number; currentTokens: number };
+  kernel: { version: string; namespaces: Record<string, boolean>; cgroups: { memoryLimitMb: number; cpuLimitCores: number; pidsLimit: number; memoryMb: number; cpuPercent: number; pidsCount: number }; seccompProfile: string; droppedCapabilities: string[]; retainedCapabilities: string[]; recentSyscalls: Array<{ tick: number; name: string; result: "allowed" | "blocked" }> };
+  socket: { protocol: "tcp"; state: "LISTEN" | "CLOSED"; localIp: string; port: number; interface: string; backlogMax: number; backlogCurrent: number; sendBufferBytes: number; receiveBufferBytes: number; tcpNoDelay: boolean; keepAlive: boolean; reuseAddress: boolean; events: SyntheticSocketEvent[] };
+  logs: SyntheticContainerEvent[];
+};
+// The attacker console owns this state. It shares the lab session record with
+// IOS so both consoles can observe the same fictional range and policy state.
+export type AttackTerminalState = { selectedModule?: string; rhosts?: string; executionLog: string[]; snmpValues: Record<string, string>; containerRuntime: Record<string, SyntheticContainerRuntime> };
 
 export type Session = {
+  simulationTick?: number;
+  lessonAnswers?: Record<string, boolean>;
+  completedLabSteps?: Record<string, boolean>;
+  settings?: Record<string, Record<string, string>>;
   hostname: string;
   mode: Mode;
+  terminalKind?: "ios" | "attack";
   context: string | null;
   history: string[];
   runningConfig: string[];
@@ -63,12 +116,15 @@ export type Session = {
   dnsCache: Record<string, string>;
   ospfProcesses: Record<string, OspfProcess>;
   fhrpGroups: Record<string, FhrpGroup>;
+  attackTerminal?: AttackTerminalState;
 };
 
-export function boot(name: string, role: string): Session {
+export function boot(name: string, role: string, terminalKind: "ios" | "attack" = "ios"): Session {
   return {
     hostname: name,
-    mode: "user",
+    simulationTick: 0,
+    mode: terminalKind === "attack" ? "shell" : "user",
+    terminalKind,
     context: null,
     runningConfig: [],
     startupConfig: [],
@@ -88,16 +144,116 @@ export function boot(name: string, role: string): Session {
     dnsCache: {},
     ospfProcesses: {},
     fhrpGroups: {},
+    attackTerminal: terminalKind === "attack" ? { executionLog: [], snmpValues: {}, containerRuntime: {} } : undefined,
     history: [
-      "Cisco IOS Software, CCNA Lab Simulator",
+      terminalKind === "attack" ? "Kali Linux (synthetic training range)" : "Cisco IOS Software, CCNA Lab Simulator",
       `${name} · ${role}`,
-      "Full IOS vocabulary · enter one command, then press Enter.",
+      terminalKind === "attack" ? "Authorized synthetic range only · enter one Linux command, then press Enter." : "Full IOS vocabulary · enter one command, then press Enter.",
     ],
   };
 }
 
+export function ospfProcessDefaults(id: number, tick = 0): OspfProcess {
+  return {
+    id, addressFamily: 'ipv4', networks: [], ipv6Interfaces: {}, passiveInterfaces: [], areas: {}, startedTick: tick,
+    spfExecutions: 0, lastSpfTick: tick, lsaSequence: 0x80000001,
+    eventLog: [{ tick, event: `OSPF process ${id} started` }], referenceBandwidthMbps: 100,
+    timers: { spfInitialMs: 5000, spfHoldMs: 10000, spfMaxWaitMs: 10000, lsaMinIntervalMs: 5000, lsaArrivalMs: 1000, groupPacingSeconds: 240, floodPacingMs: 33, retransmissionPacingMs: 66 },
+    capabilities: { tos0Only: true, opaqueLsa: true, lls: true, areaTransit: true, nssaRfc3101: true, databaseExchangeOptimization: true, ietfNsfHelper: true, ciscoNsfHelper: true },
+    incrementalSpf: false, maxMetricRouterLsa: false, adjacencyLimit: { initial: 300, maximum: 300 },
+  };
+}
+
+export function ensureOspfOperational(process: OspfProcess, tick: number): OspfProcess {
+  const defaults = ospfProcessDefaults(process.id, process.startedTick ?? tick);
+  return { ...defaults, ...process, networks: [...process.networks], ipv6Interfaces: { ...(process.ipv6Interfaces || {}) }, passiveInterfaces: [...(process.passiveInterfaces || [])],
+    areas: Object.fromEntries(Object.entries(process.areas || {}).map(([id, area]) => [id, { ...area, ranges: [...area.ranges] }])),
+    eventLog: [...(process.eventLog || defaults.eventLog!)], timers: { ...defaults.timers!, ...process.timers },
+    capabilities: { ...defaults.capabilities!, ...process.capabilities }, adjacencyLimit: { ...defaults.adjacencyLimit!, ...process.adjacencyLimit } };
+}
+
+function recordOspfEvent(process: OspfProcess, tick: number, event: string, runSpf = false) {
+  process.eventLog = [...(process.eventLog || []), { tick, event }].slice(-1000);
+  if (runSpf) {
+    process.spfExecutions = (process.spfExecutions || 0) + 1;
+    process.lastSpfTick = tick;
+    process.lsaSequence = Math.min(0xffffffff, (process.lsaSequence || 0x80000001) + 1);
+    process.eventLog.push({ tick, event: `SPF scheduled: ${event}` });
+  }
+}
+
 export function normalizeCommand(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+const IOS_HELP: Record<string, string[]> = {
+  'user:': ['enable                         Turn on privileged commands', 'exit                           Exit from the EXEC'],
+  'privileged:': ['clear                          Reset functions', 'configure                      Enter configuration mode', 'copy                           Copy from one file to another', 'disable                        Turn off privileged commands', 'ping                           Send echo messages', 'show                           Show running system information', 'terminal                       Set terminal line parameters', 'traceroute                     Trace route to destination', 'write                          Write running configuration'],
+  'privileged:show': ['access-lists                   List access lists', 'arp                            ARP table', 'cdp                            CDP information', 'etherchannel                   EtherChannel information', 'interfaces                     Interface status and configuration', 'ip                             IP information', 'ipv6                           IPv6 information', 'mac                            MAC forwarding information', 'running-config                 Current operating configuration', 'spanning-tree                  Spanning-tree information', 'vlan                           VLAN information'],
+  'privileged:show ip': ['arp                            IP ARP table', 'bgp                            BGP routing information', 'dhcp                           DHCP information', 'interface                      Interface IP status and configuration', 'nat                            Network address translation', 'ospf                           OSPF information', 'route                          IP routing table', 'vrf                            VRF information'],
+  'privileged:show ipv6': ['interface                      IPv6 interface status and configuration', 'neighbors                      IPv6 neighbor cache', 'ospf                           IPv6 OSPF information', 'route                          IPv6 routing table'],
+  'privileged:show interfaces': ['<interface>                    Interface name', 'counters errors                Interface error counters', 'status                         Interface status summary', 'switchport                     Switchport information', 'trunk                          Trunking information'],
+  'privileged:show running-config': ['interface                      Interface configuration', '| section                      Include matching configuration section'],
+  'privileged:configure': ['terminal                       Configure from the terminal'],
+  'privileged:copy': ['running-config                  Copy from the running configuration'],
+  'privileged:ping': ['A.B.C.D                        IPv4 destination address', 'hostname                       Name resolved by configured DNS'],
+  'config:': ['access-list                    Add an access-list entry', 'hostname                       Set system network name', 'interface                      Select an interface to configure', 'ip                             Configure IP parameters', 'ipv6                           Configure IPv6 parameters', 'router                         Enable a routing process', 'vlan                           Create or select a VLAN'],
+  'config:interface': ['g0/0                           GigabitEthernet interface', 'g0/1                           GigabitEthernet interface', 'loopback                       Loopback interface', 'vlan                           Switched virtual interface'],
+  'config:ip': ['access-list                    Configure an IP access list', 'dhcp                           Configure DHCP', 'domain-name                    Define the default domain name', 'route                          Configure a static route'],
+  'config:router': ['bgp                            Configure a BGP routing process', 'ospf                           Configure an OSPF routing process'],
+  'interface:': ['description                    Add an interface description', 'ip                             Configure IPv4 parameters', 'ipv6                           Configure IPv6 parameters', 'shutdown                       Disable the interface', 'switchport                     Configure switching characteristics', 'no shutdown                    Enable the interface'],
+  'interface:ip': ['address                        Set the IPv4 address', 'access-group                   Apply an IP access list', 'helper-address                 Configure a DHCP relay'],
+  'interface:ipv6': ['address                        Set the IPv6 address', 'ospf                           Configure OSPFv3 on this interface'],
+  'interface:switchport': ['access                         Configure an access VLAN', 'mode                           Set access or trunk mode', 'trunk                          Configure trunk properties'],
+  'vlan:': ['name                           Set the VLAN name', 'exit                           Return to global configuration'],
+  'router:': ['network                        Advertise an IPv4 network', 'passive-interface              Suppress OSPF packets on an interface', 'router-id                      Configure the router ID'],
+};
+
+/** Cisco IOS-style context help. It is intentionally separate from command execution. */
+export function iosContextHelp(value: string, mode: Mode): string[] | null {
+  if (mode === 'shell' || !value.trim().endsWith('?')) return null;
+  const stem = normalizeCommand(value.slice(0, -1));
+  const modeKey = mode === 'subinterface' ? 'interface' : mode;
+  const exactKey = `${modeKey}:${stem}`;
+  const options = IOS_HELP[exactKey] || (stem ? undefined : IOS_HELP[`${modeKey}:`]);
+  if (options) return options;
+  return [`% Unrecognized command: ${stem || '?'}`];
+}
+
+function vlanMembers(value: string | undefined): Set<number> {
+  if (!value || value === 'all') return new Set(Array.from({ length: 4094 }, (_, index) => index + 1));
+  if (value === 'none') return new Set();
+  const vlans = new Set<number>();
+  for (const item of value.split(',')) {
+    const [first, last = first] = item.trim().split('-').map(Number);
+    if (!Number.isInteger(first) || !Number.isInteger(last) || first < 1 || last > 4094 || last < first) continue;
+    for (let vlan = first; vlan <= last; vlan += 1) vlans.add(vlan);
+  }
+  return vlans;
+}
+
+function formatVlans(vlans: Set<number>) {
+  if (vlans.size === 4094) return undefined;
+  if (vlans.size === 0) return 'none';
+  const ordered = Array.from(vlans).sort((a, b) => a - b);
+  const ranges: string[] = [];
+  let start = ordered[0], previous = start;
+  for (const vlan of ordered.slice(1)) {
+    if (vlan === previous + 1) { previous = vlan; continue; }
+    ranges.push(start === previous ? String(start) : `${start}-${previous}`);
+    start = previous = vlan;
+  }
+  ranges.push(start === previous ? String(start) : `${start}-${previous}`);
+  return ranges.join(',');
+}
+
+function applyAllowedVlans(current: string | undefined, specification: string) {
+  const match = specification.match(/^(add|remove)\s+(.+)$/);
+  if (!match) return specification === 'all' ? undefined : specification;
+  const next = vlanMembers(current);
+  const requested = vlanMembers(match[2]);
+  for (const vlan of Array.from(requested)) match[1] === 'add' ? next.add(vlan) : next.delete(vlan);
+  return formatVlans(next);
 }
 
 function modeledPeerMac(ip: string): string {
@@ -151,8 +307,8 @@ export function applyModeledNeighborDiscovery(sessions: Record<string, Session>,
   return next;
 }
 
-function modeledDeviceMac(name: string): string {
-  const value = Array.from(name).reduce((sum, character) => ((sum * 33) + character.charCodeAt(0)) >>> 0, 0);
+export function modeledDeviceMac(name: string): string {
+  const value = Array.from(name).reduce((sum, character) => ((sum * 31) + character.charCodeAt(0)) >>> 0, 0);
   return `02AA.${((value >>> 16) & 0xffff).toString(16).padStart(4, "0")}.${(value & 0xffff).toString(16).padStart(4, "0")}`.toUpperCase();
 }
 
@@ -161,23 +317,27 @@ export function applyModeledLayer2Learning(sessions: Record<string, Session>, to
   const devices = new Map((topology.devices || []).map((device) => [device.id, device]));
   const nameFor = (id: string) => devices.get(id)?.name || id;
   const next = Object.fromEntries(Object.entries(sessions).map(([name, session]) => [name, { ...session, macTable: [...(session.macTable || [])] }])) as Record<string, Session>;
+  const identities = new Set(Array.from(devices.keys()).map(modeledDeviceMac));
+  for (const device of Array.from(devices.values())) if (device.kind === 'switch' && next[device.name || device.id]) next[device.name || device.id].macTable = next[device.name || device.id].macTable.filter(entry => entry.type === 'static' || !identities.has(entry.mac));
   const learnedBySwitch = new Map<string, MacEntry[]>();
   const addLearned = (switchName: string, entry: MacEntry) => {
     const entries = learnedBySwitch.get(switchName) || [];
-    learnedBySwitch.set(switchName, [...entries.filter((item) => !(item.mac === entry.mac && item.port === entry.port)), entry]);
+    if (!entries.some(item => item.mac === entry.mac && item.vlan === entry.vlan)) learnedBySwitch.set(switchName, [...entries, entry]);
   };
   const activePort = (deviceName: string, portName: string | undefined) => {
     const port = portName ? next[deviceName]?.interfaces[portName] : undefined;
     return Boolean(port && !port.shutdown && port.status === "up");
   };
-  const allows = (port: InterfaceState, vlan: number) => !port.allowedVlans || port.allowedVlans.split(",").some((value) => value.trim() === String(vlan));
+  const allows = (port: InterfaceState, vlan: number) => !port.allowedVlans || port.allowedVlans === 'all' || port.allowedVlans.split(',').some(value => { const [low, high = low] = value.split('-').map(Number); return vlan >= low && vlan <= high; });
   for (const link of topology.links || []) {
     for (const [switchId, hostId, switchPort] of [[link.from, link.to, link.fromPort], [link.to, link.from, link.toPort]] as Array<[string, string, string | undefined]>) {
-      if (devices.get(switchId)?.kind !== "switch" || devices.get(hostId)?.kind !== "pc" || !switchPort) continue;
+      if (devices.get(switchId)?.kind !== "switch" || !['pc', 'server', 'printer', 'access-point', 'iot'].includes(devices.get(hostId)?.kind || '') || !switchPort) continue;
+      const hostPort = switchId === link.from ? link.toPort : link.fromPort;
+      if (!activePort(nameFor(hostId), hostPort)) continue;
       const switchSession = next[nameFor(switchId)];
       const port = switchSession?.interfaces[switchPort];
       if (!switchSession || !port || port.shutdown || port.status !== "up" || port.switchportMode !== "access") continue;
-      const entry: MacEntry = { mac: modeledDeviceMac(nameFor(hostId)), port: switchPort, vlan: port.accessVlan ?? 1, type: "dynamic", lastSeen: Date.now() };
+      const entry: MacEntry = { mac: modeledDeviceMac(hostId), port: switchPort, vlan: port.accessVlan ?? 1, type: "dynamic", lastSeen: Date.now() };
       addLearned(nameFor(switchId), entry);
     }
   }
@@ -189,12 +349,12 @@ export function applyModeledLayer2Learning(sessions: Record<string, Session>, to
     if (from?.kind === "router" && to?.kind === "switch" && activePort(fromName, link.fromPort) && activePort(toName, link.toPort)) {
       const subinterface = Object.values(next[fromName]?.interfaces || {}).find((state) => state.vlanId !== undefined && state.ipv4.length);
       const port = link.toPort ? next[toName]?.interfaces[link.toPort] : undefined;
-      if (subinterface && port && allows(port, subinterface.vlanId!)) addLearned(toName, { mac: modeledDeviceMac(fromName), port: link.toPort!, vlan: subinterface.vlanId!, type: "dynamic", lastSeen: Date.now() });
+      if (subinterface && port && allows(port, subinterface.vlanId!)) addLearned(toName, { mac: modeledDeviceMac(from!.id), port: link.toPort!, vlan: subinterface.vlanId!, type: "dynamic", lastSeen: Date.now() });
     }
     if (to?.kind === "router" && from?.kind === "switch" && activePort(toName, link.toPort) && activePort(fromName, link.fromPort)) {
       const subinterface = Object.values(next[toName]?.interfaces || {}).find((state) => state.vlanId !== undefined && state.ipv4.length);
       const port = link.fromPort ? next[fromName]?.interfaces[link.fromPort] : undefined;
-      if (subinterface && port && allows(port, subinterface.vlanId!)) addLearned(fromName, { mac: modeledDeviceMac(toName), port: link.fromPort!, vlan: subinterface.vlanId!, type: "dynamic", lastSeen: Date.now() });
+      if (subinterface && port && allows(port, subinterface.vlanId!)) addLearned(fromName, { mac: modeledDeviceMac(to!.id), port: link.fromPort!, vlan: subinterface.vlanId!, type: "dynamic", lastSeen: Date.now() });
     }
   }
   // Propagate learned VLAN source MACs across each operational trunk in both directions.
@@ -208,11 +368,13 @@ export function applyModeledLayer2Learning(sessions: Record<string, Session>, to
       const fromPort = link.fromPort ? next[fromName]?.interfaces[link.fromPort] : undefined;
       const toPort = link.toPort ? next[toName]?.interfaces[link.toPort] : undefined;
       if (!fromPort || !toPort || fromPort.switchportMode !== "trunk" || toPort.switchportMode !== "trunk" || !activePort(fromName, link.fromPort) || !activePort(toName, link.toPort)) continue;
-      for (const entry of learnedBySwitch.get(fromName) || []) if (allows(toPort, entry.vlan)) addLearned(toName, { ...entry, port: link.toPort!, lastSeen: Date.now() });
-      for (const entry of learnedBySwitch.get(toName) || []) if (allows(fromPort, entry.vlan)) addLearned(fromName, { ...entry, port: link.fromPort!, lastSeen: Date.now() });
+      const compatible = !fromPort.channelGroup && !toPort.channelGroup || !!fromPort.channelGroup && !!toPort.channelGroup && (fromPort.channelMode === 'on' && toPort.channelMode === 'on' || fromPort.channelMode === 'active' && ['active', 'passive'].includes(toPort.channelMode || '') || toPort.channelMode === 'active' && fromPort.channelMode === 'passive');
+      if (!compatible) continue;
+      for (const entry of learnedBySwitch.get(fromName) || []) if (entry.port !== link.fromPort && allows(fromPort, entry.vlan) && allows(toPort, entry.vlan)) addLearned(toName, { ...entry, port: link.toPort!, lastSeen: Date.now() });
+      for (const entry of learnedBySwitch.get(toName) || []) if (entry.port !== link.toPort && allows(fromPort, entry.vlan) && allows(toPort, entry.vlan)) addLearned(fromName, { ...entry, port: link.fromPort!, lastSeen: Date.now() });
     }
   }
-  Array.from(learnedBySwitch.entries()).forEach(([switchName, entries]) => { next[switchName].macTable = entries; });
+  Array.from(learnedBySwitch.entries()).forEach(([switchName, entries]) => { next[switchName].macTable = [...next[switchName].macTable, ...entries]; });
   return next;
 }
 
@@ -222,31 +384,38 @@ export function applyModeledLayer2Learning(sessions: Record<string, Session>, to
  * mode before the lab sequence is allowed to consider it.
  */
 export function isCiscoCommand(command: string, mode: Mode): boolean {
+  if (mode === "shell") return false;
+  if (iosContextHelp(command, mode)) return true;
   if (command === "enable") return mode === "user";
   if (command === "disable") return mode === "privileged";
   if (command === "configure terminal") return mode === "privileged";
   if (command === "end") return mode !== "user";
   if (command === "exit") return mode !== "user";
   if (mode === "user") return false;
+  if ((mode === 'interface' || mode === 'subinterface') && /^interface (?:g\d+\/\d+(?:\.\d+)?|eth\d+|vlan \d+|loopback \d+)$/.test(command)) return true;
+  if (mode === 'privileged' && (command === 'show ipv6 ospf' || command === 'show ipv6 ospf database' || /^show interfaces eth\d+$/.test(command))) return true;
+  if (mode === 'privileged' && /^show running-config interface vlan \d+$/.test(command)) return true;
 
   if (mode === "privileged" && (command === "show hosts" || command === "show ip ospf database" || command === "show access-list" || command === "show xlate" || command === "show conn" || command === "show interface ip brief" || /^nslookup \S+$/.test(command))) return true;
-  if (mode === "config" && (/^ip dns server$/.test(command) || /^ip host \S+ [0-9.]+$/.test(command))) return true;
+  if (mode === "config" && (/^ip dns server$/.test(command) || /^ip host \S+ [0-9.]+$/.test(command) || /^ip dhcp snooping(?: vlan \d+)?$/.test(command) || /^ip arp inspection vlan \d+$/.test(command) || /^mls qos$/.test(command) || /^lldp run$/.test(command) || /^vpc domain \d+$/.test(command) || /^peer-keepalive destination [0-9.]+$/.test(command) || /^dot11 ssid \S+$/.test(command) || /^wireless (?:channel \d+|band (?:2\.4ghz|5ghz)|power \d+)$/.test(command) || /^ip slb .+$/.test(command) || /^ntp server [0-9.]+$/.test(command) || /^ptp mode (?:boundary|ordinary)$/.test(command) || /^ip http (?:secure-(?:server|port \d+)|rate-limit \d+|authentication token-required)$/.test(command) || /^ip vrf \S+$/.test(command))) return true;
+  if (mode === "privileged" && ["show lldp neighbors", "show vpc", "show ip slb", "show ntp associations", "show ptp clock", "show ip http server secure-status", "show ip dhcp snooping", "show ip arp inspection", "show ip vrf", "show glbp", "show glbp brief", "show vrrp brief", "show ppp multilink", "show ip bgp", "show ip bgp summary"].includes(command)) return true;
   if ((mode === "interface" || mode === "subinterface") && command === "power inline auto") return true;
 
   if (mode === "privileged") {
-    return /^(show (access-lists(?: \S+)?|arp|cdp neighbors(?: detail)?|clock|controllers|crypto key mypubkey rsa|etherchannel summary|interfaces(?: (?:g\d+\/\d+(?:\.\d+)?(?: switchport)?|gigabitethernet ?\d+\/\d+(?: switchport)?|port-channel ?\d+(?: switchport)?|status|trunk|counters errors|switchport))?|ip (?:dhcp (?:binding|conflict|pool|server statistics)|interface(?: brief| \S+)?|mroute|nat (?:translations(?: verbose)?|statistics)|ospf(?: neighbor| interface(?: brief| \S+)?)?|pim (?:neighbor|interface)|protocols|route(?: (?:connected|static|ospf|\S+))?)|ipv6 (?:interface(?: brief| \S+)?|mroute|neighbors|ospf(?: neighbor| interface)|route(?: (?:connected|static|ospf|\S+))?|pim (?:neighbor|interface))|mac address-table(?: (?:dynamic|secure|interface \S+))?|port-security(?: interface \S+)?|running-config(?: (?:interface \S+|\| section (?:interface|ipv6|ip route|nat|access-list|dhcp|router ospf|username|line vty|crypto|multicast)))?|spanning-tree(?: (?:vlan \d+|root|summary|interface \S+ detail))?|startup-config|users|version|vlan brief|ip ssh|login)|ping (?:[0-9a-f:.]+|\S+)|traceroute [0-9a-f:.]+|copy running-config startup-config|write memory|terminal (?:length \d+|monitor)|clear (?:counters|ip route|ipv6 route))$/.test(command);
+    return /^(show (access-lists(?: \S+)?|arp|cdp neighbors(?: detail)?|clock|controllers|crypto key mypubkey rsa|etherchannel summary|interfaces(?: (?:g\d+\/\d+(?:\.\d+)?(?: switchport)?|gigabitethernet ?\d+\/\d+(?: switchport)?|port-channel ?\d+(?: switchport)?|status|trunk|counters errors|switchport))?|ip (?:arp inspection|bgp(?: summary)?|dhcp (?:binding|conflict|pool|server statistics|snooping)|http server secure-status|interface(?: brief| \S+)?|mroute|nat (?:translations(?: verbose)?|statistics)|ospf(?: neighbor| interface(?: brief| \S+)?)?|pim (?:neighbor|interface)|protocols|route(?: (?:connected|static|ospf|vrf \S+|\S+))?|vrf)|ipv6 (?:interface(?: brief| \S+)?|mroute|neighbors|ospf(?: neighbor| interface)|route(?: (?:connected|static|ospf|\S+))?|pim (?:neighbor|interface))|mac address-table(?: (?:dynamic|secure|interface \S+))?|port-security(?: interface \S+)?|running-config(?: (?:interface \S+|\| section (?:interface|ipv6|ip route|nat|access-list|dhcp|router ospf|username|line vty|crypto|multicast)))?|spanning-tree(?: (?:vlan \d+|root|summary|interface \S+ detail))?|startup-config|users|version|vlan brief|ip ssh|login|ntp associations|ptp clock|ppp multilink|glbp(?: brief)?|vrrp brief)|ping (?:[0-9a-f:.]+|\S+)|traceroute [0-9a-f:.]+|copy running-config startup-config|write memory|terminal (?:length \d+|monitor)|clear (?:counters|ip route|ipv6 route))$/.test(command);
   }
 
   if (mode === "config") {
-    return /^(hostname [a-z0-9][a-z0-9.-]{0,62}|enable secret \S+|no ip domain-lookup|ip domain-name \S+|crypto key generate rsa modulus \d+|ip multicast-routing|ipv6 unicast-routing|ipv6 multicast-routing|vlan (?:[1-9]\d{0,3})|interface (?:g\d+\/\d+(?:\.\d+)?|gigabitethernet ?\d+\/\d+|ethernet\d+\/\d+|eth\d+|loopback \d+|vlan \d+|port-channel ?\d+)|interface range .+|router ospf \d+|ipv6 router ospf \d+|ip dhcp (?:excluded-address [0-9.]+(?: [0-9.]+)?|pool \S+)|line (?:vty \d+(?: \d+)?|console \d+)|ip access-list (?:standard|extended) \S+|object network \S+|access-list (?:\d+|\S+) (?:permit|deny|extended) .+|access-group \S+ in interface (?:outside|inside|dmz)|ip nat inside source list \d+ interface (?:g\d+\/\d+|gigabitethernet ?\d+\/\d+) overload|nat \(inside,outside\) dynamic interface|route (?:outside|inside|dmz) [0-9.]+ [0-9.]+ [0-9.]+|spanning-tree (?:mode (?:rapid-pvst|pvst)|vlan \d+ (?:root (?:primary|secondary)|priority \d+))|username \S+ (?:privilege \d+ )?secret \S+|ip route [0-9.]+ [0-9.]+ [0-9.]+|ipv6 route [0-9a-f:]+\/\d+ [0-9a-f:]+|ip default-gateway [0-9.]+)$/.test(command);
+    return /^(hostname [a-z0-9][a-z0-9.-]{0,62}|enable secret \S+|no ip domain-lookup|ip domain-name \S+|crypto key generate rsa modulus \d+|ip multicast-routing|ipv6 unicast-routing|ipv6 multicast-routing|vlan (?:[1-9]\d{0,3})|interface (?:g\d+\/\d+(?:\.\d+)?|gigabitethernet ?\d+\/\d+|ethernet\d+\/\d+|eth\d+|loopback \d+|vlan \d+|port-channel ?\d+)|interface range .+|router (?:ospf|bgp) \d+|ipv6 router ospf \d+|ip dhcp (?:excluded-address [0-9.]+(?: [0-9.]+)?|pool \S+|snooping(?: vlan \d+)?)|ip arp inspection vlan \d+|line (?:vty \d+(?: \d+)?|console \d+)|ip access-list (?:standard|extended) \S+|object network \S+|access-list (?:\d+|\S+) (?:permit|deny|extended) .+|access-group \S+ in interface (?:outside|inside|dmz)|ip nat inside source list \d+ interface (?:g\d+\/\d+|gigabitethernet ?\d+\/\d+) overload|nat \(inside,outside\) dynamic interface|route (?:outside|inside|dmz) [0-9.]+ [0-9.]+ [0-9.]+|spanning-tree (?:mode (?:rapid-pvst|pvst)|vlan \d+ (?:root (?:primary|secondary)|priority \d+))|username \S+ (?:privilege \d+ )?secret \S+|ip route [0-9.]+ [0-9.]+ [0-9.]+|ipv6 route [0-9a-f:]+\/\d+ [0-9a-f:]+|ip default-gateway [0-9.]+|mls qos|vpc domain \d+|peer-keepalive destination [0-9.]+|dot11 ssid \S+|wireless (?:channel \d+|band (?:2\.4ghz|5ghz)|power \d+)|ip slb .+|ntp server [0-9.]+|ptp mode (?:boundary|ordinary)|ip http (?:secure-(?:server|port \d+)|rate-limit \d+|authentication token-required)|ip vrf \S+)$/.test(command);
   }
 
   if (mode === "vlan") return /^(name [a-z0-9][a-z0-9 _.-]{0,31}|exit)$/.test(command);
   if (mode === "interface-range") return /^(description .+|switchport (?:mode (?:access|trunk)|access vlan \d+|trunk (?:native vlan \d+|allowed vlan .+))|channel-group \d+ mode (?:active|passive|on)|spanning-tree portfast|spanning-tree bpduguard enable|(?:no )?shutdown)$/.test(command);
   if (mode === "interface" || mode === "subinterface") {
-    return /^(description .+|nameif (?:outside|inside|dmz)|security-level (?:0|[1-9]\d{0,2})|switchport (?:mode (?:access|trunk)|access vlan \d+|trunk (?:native vlan \d+|allowed vlan .+)|port-security(?: (?:maximum \d+|violation (?:shutdown|restrict|protect)|mac-address sticky))?)|encapsulation dot1q \d+(?: native)?|ip address (?:dhcp|[0-9.]+ [0-9.]+)|ip helper-address [0-9.]+|ip nat (?:inside|outside)|ip access-group (?:\d+|\S+) (?:in|out)|ip pim sparse-mode|ipv6 address (?:[0-9a-f:]+\/\d+|[0-9a-f:]+ link-local)|ipv6 ospf \d+ area \d+|ipv6 pim(?: enable)?|ipv6 mld join-group [0-9a-f:]+|ip igmp join-group [0-9.]+|ipv6 nd prefix [0-9a-f:]+\/\d+|ip directed-broadcast|ip ospf (?:cost \d+|priority \d+|network (?:broadcast|point-to-point|non-broadcast))|standby \d+ (?:ip [0-9.]+|priority \d+|preempt)|vrrp \d+ (?:ip [0-9.]+|priority \d+|preempt)|glbp \d+ (?:ip [0-9.]+|priority \d+|preempt)|spanning-tree (?:portfast|bpduguard enable)|channel-group \d+ mode (?:active|passive|on)|(?:no )?shutdown)$/.test(command);
+    return /^(description .+|nameif (?:outside|inside|dmz)|security-level (?:0|[1-9]\d{0,2})|switchport (?:mode (?:access|trunk)|access vlan \d+|voice vlan \d+|trunk (?:native vlan \d+|allowed vlan .+)|port-security(?: (?:maximum \d+|violation (?:shutdown|restrict|protect)|mac-address sticky))?)|encapsulation (?:dot1q \d+(?: native)?|ppp)|ppp authentication chap|ip vrf forwarding \S+|ip address (?:dhcp|[0-9.]+ [0-9.]+)|ip helper-address [0-9.]+|ip nat (?:inside|outside)|ip access-group (?:\d+|\S+) (?:in|out)|ip pim sparse-mode|ip igmp join-group [0-9.]+|ipv6 address (?:[0-9a-f:]+\/\d+|[0-9a-f:]+ link-local)|ipv6 ospf \d+ area \d+|ipv6 pim(?: enable)?|ipv6 mld join-group [0-9a-f:]+|ipv6 nd prefix [0-9a-f:]+\/\d+|ip directed-broadcast|ip ospf (?:cost \d+|priority \d+|network (?:broadcast|point-to-point|non-broadcast)|hello-interval \d+|dead-interval \d+|retransmit-interval \d+|authentication(?: message-digest)?)|standby \d+ (?:ip [0-9.]+|priority \d+|preempt)|vrrp \d+ (?:ip [0-9.]+|priority \d+|preempt)|glbp \d+ (?:ip [0-9.]+|priority \d+|preempt|load-balancing (?:round-robin|weighted|host-dependent)|forwarder \d+|weighting \d+)|vpc peer-link|spanning-tree (?:portfast|bpduguard enable)|channel-group \d+ mode (?:active|passive|on)|(?:no )?shutdown)$/.test(command);
   }
-  if (mode === "router") return /^(router-id [0-9.]+|network [0-9.]+ [0-9.]+ area \d+|passive-interface (?:default|loopback ?\d+|(?:g|gigabitethernet) ?\d+\/\d+)|ipv6 router ospf \d+|area \d+ (?:range [0-9a-f:]+\/\d+|stub)|default-information originate)$/.test(command);
+  if (mode === "router") return /^(router-id [0-9.]+|network [0-9.]+ [0-9.]+ area \d+|passive-interface (?:default|loopback ?\d+|(?:g|gigabitethernet) ?\d+\/\d+)|ipv6 router ospf \d+|area \d+ (?:range (?:[0-9.]+ [0-9.]+|[0-9a-f:]+\/\d+)|stub|nssa|authentication(?: message-digest)?)|auto-cost reference-bandwidth \d+|timers throttle spf \d+ \d+ \d+|max-metric router-lsa|default-information originate)$/.test(command);
+  if (mode === "bgp") return /^(bgp router-id [0-9.]+|neighbor [0-9.]+ (?:remote-as \d+|route-reflector-client)|network [0-9.]+ mask [0-9.]+)$/.test(command);
   if (mode === "dhcp") return /^(network [0-9.]+ [0-9.]+|default-router [0-9.]+|dns-server [0-9.]+|domain-name \S+|ipv6 dhcp (?:server|pool) \S+)$/.test(command);
   if (mode === "line") return /^(login(?: local)?|password \S+|transport input (?:ssh|telnet|all)|exec-timeout \d+ \d+|logging synchronous)$/.test(command);
   if (mode === "acl") return /^(permit|deny|remark) .+$/.test(command);
@@ -256,6 +425,7 @@ export function isCiscoCommand(command: string, mode: Mode): boolean {
 
 export function modePrompt(name: string, session: Session): string {
   const hostname = session.hostname || name;
+  if (session.mode === "shell") return `${hostname.toLowerCase()}@range:~$`;
   if (session.mode === "user") return hostname + ">";
   if (session.mode === "privileged") return hostname + "#";
   if (session.mode === "config") return hostname + "(config)#";
@@ -263,6 +433,7 @@ export function modePrompt(name: string, session: Session): string {
   if (session.mode === "interface-range") return hostname + "(config-if-range)#";
   if (session.mode === "subinterface") return hostname + "(config-subif)#";
   if (session.mode === "router") return hostname + "(config-router)#";
+  if (session.mode === "bgp") return hostname + "(config-router)#";
   if (session.mode === "dhcp") return hostname + "(dhcp-config)#";
   if (session.mode === "line") return hostname + "(config-line)#";
   if (session.mode === "acl") return hostname + "(config-ext-nacl)#";
@@ -273,19 +444,30 @@ export function modePrompt(name: string, session: Session): string {
 export function applyCommand(session: Session, command: string, history: string[]): Session {
   const typed = command.trim().replace(/\s+/g, " ");
   const canonical = normalizeCommand(typed);
+  if (session.mode === 'interface-range' && session.context && !['exit', 'end'].includes(canonical)) {
+    const range = session.context.match(/^(g\d+\/)(\d+)\s*-\s*(?:g\d+\/)?(\d+)$/);
+    const ports = range ? Array.from({ length: Math.max(0, Math.min(96, Number(range[3]) - Number(range[2]) + 1)) }, (_, index) => `${range[1]}${Number(range[2]) + index}`) : session.context.split(',').map(port => port.trim());
+    let next = session;
+    for (const port of ports) next = applyCommand({ ...next, mode: 'interface', context: port }, command, history);
+    return { ...next, mode: 'interface-range', context: session.context };
+  }
   const transition = nextMode(canonical, session.mode, session.context);
   const next: Session = {
     ...session,
+    simulationTick: (session.simulationTick || 0) + 1,
     hostname: session.mode === "config" && canonical.startsWith("hostname ")
       ? typed.slice("hostname ".length).trim()
       : session.hostname,
     mode: transition.mode,
     context: transition.context,
     history,
+    settings: Object.fromEntries(Object.entries(session.settings || {}).map(([scope, values]) => [scope, { ...values }])),
     runningConfig: [...session.runningConfig],
     startupConfig: [...session.startupConfig],
     interfaces: Object.fromEntries(Object.entries(session.interfaces).map(([name, state]) => [name, { ...state, ipv4: [...state.ipv4], ipv6: [...state.ipv6], commands: [...state.commands], errors: { ...state.errors }, poe: { ...state.poe } }])),
-    vlans: { ...session.vlans },
+      vlans: { ...session.vlans },
+      fhrpGroups: Object.fromEntries(Object.entries(session.fhrpGroups || {}).map(([id, group]) => [id, { ...group }])),
+    attackTerminal: session.attackTerminal ? { selectedModule: session.attackTerminal.selectedModule, rhosts: session.attackTerminal.rhosts, executionLog: [...session.attackTerminal.executionLog], snmpValues: { ...session.attackTerminal.snmpValues }, containerRuntime: { ...session.attackTerminal.containerRuntime } } : undefined,
     macTable: (session.macTable || []).map((entry) => ({ ...entry })),
     arpTable: (session.arpTable || []).map((entry) => ({ ...entry })),
     routingTable: (session.routingTable || []).map((entry) => ({ ...entry })),
@@ -297,11 +479,25 @@ export function applyCommand(session: Session, command: string, history: string[
     dnsServerEnabled: session.dnsServerEnabled || false,
     dnsRecords: { ...(session.dnsRecords || {}) },
     dnsCache: { ...(session.dnsCache || {}) },
-    ospfProcesses: Object.fromEntries(Object.entries(session.ospfProcesses || {}).map(([id, process]) => [id, { ...process, networks: [...process.networks], passiveInterfaces: [...(process.passiveInterfaces || [])] }])),
+    ospfProcesses: Object.fromEntries(Object.entries(session.ospfProcesses || {}).map(([id, process]) => [id, ensureOspfOperational(process, session.simulationTick || 0)])),
   };
+
+  // Preserve configuration by context and setting, so later edits replace values.
+  if (!['user', 'privileged'].includes(session.mode) && !/^(exit|end|interface |router ospf |ipv6 router ospf |vlan |line |ip dhcp pool )/.test(canonical)) {
+    const scope = `${session.mode}:${session.context || 'global'}`;
+    const setting = canonical.match(/^(hostname|enable secret|ip domain-name|username \S+|transport input|login|password|wireless (?:channel|band|power)|dot11 ssid|switchport voice vlan|switchport port-security maximum|switchport port-security violation|spanning-tree vlan \d+ (?:priority|root)|ip route \S+ \S+|ipv6 route \S+|area \d+ stub|vpc domain|peer-keepalive destination|ip slb \S+)/)?.[1];
+    if (setting) next.settings![scope] = { ...next.settings![scope], [setting]: canonical.slice(setting.length).trim() || 'enabled' };
+  }
 
   if (canonical === "copy running-config startup-config" || canonical === "write memory") {
     next.startupConfig = [...next.runningConfig];
+  }
+  if (session.mode === 'config' && canonical.startsWith('ip default-gateway ')) {
+    next.settings!['config:global'] = { ...next.settings!['config:global'], 'ip default-gateway': canonical.slice(19) };
+  }
+  if (session.mode === 'line' && canonical.startsWith('exec-timeout ')) {
+    const scope = `line:${session.context}`;
+    next.settings![scope] = { ...next.settings![scope], 'exec-timeout': canonical.slice(13) };
   }
   if (session.mode === "config" && canonical.startsWith("vlan ")) {
     next.vlans[canonical.slice(5)] = next.vlans[canonical.slice(5)] || "default";
@@ -351,19 +547,43 @@ export function applyCommand(session: Session, command: string, history: string[
   }
   if (session.mode === "config" && canonical.startsWith("router ospf ")) {
     const id = canonical.slice("router ospf ".length).trim();
-    next.ospfProcesses[id] = next.ospfProcesses[id] || { id: Number(id), networks: [] };
+    next.ospfProcesses[id] = next.ospfProcesses[id] || ospfProcessDefaults(Number(id), next.simulationTick);
   }
-  if (session.mode === "router" && session.context?.startsWith("router ospf ")) {
-    const id = session.context.slice("router ospf ".length).trim();
-    const process = next.ospfProcesses[id] || { id: Number(id), networks: [], passiveInterfaces: [] };
-    if (canonical.startsWith("router-id ")) process.routerId = typed.slice("router-id ".length).trim();
+  if (session.mode === "config" && canonical.startsWith("ipv6 router ospf ")) {
+    const id = canonical.slice("ipv6 router ospf ".length).trim();
+    next.ospfProcesses[`v3:${id}`] = next.ospfProcesses[`v3:${id}`] || { ...ospfProcessDefaults(Number(id), next.simulationTick), addressFamily: 'ipv6' };
+  }
+  if (session.mode === "router" && (session.context?.startsWith("router ospf ") || session.context?.startsWith("ipv6 router ospf "))) {
+    const ipv6 = session.context.startsWith('ipv6 router ospf ');
+    const id = session.context.slice(ipv6 ? "ipv6 router ospf ".length : "router ospf ".length).trim();
+    const key = ipv6 ? `v3:${id}` : id;
+    const process = ensureOspfOperational(next.ospfProcesses[key] || { ...ospfProcessDefaults(Number(id), next.simulationTick), addressFamily: ipv6 ? 'ipv6' : 'ipv4' }, next.simulationTick || 0);
+    if (canonical.startsWith("router-id ")) { process.routerId = typed.slice("router-id ".length).trim(); recordOspfEvent(process, next.simulationTick || 0, `Router ID set to ${process.routerId}`, true); }
     const network = canonical.match(/^network ([0-9.]+) ([0-9.]+) area (\d+)$/);
-    if (network && !process.networks.some((item) => item.network === network[1] && item.wildcard === network[2] && item.area === Number(network[3]))) process.networks.push({ network: network[1], wildcard: network[2], area: Number(network[3]) });
+    if (network) {
+      process.networks = [...process.networks.filter(item => item.network !== network[1] || item.wildcard !== network[2]), { network: network[1], wildcard: network[2], area: Number(network[3]) }];
+      const area = network[3];
+      process.areas![area] = process.areas![area] || { id: Number(area), type: 'normal', authentication: 'none', ranges: [] };
+      recordOspfEvent(process, next.simulationTick || 0, `Network ${network[1]} ${network[2]} joined area ${area}`, true);
+    }
     if (canonical.startsWith("passive-interface ")) {
       const passiveInterface = typed.slice("passive-interface ".length).trim();
-      if (!process.passiveInterfaces?.includes(passiveInterface)) process.passiveInterfaces?.push(passiveInterface);
+      process.passiveInterfaces = Array.from(new Set([...(process.passiveInterfaces || []), passiveInterface]));
+      recordOspfEvent(process, next.simulationTick || 0, `Passive interface ${passiveInterface}`, true);
     }
-    next.ospfProcesses[id] = process;
+    const areaType = canonical.match(/^area (\d+) (stub|nssa)$/);
+    if (areaType) { const area = process.areas![areaType[1]] || { id: Number(areaType[1]), type: 'normal' as const, authentication: 'none' as const, ranges: [] }; area.type = areaType[2] as 'stub' | 'nssa'; process.areas![areaType[1]] = area; recordOspfEvent(process, next.simulationTick || 0, `Area ${area.id} set to ${area.type}`, true); }
+    const areaRange = canonical.match(/^area (\d+) range ([0-9.]+ [0-9.]+|[0-9a-f:]+\/\d+)$/);
+    if (areaRange) { const area = process.areas![areaRange[1]] || { id: Number(areaRange[1]), type: 'normal' as const, authentication: 'none' as const, ranges: [] }; area.ranges = Array.from(new Set([...area.ranges, areaRange[2]])); process.areas![areaRange[1]] = area; recordOspfEvent(process, next.simulationTick || 0, `Area ${area.id} range ${areaRange[2]}`, true); }
+    const areaAuthentication = canonical.match(/^area (\d+) authentication(?: (message-digest))?$/);
+    if (areaAuthentication) { const area = process.areas![areaAuthentication[1]] || { id: Number(areaAuthentication[1]), type: 'normal' as const, authentication: 'none' as const, ranges: [] }; area.authentication = areaAuthentication[2] === 'message-digest' ? 'message-digest' : 'simple'; process.areas![areaAuthentication[1]] = area; recordOspfEvent(process, next.simulationTick || 0, `Area ${area.id} authentication ${area.authentication}`, true); }
+    const reference = canonical.match(/^auto-cost reference-bandwidth (\d+)$/);
+    if (reference) { process.referenceBandwidthMbps = Number(reference[1]); recordOspfEvent(process, next.simulationTick || 0, `Reference bandwidth ${reference[1]} Mbps`, true); }
+    const spfTimers = canonical.match(/^timers throttle spf (\d+) (\d+) (\d+)$/);
+    if (spfTimers) { process.timers = { ...process.timers!, spfInitialMs: Number(spfTimers[1]), spfHoldMs: Number(spfTimers[2]), spfMaxWaitMs: Number(spfTimers[3]) }; recordOspfEvent(process, next.simulationTick || 0, 'SPF throttle timers updated'); }
+    if (canonical === 'max-metric router-lsa') { process.maxMetricRouterLsa = true; recordOspfEvent(process, next.simulationTick || 0, 'Maximum-metric Router-LSA enabled', true); }
+    if (canonical === 'default-information originate') { process.defaultInformationOriginate = true; recordOspfEvent(process, next.simulationTick || 0, 'Default route origination enabled', true); }
+    next.ospfProcesses[key] = process;
   }
   if (session.mode === "dhcp" && session.context) {
     const name = session.context.slice("ip dhcp pool ".length).trim();
@@ -381,7 +601,7 @@ export function applyCommand(session: Session, command: string, history: string[
   if ((session.mode === "interface" || session.mode === "subinterface") && session.context) {
     const name = session.context;
     const state = next.interfaces[name] || { ipv4: [], ipv6: [], shutdown: true, commands: [], status: "down" as const, speed: "1000", duplex: "full" as const, errors: { crc: 0, collisions: 0 }, poe: { enabled: false, class: 0 as const, wattage: 0, state: "searching" as const } };
-    if (canonical.startsWith("ip address ")) state.ipv4.push(typed.slice("ip address ".length));
+    if (canonical.startsWith("ip address ")) state.ipv4 = [typed.slice("ip address ".length)];
     if (canonical.startsWith("nameif ")) state.nameif = typed.slice("nameif ".length).trim();
     if (canonical.startsWith("security-level ")) state.securityLevel = Number(canonical.slice("security-level ".length));
     if (canonical === "ip address dhcp") {
@@ -406,7 +626,7 @@ export function applyCommand(session: Session, command: string, history: string[
     if (canonical === "switchport mode trunk") state.switchportMode = "trunk";
     if (canonical.startsWith("switchport access vlan ")) state.accessVlan = Number(canonical.slice("switchport access vlan ".length));
     if (canonical.startsWith("switchport trunk native vlan ")) state.nativeVlan = Number(canonical.slice("switchport trunk native vlan ".length));
-    if (canonical.startsWith("switchport trunk allowed vlan ")) state.allowedVlans = typed.slice("switchport trunk allowed vlan ".length);
+    if (canonical.startsWith("switchport trunk allowed vlan ")) state.allowedVlans = applyAllowedVlans(state.allowedVlans, canonical.slice("switchport trunk allowed vlan ".length));
     const channelGroup = canonical.match(/^channel-group (\d+) mode (active|passive|on)$/);
     if (channelGroup) { state.channelGroup = Number(channelGroup[1]); state.channelMode = channelGroup[2] as "active" | "passive" | "on"; }
     const ospfCost = canonical.match(/^ip ospf cost (\d+)$/);
@@ -415,7 +635,32 @@ export function applyCommand(session: Session, command: string, history: string[
     if (ospfPriority) state.ospfPriority = Number(ospfPriority[1]);
     const ospfNetwork = canonical.match(/^ip ospf network (broadcast|point-to-point|non-broadcast)$/);
     if (ospfNetwork) state.ospfNetworkType = ospfNetwork[1] as InterfaceState["ospfNetworkType"];
-    const fhrp = canonical.match(/^(standby|vrrp|glbp) (\d+) (ip ([0-9.]+)|priority (\d+)|preempt)$/);
+    const ospfHello = canonical.match(/^ip ospf hello-interval (\d+)$/);
+    if (ospfHello) state.ospfHelloInterval = Number(ospfHello[1]);
+    const ospfDead = canonical.match(/^ip ospf dead-interval (\d+)$/);
+    if (ospfDead) state.ospfDeadInterval = Number(ospfDead[1]);
+    const ospfRetransmit = canonical.match(/^ip ospf retransmit-interval (\d+)$/);
+    if (ospfRetransmit) state.ospfRetransmitInterval = Number(ospfRetransmit[1]);
+    if (canonical === 'ip ospf authentication') state.ospfAuthentication = 'simple';
+    if (canonical === 'ip ospf authentication message-digest') state.ospfAuthentication = 'message-digest';
+    if (/^ip ospf (?:cost|priority|network|hello-interval|dead-interval|retransmit-interval|authentication)/.test(canonical)) {
+      for (const [id, configured] of Object.entries(next.ospfProcesses)) {
+        const process = ensureOspfOperational(configured, next.simulationTick || 0);
+        recordOspfEvent(process, next.simulationTick || 0, `${name}: ${canonical}`, /^(?:ip ospf (?:cost|network|authentication))/.test(canonical));
+        next.ospfProcesses[id] = process;
+      }
+    }
+    const ospfv3 = canonical.match(/^ipv6 ospf (\d+) area (\d+)$/);
+    if (ospfv3) {
+      const key = `v3:${ospfv3[1]}`;
+      const process = ensureOspfOperational(next.ospfProcesses[key] || { ...ospfProcessDefaults(Number(ospfv3[1]), next.simulationTick), addressFamily: 'ipv6' }, next.simulationTick || 0);
+      process.addressFamily = 'ipv6';
+      process.ipv6Interfaces = { ...process.ipv6Interfaces, [name]: Number(ospfv3[2]) };
+      process.areas![ospfv3[2]] = process.areas![ospfv3[2]] || { id: Number(ospfv3[2]), type: 'normal', authentication: 'none', ranges: [] };
+      recordOspfEvent(process, next.simulationTick || 0, `${name} joined OSPFv3 area ${ospfv3[2]}`, true);
+      next.ospfProcesses[key] = process;
+    }
+    const fhrp = canonical.match(/^(standby|vrrp|glbp) (\d+) (ip ([0-9.]+)|priority (\d+)|preempt|load-balancing (round-robin|weighted|host-dependent)|forwarder (\d+)|weighting (\d+))$/);
     if (fhrp) {
       const protocol = fhrp[1] === "standby" ? "HSRP" : fhrp[1] === "vrrp" ? "VRRP" : "GLBP";
       const key = `${name}:${protocol}:${fhrp[2]}`;
@@ -423,14 +668,24 @@ export function applyCommand(session: Session, command: string, history: string[
       if (fhrp[4]) group.virtualIp = fhrp[4];
       if (fhrp[5]) group.priority = Number(fhrp[5]);
       if (fhrp[3] === "preempt") group.preempt = true;
+      if (fhrp[6]) group.glbpLoadBalancing = fhrp[6] as FhrpGroup["glbpLoadBalancing"];
+      if (fhrp[7]) group.glbpForwarder = Number(fhrp[7]);
+      if (fhrp[8]) group.glbpWeight = Number(fhrp[8]);
       next.fhrpGroups[key] = group;
     }
     if (!canonical.startsWith("exit") && !canonical.startsWith("end")) state.commands.push(typed);
-    next.interfaces[name] = state;
+    if (!canonical.startsWith('interface ')) next.interfaces[name] = state;
   }
   if (session.mode === "config" && !["configure terminal", "end", "exit"].includes(canonical) && !canonical.startsWith("interface ")) next.runningConfig.push(typed);
   if ((session.mode === "interface" || session.mode === "subinterface") && !["end", "exit"].includes(canonical)) next.runningConfig.push(typed);
   if (session.mode === "acl" && !["end", "exit"].includes(canonical)) next.runningConfig.push(typed);
+  if (session.mode === "router" && /^(?:area \d+ (?:stub|nssa|range .+|authentication(?: message-digest)?)|auto-cost reference-bandwidth \d+|timers throttle spf \d+ \d+ \d+|max-metric router-lsa|default-information originate)$/.test(canonical) && !next.runningConfig.includes(canonical)) next.runningConfig.push(canonical);
+  if (session.mode === "bgp" && !["end", "exit"].includes(canonical)) {
+    next.runningConfig.push(typed);
+    const scope = `bgp:${session.context || 'global'}`;
+    const setting = canonical.match(/^(bgp router-id|neighbor [0-9.]+ (?:remote-as|route-reflector-client)|network [0-9.]+ mask)/)?.[1];
+    if (setting) next.settings![scope] = { ...next.settings![scope], [setting]: canonical.slice(setting.length).trim() || 'enabled' };
+  }
   if (session.mode === "object-network" && !["end", "exit"].includes(canonical)) next.runningConfig.push(typed);
   return next;
 }
@@ -444,7 +699,7 @@ export function nextMode(command: string, current: Mode, currentContext: string 
     if (current === "config") return { mode: "privileged", context: null };
     if (current === "vlan") return { mode: "config", context: null };
     if (current === "interface" || current === "subinterface") return { mode: "config", context: null };
-    if (current === "router") return { mode: "config", context: null };
+    if (current === "router" || current === "bgp") return { mode: "config", context: null };
     if (current === "dhcp") return { mode: "config", context: null };
     if (current === "line") return { mode: "config", context: null };
     if (current === "acl") return { mode: "config", context: null };
@@ -463,6 +718,7 @@ export function nextMode(command: string, current: Mode, currentContext: string 
   if (command.startsWith("object network ")) return { mode: "object-network", context: command };
   if (command.startsWith("ipv6 router ospf ")) return { mode: "router", context: command };
   if (command.startsWith("router ospf ")) return { mode: "router", context: command };
+  if (command.startsWith("router bgp ")) return { mode: "bgp", context: command };
   if (command.startsWith("ip dhcp pool ")) return { mode: "dhcp", context: command };
   if (command.startsWith("line vty ") || command.startsWith("line console ")) return { mode: "line", context: command };
   if (command.startsWith("ip access-list ")) return { mode: "acl", context: command };

@@ -9,6 +9,9 @@ export type SelectionRef =
   | { kind: "port"; id: string };
 
 export type TrafficPacket = {
+  startedAt?: number;
+  probeSourceId?: string;
+  probeDestinationIp?: string;
   id: string;
   source: string;
   destination: string;

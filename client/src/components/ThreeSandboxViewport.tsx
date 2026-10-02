@@ -1,3 +1,4 @@
+import { packetHops, packetProgress } from "../lib/packet-animation";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { useRef } from "react";
 import { Bounds, CatmullRomLine, Grid, OrbitControls, PerspectiveCamera, Text } from "@react-three/drei";
@@ -119,25 +120,22 @@ function absolutePortPosition(node: SandboxNode, port: string): [number, number,
   return [node.x / 100 + x, height / 2 + elevation + Math.max(height * 0.18, 0.035), -node.y / 100 - depth / 2 - 0.018];
 }
 
-function TrafficParticle({ packet, links, nodes, onComplete }: { packet: TrafficPacket; links: Map<string, SandboxLink>; nodes: Map<string, SandboxNode>; onComplete: (id: string) => void }) {
+function TrafficParticle({ packet, links, nodes }: { packet: TrafficPacket; links: Map<string, SandboxLink>; nodes: Map<string, SandboxNode> }) {
   const mesh = useRef<any>(null);
-  const progress = useRef(-(packet.startDelay || 0));
-  useFrame((_, delta) => {
-    progress.current += delta * 0.7;
-    if (progress.current < 0) { if (mesh.current) mesh.current.visible = false; return; }
-    if (mesh.current) mesh.current.visible = true;
-    if (progress.current >= packet.path.length) { onComplete(packet.id); return; }
-    const segment = Math.floor(progress.current);
-    const link = links.get(packet.path[segment]);
-    if (!link || !mesh.current) return;
-    const from = nodes.get(link.from);
-    const to = nodes.get(link.to);
-    if (!from || !to) return;
-    const start = absolutePortPosition(from, link.fromPort);
-    const end = absolutePortPosition(to, link.toPort);
+  const mountedAt = useRef(performance.now());
+  const hops = packetHops(packet, { nodes: Array.from(nodes.values()), links: Array.from(links.values()), name: "", description: "" });
+  useFrame(() => {
+    const progress = packetProgress({ ...packet, startedAt: packet.startedAt ?? mountedAt.current }, performance.now());
+    if (mesh.current) mesh.current.visible = progress >= 0 && progress < hops.length;
+    if (progress < 0 || progress >= hops.length) return;
+    const segment = Math.floor(progress);
+    const hop = hops[segment];
+    if (!hop || !mesh.current) return;
+    const start = absolutePortPosition(hop.from, hop.fromPort);
+    const end = absolutePortPosition(hop.to, hop.toPort);
     const lift = Math.max(start[1], end[1]) + 0.18;
     const points: [number, number, number][] = [start, [start[0], lift, start[2]], [end[0], lift, end[2]], end];
-    const local = progress.current - segment;
+    const local = progress - segment;
     const scaled = local * (points.length - 1);
     const pointIndex = Math.min(points.length - 2, Math.floor(scaled));
     const pointProgress = scaled - pointIndex;
@@ -145,10 +143,10 @@ function TrafficParticle({ packet, links, nodes, onComplete }: { packet: Traffic
     const b = points[pointIndex + 1];
     mesh.current.position.set(a[0] + (b[0] - a[0]) * pointProgress, a[1] + (b[1] - a[1]) * pointProgress, a[2] + (b[2] - a[2]) * pointProgress);
   });
-  return <mesh ref={mesh}><sphereGeometry args={[0.028, 16, 16]} /><meshStandardMaterial color={packet.color} emissive={packet.color} emissiveIntensity={3} /></mesh>;
+  return <mesh ref={mesh} visible={false}><sphereGeometry args={[0.028, 16, 16]} /><meshStandardMaterial color={packet.color} emissive={packet.color} emissiveIntensity={3} /></mesh>;
 }
 
-export default function ThreeSandboxViewport({ topology, selection, activeFilters, onSelectNode, onSelectPort, onSelectLink, connectionStart, selectedPort, selectedCableId, sessions, showAxes, packets, onPacketComplete }: ThreeSandboxViewportProps & { packets: TrafficPacket[]; onPacketComplete: (id: string) => void }) {
+export default function ThreeSandboxViewport({ topology, selection, activeFilters, onSelectNode, onSelectPort, onSelectLink, connectionStart, selectedPort, selectedCableId, sessions, showAxes, packets }: ThreeSandboxViewportProps & { packets: TrafficPacket[] }) {
   const nodes = new Map(topology.nodes.map((node) => [node.id, node]));
   const links = new Map(topology.links.map((link) => [link.id, link]));
   const matchesFilter = (node: SandboxNode) => {
@@ -187,7 +185,7 @@ export default function ThreeSandboxViewport({ topology, selection, activeFilter
           return <CatmullRomLine key={link.id} points={points} color={selected ? "#ff8b3d" : etherChannel ? "#bf8cff" : trunk ? "#d66bff" : cableColor} lineWidth={selected ? 6 : etherChannel ? 5 : trunk ? 4 : 3} curveType="centripetal" tension={0.35} segments={20} onClick={(event) => { event.stopPropagation(); onSelectLink(link, event.ctrlKey || event.metaKey); }} />;
         })}
         {topology.nodes.filter(matchesFilter).map((node) => <DeviceMesh key={node.id} node={node} selected={selection.some((item) => item.kind === "node" && item.id === node.id)} selectedPort={selectedPort} connectionStart={connectionStart} selectedCableId={selectedCableId} onSelect={(additive) => onSelectNode(node, additive)} onSelectPort={onSelectPort} />)}
-        {packets.map((packet) => <TrafficParticle key={packet.id} packet={packet} links={links} nodes={nodes} onComplete={onPacketComplete} />)}
+        {packets.map((packet) => <TrafficParticle key={packet.id} packet={packet} links={links} nodes={nodes} />)}
         </Bounds>
       </Canvas>
       <div className="pointer-events-none relative -mt-[610px] flex justify-between p-4 font-mono text-[10px] uppercase tracking-[.16em] text-[#6e8c94]">

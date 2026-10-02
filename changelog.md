@@ -1,5 +1,266 @@
 # Changelog
 
+## [2026-10-02] - Guided CLI Prompt Visibility
+- Restored the scroll position to the active prompt whenever an IOS step mounts after a worksheet or vocabulary card.
+- Restored the guided terminal's 380px default output height and kept a visible scroll lane, while automatically following the active prompt as command history grows or an IOS step returns after a worksheet.
+
+## [2026-10-02] - CLI Scrollback
+- Replaced the three-then-ten-line terminal slice with full per-device CLI scrollback in guided labs and Network Sandbox.
+- Added visible, internally contained terminal scrollbars, keyboard focus support, and auto-follow for new command output without preventing learners from scrolling back through earlier results.
+
+## [2026-10-02] - STP Operational Evidence
+- Added an STP tab to the live operational-evidence panel.
+- The tab models VLAN-specific root-bridge election, bridge IDs, Rapid PVST mode, timers, and port role/state, including root, designated, alternate/blocking, edge, PortFast, and BPDU Guard evidence.
+
+## [2026-10-02] - IOS Context-Sensitive Help
+- Added Cisco-style `?` help to guided-lab and Network Sandbox IOS terminals, including prompt-level, `show`, `show ip`, `show ipv6`, `show interfaces`, configuration, interface, VLAN, and routing contexts.
+- Help is read-only, is not counted as a guided-lab mistake, and remains unavailable in the separate ATTACKER-KALI shell.
+- Expanded retained terminal output from three lines to ten lines in both IOS surfaces so help results are readable.
+
+## [2026-10-01] - Networking Vocabulary Review Deck
+- Added a `Networking Vocabulary` command-ribbon entry immediately before Master Tranche One.
+- The standalone review deck presents every authored vocabulary card in a deterministic four-choice sequence, with progress, answer feedback, previous/next navigation, and restart support.
+- The deck honors the existing Guided, Help-if-asked, and Assessment learning modes rather than introducing a separate hint policy.
+
+## [2026-10-01] - Master Tranche Six Target-Range Alignment
+- Rebuilt all five Red Team review labs and all five Red Team simulation labs around `ATTACKER-KALI` and named synthetic range targets, replacing generic `ASSESS-PC1` IOS-console workflows.
+- Added ATTACKER-KALI evidence steps to the six original Purple Team scenarios so every Red/Purple lab consistently uses a Linux shell for Nmap-shaped inventory and in-app range-reporting commands, while Cisco remains the Blue Team configuration and verification plane.
+- Added modeled listener inventories to synthetic portal, API, web, directory, monitoring, camera, sensor, badge, printer, bastion, and legacy-service assets. Nmap version inventory now reports the target's modeled service identity rather than a generic port-443 placeholder.
+- Added regression coverage requiring every Master Tranche Six Red and Purple scenario to include a shell-mode ATTACKER-KALI step using a supported synthetic-range command.
+
+## [2026-10-01] - Behavioral Synthetic Container Runtime
+- Extended CONTAINER-API-01 from static workload metadata into a deterministic behavioral runtime. The synthetic model now retains ingress TLS/certificate/token/rate-limit state, health, audit findings, TCP listener and backlog state, socket events, namespaces, cgroup limits and counters, retained/dropped capabilities, seccomp identity, and syscall evidence.
+- Added ATTACKER-KALI commands for synthetic TLS inspection (`openssl s_client`), authenticated and unauthenticated HTTP status checks (`curl`), deterministic rate-limit burst testing, listener evidence (`ss -tnlp`), modeled process status (`cat /proc/self/status`), and modeled service logs (`journalctl`).
+- Added shared-state regression coverage proving that Cisco configuration changes affect the later synthetic TLS, authorization, throttling, socket, and journal output. The model creates no Docker image, process, socket, packet, DNS request, shell, filesystem activity, or outbound connection.
+
+## [2026-09-30] - Master Tranche Six: Authorized Red Team and Blue Team
+- Expanded Master Tranche Six to fifteen simulator-only ethical-hacking labs, organized as five Blue Team remediation labs, five Red Team authorized-validation labs, and five Red Team pentesting simulations, one of each in every sub-tranche.
+- Blue Team covers asset-edge protection, web/API boundary hardening, credential and remote-access controls, lateral-movement controls, and routing-incident response.
+- Red Team covers passive reconnaissance, web/API exposure validation, identity-policy review, segmentation-path review, and control-plane review. These labs are evidence-only: no scanning, exploitation, packet interception, credential attacks, route injection, or real-world target interaction.
+- The simulated pentesting track adds deliberately labeled in-app findings for service exposure, web boundaries, remote-access policy, segmentation proof of control, and routing-control-plane review. Each scenario ends at documented proof of control and excludes payloads, login attempts, packet crafting, pivoting, and bypass activity.
+- Extended guided curriculum and Network Sandbox navigation from five to six master tranches. Each Master Tranche Six lab has an automatically derived editable sandbox counterpart and regression coverage for the 5/5 team split.
+
+## [2026-09-30] - Simulated Target Range
+- Expanded the `Data` modal from Internet Traffic Data into a two-view training data range: deterministic traffic fabric and fictional target assets.
+- Added twelve contained in-app targets across websites, assessment/user/admin PCs, application/identity/monitoring servers, and camera/badge/sensor/printer IoT devices.
+- Each target shows modeled address, VLAN, zone, condition, and authorized learning boundary. The range is explicitly fictional and supports evidence collection and reporting only, never live scanning or attack execution.
+
+## [2026-09-30] - Target Range Purple Team Scenarios
+- Added six simulator-only Master Tranche Six Purple Team labs tied to shared Target Range assets: CAM-01 VLAN boundary, SENSOR-01 DHCP integrity, BADGE-01 ARP integrity, CAM-01 OT segmentation, `training-api.example` boundary, and PRINT-01 recovery drill.
+- Each scenario starts with a deliberately modeled condition, guides Red Team evidence and reporting, applies a Blue Team control, and retests the resulting configuration. No attack traffic, payloads, credential activity, industrial protocol interaction, or file encryption is generated.
+- Added deterministic IOS-model support and verification output for DHCP snooping, Dynamic ARP Inspection, modeled API rate limiting, and modeled API token enforcement, including switch capability validation. Every new lab receives an editable Network Sandbox counterpart.
+
+## [2026-10-01] - Synthetic Assessment Lifecycle Labs
+- Added six fictional target assets: FILE-01, BASTION-01, KDC-01, CACHE-01, LEGACY-FTP-01, and DNS-01, alongside their modeled service, identity, management, application, legacy, and operations zones.
+- Added six Target Range Purple Team labs: LEGACY-FTP-01 service retirement, FILE-01 shared access policy, BASTION-01 remote administration hygiene, KDC-01 directory trust boundary, CACHE-01 authentication-anomaly response, and DNS-01 service inventory.
+- Separated the IOS-only Cisco console from the ATTACKER-KALI synthetic Linux console. Nmap service/port inventory, SNMP walk, Metasploit console/search/info/module/RHOSTS/run, and Python reporting scripts are now accepted only in the attacker console, while IOS rejects them with standard invalid-input behavior.
+
+## [2026-10-01] - Stateful Synthetic Range Workflows
+- Added a stateful METASPLOIT-style catalog workflow for the CONTAINER-API-01 lab: `msfconsole`, `search`, `info`, `use`, `set RHOSTS`, and `run` retain attacker-console state and return deterministic range evidence. The lab now re-scans after the Cisco ACL is applied and reports the modeled port as filtered.
+- Added the MONITOR-01 SNMP Management State lab. It uses attacker-console SNMP walk and an explicitly session-scoped SNMP set before applying a least-privilege Cisco management ACL.
+
+## [2026-09-30] - Simulated Container Runtime
+- Added CONTAINER-API-01 as a first-class fictional Docker workload with modeled image, runtime, network, published port, environment classification, health, restart policy, volume policy, log summary, and deterministic findings.
+- Added the CONTAINER-API-01 Runtime Boundary Purple Team lab, including modeled runtime evidence, TLS, port 8443, rate-limit, token-enforcement, and ingress-ACL verification.
+
+## [2026-09-30] - Defensive Cybersecurity Incident Tracks
+- Added five Master Tranche Four IT help-desk security incidents: rogue access-device containment, remote-access hardening, rogue wireless-profile review, phishing DNS recovery, and malware containment policy.
+- Added five Master Tranche Five advanced network-defense investigations: simulated MITM/ARP defense, VLAN-hopping defense, rogue-DHCP recovery, OSPF route-injection defense, and TLS reverse-proxy hardening.
+- Each incident has one lab in every sub-tranche and a generated Network Sandbox counterpart with the same guided objectives, topology, initial state, and outcomes.
+- The labs are explicitly defensive. They teach evidence collection, hardening, containment, and validation without providing exploit execution or real credential/attack workflows.
+
+## [2026-09-30] - GLBP Operational Evidence
+- Expanded the Live Verification Tables FHRP tab with a dedicated GLBP gateway and forwarding view. It identifies the elected Active Virtual Gateway (AVG), each Active Virtual Forwarder (AVF), its interface and forwarder identifier, the virtual IP, load-sharing algorithm, and modeled forwarding weight.
+- Extended the IOS simulator to retain GLBP `load-balancing`, `forwarder`, and `weighting` configuration, and added state-derived `show glbp` / `show glbp brief` output.
+- Kept HSRP and VRRP in the shared FHRP table while making the GLBP-specific forwarding data explicit rather than implying it from priority alone.
+- Added regression coverage for GLBP grammar and persisted operational state. TypeScript, learning tests, and the full walkthrough audit pass.
+
+## [2026-09-30] - Master Tranche Two Applied Networking Expansion
+- Completed the five-by-five Master Tranche Two curriculum with 19 new guided labs and matching generated Network Sandbox counterparts, while retaining the six existing active labs and stable IDs.
+- Added time services, SSL/TLS, ICMP diagnostics, wireless roaming/capacity, PPP/LCP WAN, enterprise server services, WAN engineering, Ansible readiness, REST/CRUD API operations, container service networking, VRF segmentation, flexible load balancing, GLBP, virtual-router redundancy, TLS reverse proxy, BGP peering, route reflection, VRF-aware WAN routing, and applied VLSM/supernet policy.
+- Added Cisco-style guided command grammar and modeled verification output for NTP, PTP, TLS service state, PPP/LCP, VRF inventory/routes, GLBP/VRRP, and BGP peers/routes.
+- Avoided duplicate introductory labs already taught in Master Tranche One. VLSM/supernetting and FHRP return only in applied edge-routing and high-availability contexts.
+
+## [2026-09-30] - Comprehensive OSPF Operational Evidence
+- Rebuilt the OSPF verification tab as a multi-section control-plane dashboard covering process identity and uptime, address family, areas, interfaces, neighbors, SPF runs, timers, capabilities, LSDB records, LSA accounting, and the cyclic event log.
+- Added deterministic Router, Network, Summary/Inter-Area Prefix, AS External, and NSSA External LSAs with modeled age, sequence, checksum, advertising-router, and checksum-sum evidence. Supported LSA types with no current instances remain visible with zero counts.
+- Unified `show ip ospf`, `show ip ospf neighbor`, `show ip ospf interface`, and `show ip ospf database` with the live verification data instead of maintaining separate shallow output paths.
+- Added OSPFv3 process and interface state plus `show ipv6 ospf`, neighbor, interface, and database output through the same evidence engine.
+- OSPF-affecting commands now advance a deterministic simulator clock and event/SPF model. Interface hello/dead/retransmit timers, network type, cost, priority, authentication, area type/authentication/ranges, reference bandwidth, SPF throttling, maximum metric, and default-route origination are represented in process state.
+- Adjacency eligibility now checks address family, subnet/prefix, area, area type, passive state, router ID, network type, hello/dead timers, and authentication type before reaching FULL.
+- Added regression coverage for the dashboard, LSDB, shared CLI output, interface timer/authentication state, SPF events, and all OSPF lab families.
+
+## [2026-09-30] - Twenty Additional Vocabulary Cards
+- Expanded the vocabulary bank from 140 to 160 unique cards, distributed across ten existing labs in Master Tranche One, Tranches One-Four.
+- Added encapsulation, decapsulation, unicast, APIPA, TCP handshake, transport ports, duplex concepts, authentication, authorization, native VLAN mismatch, DTP, broadcast storms, Root Guard, DHCP leases/reservations, next hops, ECMP, throughput, and packet loss.
+- Preserved existing card IDs by appending terms within their groups; Tranche Five remains IOS-only.
+
+## [2026-09-30] - Interleaved Vocabulary Cards
+- Added 140 original four-choice term/definition cards throughout Master Tranche One, Tranches One-Four, and their generated sandbox counterparts. Tranche Five remains IOS-only.
+- Introduced security, wireless, services, and automation vocabulary before the later practical topics. Preserved original steps, IDs, device configuration, and existing outcomes; added independently graded vocabulary evidence.
+- Added keyboard-accessible radio cards, answer validation, and explanations for each choice using the existing Guided/Assisted/Assessment settings, without automatic hint fading.
+- Added placement, isolation, grading, idempotence, and rendered learning-mode regression tests.
+
+## [2026-09-30] - Master Tranche One Curriculum Progression
+- Reorganized Tranches Two-Five into applied addressing/discovery, switching/LAN services, routing/resilience, and security/edge policy.
+- Moved applied subnetting ahead of routing and security, and moved ACL lessons ahead of PAT. Retained all 22 existing labs and their stable IDs, steps, topologies, and grading outcomes.
+- Added explicit curriculum ordering shared by guided and sandbox menus. Existing companion scenarios move with their related topic.
+- Kept Tranche One's five-lesson sequence and all other master tranches unchanged.
+
+## [2026-09-30] - Addressing Fundamentals Masterclass
+- Added four lessons under Master Tranche One / Tranche One without replacing existing labs: binary foundations, the complete IPv4 /0-/32 range, IPv4 subnet planning and wildcards, and IPv6 addressing/subnetting.
+- Added shared answer-checked worksheets to guided labs and their generated Network Sandbox counterparts, followed by practical IOS router exercises.
+- Preserved full Guided walkthroughs; explanations in Assisted mode are available on request. Assessment hides walkthroughs, with no automatic hint fading in any mode.
+- Recorded worksheet completion in session evidence for grading, local persistence, and checkpoints.
+- Added calculation, answer-normalization, and guided/sandbox replay regression tests. All 53 learning and packet-animation tests passed.
+
+## [2026-09-29] - Sandbox Packet Animation
+- Successful modeled IPv4 pings start persistent cyan request and amber reply flows in Schematic, Logical, and 3D views. Flows keep circulating while their modeled request and return paths remain valid.
+- Shared timing preserves progress when switching viewports. Packet direction follows the actual connected ports, replies use the independently validated return path, and a configuration change that breaks forwarding stops the affected flow.
+- Blocked probes produce diagnostic feedback without a successful transit animation.
+
+## [2026-09-29] - Network Sandbox VLAN Overlay
+- Replaced native white browser hover titles with a dark, viewport-aware port card in both Logical and Schematic VLAN views. It shows cable peer device/port, local and cabled-device IPv4 state, deterministic modeled device MAC identities, access/inferred membership, configured VLAN SVI when present, trunk native/allowed VLANs, interface state, and EtherChannel state when applicable. Logical link hover uses the same visual language.
+- Access ports correctly show `Unassigned` for their own IP address when they are Layer 2 only; the cabled endpoint address remains visible separately. An absent VLAN SVI is reported as `Not configured` rather than inferred from a router interface.
+- Added a Controls toggle and VLAN selector for Logical and Schematic views. Port labels expose access membership and native/allowed trunk VLANs; endpoints infer membership only from directly connected access ports.
+- VLAN filtering dims unrelated devices, ports, and links without changing operational link colors or claiming a suspended EtherChannel forwards traffic. Unknown/disconnected memberships remain explicitly unknown.
+
+### Validation
+- TypeScript check, 44 focused learning-regression tests, production build, and `git diff --check` passed.
+
+## [2026-09-29] - Established VLAN Baseline for LACP Troubleshooting
+- Clarified interface verification with separate access/SVI, native, and allowed VLAN fields; EtherChannel parent membership; management SVI roles; and separate physical link versus bundle state. Logical Port-channels stay down until a member bundles.
+- VLAN tables now include SVIs and only list trunks permitting the VLAN. EtherChannel tables explain suspension; trunk tables expose bundle state.
+- Seeded Engineering (10), Services (20), Management (99), and Native (999) VLANs on both LACP lab switches and their derived Network Sandbox counterpart.
+- Added matching trunk/native/allowed-VLAN settings on g0/2 and Port-channel 1, management SVIs, and VLAN-appropriate AP/server access ports and server addressing. Passive/passive LACP remains the intended fault.
+- Grading now requires preservation of the existing VLAN inventory and member trunk settings alongside the LACP repair.
+- Added regression coverage for VLAN output, pre-repair blocking, post-repair management reachability, and preservation of the established VLANs. All 41 regression tests passed.
+
+## [2026-09-28] - Master Tranche Four IT Tech Support
+### Added
+- Five support-ticket labs, one per Master Tranche Four sub-tranche: workstation onboarding (32 commands), DHCP/internal DNS support (37), shared-printer connectivity (32), AP management/RF-profile support (32), and secure remote-administration handoff (30).
+- Matching Network Sandbox counterparts derived from the same topologies, guided steps, initial states, and explicit configuration outcomes. Existing guided modes, command history, verification tables, and device-selection warnings are reused.
+- Regression walkthroughs for both versions of every support lab, checking modeled successful ping paths, DHCP lease options, and DNS resolution rather than command acceptance alone.
+
+### Fixed
+- PCs and printers accept modeled static IPv4 configuration through the shared capability checks.
+- Management-SVI probes resolve through physical VLAN member ports; untagged router access links and DHCP pools honor the connected access VLAN.
+- Interface running-configuration output, including SVIs, exposes current address/VLAN/admin state. Endpoint gateways and VTY idle timeouts are tracked for outcome grading.
+
+### Validation
+- 40 regression tests passed; 3,430 guided/sandbox commands audited with zero errors and the same three pre-existing command-practice warnings.
+- Master Tranche One's authored curriculum is unchanged. Shared engine fixes apply across the application.
+- Wireless support verifies management connectivity and profile intent, not actual wireless association. Remote support verifies configuration and SVI reachability, not a real SSH login.
+
+## [2026-09-28] - Learning Platform Foundations and Evidence Hardening
+### Added
+- Learning workspace shared by tranche labs and Network Sandbox counterparts: state-based outcomes, guided/assisted/assessment modes, diagnostics, protocol evidence, checkpoints, skill records, and validated authoring drafts/export.
+- Five seeded-fault troubleshooting labs across Master Tranche Five's five sub-tranches, with corresponding sandbox exercises.
+- Expanded each Master Tranche Five troubleshooting lab and matching sandbox exercise into a 31-command investigation, repair, verification, and persistence workflow. Scenarios now include relevant endpoint, IoT, service, and infrastructure equipment rather than an isolated two-device fault.
+- Named browser-local checkpoints, configuration comparison, and automatic safety snapshots before restore or fresh assessment.
+- Automated authored-command walkthrough audit and regression tests for fault repair, equivalent configuration, interface evidence, OSPF withdrawal, blocked probes, and DHCP expiry.
+
+### Changed
+- Fixed empty troubleshooting MAC evidence by connecting the shared command executor to Layer 2 learning, seeding healthy endpoint/link configuration, and using consistent MAC identities across inventory, CLI, and learned-table views. Disabled workstation ports remain absent until repaired; allowed trunks propagate remote source entries.
+- Added shared IPv4 route-table evidence, longest-prefix probe forwarding, routing-loop detection, request/reply path checks, and ordered ICMP ACL evaluation including implicit deny.
+- Added cost-based OSPF route recalculation and physical-segment DR/BDR evidence; fixed recording passive interfaces on newly configured processes.
+- Shared packet diagnostics now infer the configured access VLAN when host metadata omits it and reject destination addresses assigned to disabled interfaces, including local probes.
+- OSPF neighbor discovery now follows shared adjacency fault checks. Database output groups configured participation by its actual area and identifies the modeled database limitation; `show vlan brief` includes access-port membership and excludes trunks.
+- Troubleshooting labs and their Network Sandbox counterparts now begin in the same guided, step-by-step mode as every other lab. Learners can explicitly switch to Help if asked or Assessment mode when ready.
+- Guided tranche labs now use the same device-selection warning as Network Sandbox objectives when the open console does not match the required device.
+- IP Interfaces now includes Cisco-style `OK?` address validity and `Method` (`manual`, `DHCP`, or `unset`) columns, and the modeled `show ip interface brief` output uses the same fields.
+- Guided and sandbox execution now share network command handling. Assisted repairs can satisfy outcomes without following the authored sequence.
+- OSPF evidence checks interface state, participation, area/subnet compatibility, passive interfaces, duplicate router IDs, and stub options; modeled learned routes withdraw after adjacency loss.
+- Packet diagnostics report modeled blocking conditions and limitations instead of unconditional ping success.
+- EtherChannel tables distinguish LACP negotiation state from merely enabled interfaces. DHCP output uses actual modeled expiry and lease counts instead of fabricated infinite leases or packet counters.
+- `switchport trunk allowed vlan add/remove` now mutates the modeled VLAN set used by trunk verification and Layer 2 diagnostics.
+- EtherChannel eligibility now uses one shared forwarding rule across the topology link color, verification table, Layer 2 diagnostics, and packet-path checks. Suspended LACP channels no longer appear to forward traffic.
+- Packet diagnostics now reject a modeled route when its configured next hop does not match the next topology neighbor on the selected egress.
+- Replaced the server build bundling step with a guarded single-entry TypeScript transform to avoid the encountered Windows directory-traversal issue.
+
+### Scope
+- Packet diagnostics, cross-view consistency, and protocol fidelity remain bounded instructional models. Cost-based recalculation and ICMP request/reply checks are implemented; real convergence timers, complete RFC OSPF/multi-area behavior, exhaustive ACL/NAT/transport emulation, and exhaustive browser coverage are not complete.
+- Checkpoints, assessment records, and author drafts are local to the browser. Author drafts are not automatically installed as live curriculum.
+
+### Validation
+- Learning regression suite: 34 tests passed.
+- Walkthrough audit: 3,104 authored commands, zero errors, three warnings for exercises without measurable state outcomes.
+- Manual browser checks covered out-of-order OSPF repair, fresh assessment reset, checkpoint restoration, and healthy phone/camera entries in the Silent Access Port learned MAC table.
+- TypeScript check, production build, and `git diff --check` passed. The build retains a large frontend-bundle advisory.
+
+## [2026-09-27] - Tranche and Network Sandbox Integration
+### Added
+- **Sandbox counterparts for every guided lab:** Each guided tranche lab now has an editable Network Sandbox scenario derived from the same finalized topology and command sequence.
+- **Curriculum parity:** Counterparts inherit their source lab's Master Tranche and sub-tranche placement, so the sandbox scenario browser follows the same learning structure as the guided curriculum.
+
+### Changed
+- **Single source of truth:** Sandbox counterpart objectives are copied from the guided registry after lab extensions and verification steps are attached, reducing drift between the two learning experiences.
+- **Legacy separation:** Existing free-play scenarios without a guided tranche source remain in the Legacy group.
+
+### Validation
+- `pnpm run check` passed.
+- `git diff --check` passed.
+
+## [2026-09-27] - Network Sandbox Curriculum Navigation
+### Added
+- **Scenario hierarchy:** Reorganized the Network Sandbox scenario browser into Master Tranche One through Master Tranche Five, each with Tranche One through Tranche Five submenus.
+- **Legacy scenario group:** Added a Legacy section for sandbox templates that do not correspond to a guided tranche lab, including the management campus, small-business enterprise, and blank-canvas scenarios.
+
+### Changed
+- **Master Tranche One scenario mapping:** Grouped the matching VLAN/trunk, OSPF/routing-core, and firewall sandbox scenarios under the corresponding Master Tranche One sub-tranches without changing Master Tranche One guided labs.
+
+## [2026-09-27] - Network Sandbox Viewport Spacing
+### Changed
+- **Expanded logical diagram grid:** Increased the logical Network Sandbox drawing surface from 1120x610 to 1440x760 so larger scenarios have usable space around their devices and links instead of ending at the old canvas boundary.
+- **Viewport zoom controls:** Added bounded zoom in, zoom out, and reset controls to the Network Sandbox Controls menu for inspecting dense topologies at a comfortable scale.
+
+### Validation
+- `pnpm run check` passed.
+- `git diff --check` passed.
+
+## [2026-09-27] - Small Business Enterprise Sandbox Exercise
+### Added
+- **Guided small-business deployment:** Added a complete sandbox exercise for the existing Small Business Enterprise topology. The workflow configures CE-R1 inter-VLAN routing and DHCP, CE-SW1/CE-SW2 VLANs and LACP trunks, CE-AP1/CE-AP2 SSIDs and RF settings, CE-FW1 edge policy and PAT, CE-SRV1 DNS, and endpoint addressing.
+- **Operational verification:** Added guided checks for interfaces, routes, DHCP, VLANs, trunks, EtherChannel, firewall ACL/translations/connections, server DNS records, modeled reachability, and saved configuration.
+
+### Changed
+- **Port-model fidelity:** Aligned the Small Business Enterprise firewall topology ports with the IOS interface names `Ethernet0/0` through `Ethernet0/2`, keeping visual links and command-driven interface state synchronized.
+- **Device capabilities:** Enabled modeled IP configuration on servers and trunk capability on access points so the new exercise can validate its intended commands.
+
+### Validation
+- `pnpm run check` passed.
+- `git diff --check` passed.
+
+## [2026-09-26] - Master Tranche Two Curriculum and Verification Fidelity
+### Added
+- **Master Tranche Two curriculum:** Added active guided labs across all five sub-tranches: Enterprise Voice and QoS, CCTV Surveillance Networking, Wireless and RF, CDP/LLDP/LACP, Load Balancing/VPC, and OSPFv2 Multi-Area Routing.
+- **CCTV Surveillance Network:** Added a dedicated VLAN 50 camera topology with CE-R1, CE-SW1, NVR-01, CAM-01, and CAM-02. The guided sequence covers multicast-ready routing, trunk allowance, camera access ports, and switch verification evidence.
+
+### Changed
+- **Interface verification inventory:** Expanded the IP Interfaces table to include every modeled port on the selected device, including unconfigured ports, with description, role, status, administrative state, speed/duplex, and error fields alongside parent, VLAN, encapsulation, and IP relationships.
+- **VLAN access fidelity:** Corrected the Sales endpoint path in the VLAN access lab so its modeled `g0/2` port is explicitly configured as an access port in VLAN 20 before the verification commands.
+- **Curriculum navigation:** Updated the documentation and tranche navigation so Master Tranche Two is presented as a five-sub-tranche curriculum, while Master Tranche One remains unchanged and Master Tranches Three–Five remain future placeholders.
+
+### Validation
+- `pnpm run check` passed.
+- `git diff --check` passed.
+
+## [2026-09-26] - Guided OSPFv2 Network Sandbox and CLI Parity
+### Added
+- **Guided OSPFv2 Network Sandbox:** Added the OSPFv2 Multi-Platform Sandbox with the same guided objects, configuration sequence, interface activation objectives, OSPF verification steps, and evidence passes as TR3-OSPFV2.
+- **Sandbox CLI Command History:** Added a per-device Command History panel to the Network Sandbox IOS console. It includes commands entered in user EXEC, privileged EXEC, global configuration, interface, router, and other IOS submodes.
+
+### Changed
+- **Network Sandbox IOS Workspace:** Aligned the sandbox console presentation with the tranche CLI. The console now has a labeled Minimize CLI/Restore CLI control and keeps a compact rolling three-line output window so the startup banner scrolls away naturally as commands are entered.
+- **OSPF Device Modeling:** Extended sandbox OSPF support to Layer 3 switch, firewall OSPF speaker, and virtual-router roles so the guided multi-platform sequence can operate across all five devices.
+
+### Fixed
+- **Command History Prompt Parsing:** Corrected history detection for IOS submode prompts such as `CE-R2(config-router)#`, so commands are displayed regardless of the active IOS context.
+
+### Validation
+- `pnpm run check` passed.
+- `git diff --check` passed.
+
 ## [2026-09-22] - State-Driven NAT/PAT Packet Trace
 ### Changed
 - **NAT/PAT trace trigger:** TR4-NAT-PAT now keeps the operational-context animation in standby while the learner marks inside/outside interfaces and prepares the router. Playback begins only after the accepted `ip nat inside source list 1 interface g0/1 overload` command is entered, aligning the visual flow with the command that actually creates the PAT rule.

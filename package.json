@@ -5,10 +5,12 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite --configLoader runner --host",
-    "build": "vite build --configLoader native && cd server && esbuild index.ts --platform=node --packages=external --bundle --format=esm --outdir=../dist",
+    "build": "vite build --configLoader native && node scripts/build-server.mjs",
     "start": "NODE_ENV=production node dist/index.js",
     "preview": "vite preview --host",
     "check": "tsc --noEmit",
+    "test:learning": "tsx --test client/src/lib/learning-engine.test.ts client/src/lib/packet-animation.test.ts client/src/lib/addressing-fundamentals.test.ts",
+    "audit:labs": "tsx scripts/audit-labs.ts",
     "format": "prettier --write ."
   },
   "dependencies": {

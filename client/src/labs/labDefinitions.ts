@@ -1,21 +1,38 @@
 // --- BLUEPRINTS (Interfaces) ---
+import { troubleshootingLabs } from './troubleshootingLabs';
+import { techSupportLabs } from './techSupportLabs';
+import { cyberDefenseLabs } from './cyberDefenseLabs';
+import { ethicalHackingLabs } from './ethicalHackingLabs';
+import { fundamentalsLabs } from './fundamentalsLabs';
+import { masterTwoExpansionLabs } from './masterTwoExpansion';
+import { applyMasterOneCurriculum } from './masterOneCurriculum';
+import { addVocabularyCards } from './vocabularyCards';
+import type { FundamentalsExercise } from '../lib/addressing-fundamentals';
+import type { Requirement } from '../lib/learning-engine';
+
 export interface LabStep {
+  exercise?: FundamentalsExercise;
   id: number;
   label: string;
   description: string;
   targetDevice: string;
-  requiredMode: "user" | "privileged" | "config" | "interface" | "vlan" | "subinterface" | "interface-range" | "router" | "dhcp" | "line" | "acl" | "object-network";
+  requiredMode: "user" | "privileged" | "config" | "interface" | "vlan" | "subinterface" | "interface-range" | "router" | "bgp" | "dhcp" | "line" | "acl" | "object-network" | "shell";
   expectedCommand: string;
   successMessage: string;
   validation: (state: any) => boolean;
 }
 
 export interface LabConfig {
+  curriculumOrder?: number;
   id: string;
   title: string;
   description: string;
   type: "guided" | "sandbox";
   tranche?: 1 | 2 | 3 | 4 | 5;
+  masterTranche?: 1 | 2 | 3 | 4 | 5 | 6;
+  status?: "active" | "planned";
+  outcomes?: Requirement[];
+  troubleshooting?: boolean;
   topology: {
     devices: any[];
     links: any[];
@@ -26,63 +43,6 @@ export interface LabConfig {
 
 // --- THE UNIFIED REGISTRY ---
 export const LAB_REGISTRY: Record<string, LabConfig> = {
-  "lab-1": {
-    id: "lab-1",
-    type: "guided",
-    title: "Addressing Foundations",
-    description: "Learn basic CLI, IPv4, and IPv6 addressing.",
-    topology: { 
-        devices: [
-            { id: "r1", name: "R1", kind: "router", role: "Core", x: 100, y: 100, ports: ["g0/0", "g0/1"] },
-            { id: "pc1", name: "PC1", kind: "pc", role: "Host", x: 300, y: 100, ports: ["eth0"] }
-        ], 
-        links: [{ id: "l1", from: "r1", to: "pc1", fromPort: "g0/0", toPort: "eth0" }] 
-    },
-    initialState: {},
-    steps: [
-      {
-        id: 1,
-        label: "Enter Privileged Mode",
-        description: "Use the enable command",
-        targetDevice: "R1",
-        requiredMode: "user",
-        expectedCommand: "enable",
-        successMessage: "Entered privileged EXEC mode",
-        validation: (state) => state.devices["R1"]?.mode === "privileged",
-      },
-    ]
-  },
-  "ospf-sandbox": {
-    id: "ospf-sandbox",
-    type: "sandbox",
-    title: "OSPF Triple-Router Sandbox",
-    description: "Build and verify OSPF convergence in a triangle topology.",
-    topology: { 
-      devices: [
-        { id: "r1", name: "R1", kind: "router", role: "Core 1", x: 100, y: 100, ports: ["g0/0", "g0/1"] },
-        { id: "r2", name: "R2", kind: "router", role: "Core 2", x: 300, y: 100, ports: ["g0/0", "g0/1"] },
-        { id: "r3", name: "R3", kind: "router", role: "Core 3", x: 200, y: 300, ports: ["g0/0", "g0/1"] },
-      ], 
-      links: [
-        { id: "l1", from: "r1", to: "r2", fromPort: "g0/0", toPort: "g0/0" },
-        { id: "l2", from: "r2", to: "r3", fromPort: "g0/1", toPort: "g0/0" },
-        { id: "l3", from: "r3", to: "r1", fromPort: "g0/1", toPort: "g0/1" },
-      ] 
-    },
-    initialState: {},
-    steps: [
-        {
-            id: 1,
-            label: "Establish R1 Privileged Mode",
-            description: "Get into the privileged EXEC prompt on R1.",
-            targetDevice: "R1",
-            requiredMode: "user",
-            expectedCommand: "enable",
-            successMessage: "R1 is now in privileged mode.",
-            validation: (state) => state.devices["R1"]?.mode === "privileged",
-        }
-    ]
-  },
   "vlan-basics": {
     id: "vlan-basics",
     type: "guided",
@@ -189,6 +149,8 @@ export const LAB_REGISTRY: Record<string, LabConfig> = {
   },
   "sandbox-access-segmentation": {
     id: "sandbox-access-segmentation",
+    masterTranche: 1,
+    tranche: 2,
     title: "Segmented Office Sandbox",
     description: "A multi-user office environment. Your mission is to segment users into Engineering and Sales VLANs and secure the trunk.",
     type: "sandbox",
@@ -231,8 +193,35 @@ export const LAB_REGISTRY: Record<string, LabConfig> = {
       { id: 22, label: "Show VLAN Brief", description: "Check the VLAN database.", targetDevice: "CE-SW1", requiredMode: "privileged", expectedCommand: "show vlan brief", successMessage: "OK.", validation: (state) => true },
     ],
   },
+  "sandbox-ospfv2-multiplatform": {
+    id: "sandbox-ospfv2-multiplatform",
+    masterTranche: 1,
+    tranche: 3,
+    title: "OSPFv2 Multi-Platform Sandbox",
+    description: "Build and inspect a single-area OSPFv2 domain across two routers, a Layer 3 switch, a firewall, and a virtual router.",
+    type: "sandbox",
+    topology: {
+      devices: [
+        { id: "r1", name: "CE-R1", kind: "router", role: "OSPF Router 1", x: 90, y: 250, ports: ["g0/0"] },
+        { id: "r2", name: "CE-R2", kind: "router", role: "OSPF Router 2", x: 310, y: 250, ports: ["g0/0", "g0/1"] },
+        { id: "l3sw1", name: "CE-L3SW1", kind: "switch", role: "Layer 3 Switch / OSPF Speaker", x: 530, y: 250, ports: ["g0/0", "g0/1"] },
+        { id: "fw1", name: "CE-FW1", kind: "firewall", role: "Firewall / OSPF Speaker", x: 750, y: 250, ports: ["g0/0", "g0/1"] },
+        { id: "vr1", name: "CE-VR1", kind: "router", role: "Virtual Router / OSPF Speaker", x: 970, y: 250, ports: ["g0/0"] },
+      ],
+      links: [
+        { id: "l1", from: "r1", to: "r2", fromPort: "g0/0", toPort: "g0/0" },
+        { id: "l2", from: "r2", to: "l3sw1", fromPort: "g0/1", toPort: "g0/0" },
+        { id: "l3", from: "l3sw1", to: "fw1", fromPort: "g0/1", toPort: "g0/0" },
+        { id: "l4", from: "fw1", to: "vr1", fromPort: "g0/1", toPort: "g0/0" },
+      ],
+    },
+    initialState: {},
+    steps: [],
+  },
   "sandbox-routing-core": {
     id: "sandbox-routing-core",
+    masterTranche: 1,
+    tranche: 3,
     title: "Routing Core Sandbox",
     description: "A high-complexity core network. Your mission is to enable IPv6 routing and build an OSPFv2 area 0 adjacency.",
     type: "sandbox",
@@ -370,8 +359,13 @@ export const LAB_REGISTRY: Record<string, LabConfig> = {
       { id: 9, label: "Configure Engineering Port", description: "Open g0/1, set it to access mode, and assign it to VLAN 10.", targetDevice: "CE-SW1", requiredMode: "config", expectedCommand: "interface g0/1", successMessage: "The Engineering access port is selected.", validation: (state) => true },
       { id: 10, label: "Set Access Mode", description: "Make g0/1 a non-trunking access port.", targetDevice: "CE-SW1", requiredMode: "interface", expectedCommand: "switchport mode access", successMessage: "g0/1 is operating as an access port.", validation: (state) => true },
       { id: 11, label: "Assign Engineering VLAN", description: "Place g0/1 into VLAN 10.", targetDevice: "CE-SW1", requiredMode: "interface", expectedCommand: "switchport access vlan 10", successMessage: "g0/1 is assigned to Engineering VLAN 10.", validation: (state) => true },
-      { id: 12, label: "Verify VLANs", description: "Return to Privileged EXEC and inspect the VLAN database.", targetDevice: "CE-SW1", requiredMode: "interface", expectedCommand: "end", successMessage: "Privileged EXEC is ready for verification.", validation: (state) => true },
-      { id: 13, label: "Show VLAN Brief", description: "Verify VLAN names and membership with the standard CCNA command.", targetDevice: "CE-SW1", requiredMode: "privileged", expectedCommand: "show vlan brief", successMessage: "VLAN creation and access-port assignment are verified.", validation: (state) => true },
+      { id: 12, label: "Select Sales Port", description: "Return to Global Configuration and select g0/2 for the Sales host.", targetDevice: "CE-SW1", requiredMode: "interface", expectedCommand: "exit", successMessage: "The switch returned to Global Configuration mode.", validation: (state) => true },
+      { id: 13, label: "Configure Sales Port", description: "Open g0/2 for the Sales host.", targetDevice: "CE-SW1", requiredMode: "config", expectedCommand: "interface g0/2", successMessage: "The Sales access port is selected.", validation: (state) => true },
+      { id: 14, label: "Set Sales Access Mode", description: "Make g0/2 a non-trunking access port.", targetDevice: "CE-SW1", requiredMode: "interface", expectedCommand: "switchport mode access", successMessage: "g0/2 is operating as an access port.", validation: (state) => true },
+      { id: 15, label: "Assign Sales VLAN", description: "Place g0/2 into VLAN 20.", targetDevice: "CE-SW1", requiredMode: "interface", expectedCommand: "switchport access vlan 20", successMessage: "g0/2 is assigned to Sales VLAN 20.", validation: (state) => true },
+      { id: 16, label: "Verify VLANs", description: "Return to Privileged EXEC and inspect the VLAN database.", targetDevice: "CE-SW1", requiredMode: "interface", expectedCommand: "end", successMessage: "Privileged EXEC is ready for verification.", validation: (state) => true },
+      { id: 17, label: "Show VLAN Brief", description: "Verify VLAN names and both access-port memberships with the standard CCNA command.", targetDevice: "CE-SW1", requiredMode: "privileged", expectedCommand: "show vlan brief", successMessage: "VLAN creation and access-port assignment are verified.", validation: (state) => true },
+      { id: 18, label: "Verify Access Port Status", description: "Confirm the Engineering and Sales ports are operating as access interfaces.", targetDevice: "CE-SW1", requiredMode: "privileged", expectedCommand: "show interfaces status", successMessage: "Both endpoint access ports have been reviewed.", validation: (state) => true },
     ],
   },
   "tr2-trunking": {
@@ -458,13 +452,85 @@ export const LAB_REGISTRY: Record<string, LabConfig> = {
       { id: 7, label: "Verify STP", description: "Inspect spanning-tree state and confirm the selected root role.", targetDevice: "CE-SW1", requiredMode: "privileged", expectedCommand: "show spanning-tree", successMessage: "Spanning-tree state has been reviewed.", validation: (state) => true },
     ],
   },
+  "mt2-tr1-voip-qos": {
+    id: "mt2-tr1-voip-qos",
+    masterTranche: 2,
+    tranche: 1,
+    status: "planned",
+    type: "guided",
+    title: "Enterprise Voice and QoS Foundations",
+    description: "Model VoIP signaling, voice VLAN placement, bandwidth reservations, latency, jitter, and quality-of-service decisions.",
+    topology: { devices: [{ id: "router", name: "CE-R1", kind: "router", role: "Voice Edge Router", x: 180, y: 180, ports: ["g0/0", "g0/1"] }, { id: "sw", name: "CE-SW1", kind: "switch", role: "Voice Access Switch", x: 500, y: 180, ports: ["g0/1", "g0/2"] }, { id: "phone", name: "IP-PHONE1", kind: "pc", role: "IP Phone", x: 820, y: 120, ports: ["eth0", "eth1"] }, { id: "pc", name: "VOICE-PC1", kind: "pc", role: "Voice Workstation", x: 820, y: 280, ports: ["eth0"] }], links: [{ id: "l1", from: "router", to: "sw", fromPort: "g0/0", toPort: "g0/1" }, { id: "l2", from: "sw", to: "phone", fromPort: "g0/2", toPort: "eth0" }, { id: "l3", from: "phone", to: "pc", fromPort: "eth1", toPort: "eth0" }] },
+    initialState: {},
+    steps: [],
+  },
+  "mt2-tr1-cctv-network": {
+    id: "mt2-tr1-cctv-network",
+    masterTranche: 2,
+    tranche: 1,
+    status: "planned",
+    type: "guided",
+    title: "CCTV Surveillance Network",
+    description: "Build a segmented camera network with a dedicated surveillance VLAN, multicast-ready routing, and an NVR uplink.",
+    topology: { devices: [{ id: "router", name: "CE-R1", kind: "router", role: "Surveillance Gateway", x: 160, y: 220, ports: ["g0/0"] }, { id: "switch", name: "CE-SW1", kind: "switch", role: "CCTV PoE Access Switch", x: 480, y: 220, ports: ["g0/1", "g0/2", "g0/3", "g0/4"] }, { id: "nvr", name: "NVR-01", kind: "server", role: "Network Video Recorder", x: 820, y: 120, ports: ["eth0"] }, { id: "camera1", name: "CAM-01", kind: "camera", role: "North Entrance Camera", x: 820, y: 260, ports: ["eth0"] }, { id: "camera2", name: "CAM-02", kind: "camera", role: "Loading Dock Camera", x: 820, y: 400, ports: ["eth0"] }], links: [{ id: "uplink", from: "router", to: "switch", fromPort: "g0/0", toPort: "g0/1" }, { id: "nvr", from: "switch", to: "nvr", fromPort: "g0/2", toPort: "eth0" }, { id: "camera1", from: "switch", to: "camera1", fromPort: "g0/3", toPort: "eth0" }, { id: "camera2", from: "switch", to: "camera2", fromPort: "g0/4", toPort: "eth0" }] },
+    initialState: {},
+    steps: [],
+  },
+  "mt2-tr2-wireless-rf": {
+    id: "mt2-tr2-wireless-rf",
+    masterTranche: 2,
+    tranche: 2,
+    status: "planned",
+    type: "guided",
+    title: "Wireless and RF Fundamentals",
+    description: "Build a small WLAN and reason about 2.4 GHz and 5 GHz channels, overlap, interference, coverage, and client association.",
+    topology: { devices: [{ id: "router", name: "CE-R1", kind: "router", role: "Wireless Edge Router", x: 160, y: 200, ports: ["g0/0"] }, { id: "ap", name: "CE-AP1", kind: "access-point", role: "Enterprise Access Point", x: 500, y: 200, ports: ["eth0", "wlan0"] }, { id: "client", name: "WLAN-PC1", kind: "pc", role: "Wireless Client", x: 840, y: 200, ports: ["eth0"] }], links: [{ id: "l1", from: "router", to: "ap", fromPort: "g0/0", toPort: "eth0" }, { id: "l2", from: "ap", to: "client", fromPort: "wlan0", toPort: "eth0" }] },
+    initialState: {},
+    steps: [],
+  },
+  "mt2-tr3-discovery-aggregation": {
+    id: "mt2-tr3-discovery-aggregation",
+    masterTranche: 2,
+    tranche: 3,
+    status: "planned",
+    type: "guided",
+    title: "CDP, LLDP, and LACP Operations",
+    description: "Discover neighbors with CDP and LLDP, then build a resilient LACP EtherChannel and verify the bundled link.",
+    topology: { devices: [{ id: "sw1", name: "CE-SW1", kind: "switch", role: "Aggregation Switch", x: 180, y: 200, ports: ["g0/1", "g0/2"] }, { id: "sw2", name: "CE-SW2", kind: "switch", role: "Access Switch", x: 560, y: 200, ports: ["g0/1", "g0/2", "g0/3"] }, { id: "pc", name: "EDGE-PC1", kind: "pc", role: "Access Host", x: 900, y: 200, ports: ["eth0"] }], links: [{ id: "l1", from: "sw1", to: "sw2", fromPort: "g0/1", toPort: "g0/1" }, { id: "l2", from: "sw1", to: "sw2", fromPort: "g0/2", toPort: "g0/2" }, { id: "l3", from: "sw2", to: "pc", fromPort: "g0/3", toPort: "eth0" }] },
+    initialState: {},
+    steps: [],
+  },
+  "mt2-tr4-load-balancing-vpc": {
+    id: "mt2-tr4-load-balancing-vpc",
+    masterTranche: 2,
+    tranche: 4,
+    status: "planned",
+    type: "guided",
+    title: "Load Balancing and VPC High Availability",
+    description: "Explore distributed gateway redundancy, active forwarding paths, load distribution, peer links, and vPC-style dual-device behavior.",
+    topology: { devices: [{ id: "sw1", name: "CE-SW1", kind: "switch", role: "vPC Peer 1", x: 260, y: 180, ports: ["g0/1", "g0/2", "g0/3"] }, { id: "sw2", name: "CE-SW2", kind: "switch", role: "vPC Peer 2", x: 260, y: 380, ports: ["g0/1", "g0/2"] }, { id: "server", name: "APP-SERVER1", kind: "server", role: "Load-Balanced Application Server", x: 820, y: 280, ports: ["eth0", "eth1"] }, { id: "router", name: "CE-R1", kind: "router", role: "Upstream Gateway", x: 820, y: 100, ports: ["g0/0"] }], links: [{ id: "peer", from: "sw1", to: "sw2", fromPort: "g0/1", toPort: "g0/1" }, { id: "server-a", from: "sw1", to: "server", fromPort: "g0/2", toPort: "eth0" }, { id: "server-b", from: "sw2", to: "server", fromPort: "g0/2", toPort: "eth1" }, { id: "upstream", from: "router", to: "sw1", fromPort: "g0/0", toPort: "g0/3" }] },
+    initialState: {},
+    steps: [],
+  },
+  "mt2-tr5-ospf-multi-area": {
+    id: "mt2-tr5-ospf-multi-area",
+    masterTranche: 2,
+    tranche: 5,
+    status: "planned",
+    type: "guided",
+    title: "OSPFv2 Multi-Area Routing",
+    description: "Build an OSPFv2 domain with backbone Area 0, a standard additional area, and a stub area, then verify inter-area routes and ABR behavior.",
+    topology: { devices: [{ id: "r1", name: "CE-R1", kind: "router", role: "Area 0 Backbone Router", x: 160, y: 250, ports: ["g0/0", "g0/1"] }, { id: "abr1", name: "CE-ABR1", kind: "router", role: "Area 0 / Area 10 ABR", x: 460, y: 150, ports: ["g0/0", "g0/1"] }, { id: "abr2", name: "CE-ABR2", kind: "router", role: "Area 0 / Area 20 Stub ABR", x: 460, y: 350, ports: ["g0/0", "g0/1"] }, { id: "r10", name: "CE-R10", kind: "router", role: "Area 10 Router", x: 820, y: 150, ports: ["g0/0"] }, { id: "r20", name: "CE-R20", kind: "router", role: "Area 20 Stub Router", x: 820, y: 350, ports: ["g0/0"] }], links: [{ id: "backbone-a", from: "r1", to: "abr1", fromPort: "g0/0", toPort: "g0/0" }, { id: "backbone-b", from: "r1", to: "abr2", fromPort: "g0/1", toPort: "g0/0" }, { id: "area-10", from: "abr1", to: "r10", fromPort: "g0/1", toPort: "g0/0" }, { id: "area-20", from: "abr2", to: "r20", fromPort: "g0/1", toPort: "g0/0" }] },
+    initialState: {},
+    steps: [],
+  },
   "tr3-router-on-a-stick": {
     id: "tr3-router-on-a-stick",
     tranche: 3,
     type: "guided",
     title: "Router-on-a-Stick Inter-VLAN Routing",
     description: "Create VLAN subinterfaces on a router so two switched VLANs can route between each other.",
-    topology: { devices: [{ id: "r1", name: "CE-R1", kind: "router", role: "Inter-VLAN Router", x: 200, y: 180, ports: ["g0/0"] }, { id: "sw1", name: "CE-SW1", kind: "switch", role: "802.1Q Access Switch", x: 600, y: 180, ports: ["g0/1"] }, { id: "pc1", name: "ENG-PC1", kind: "pc", role: "Engineering Host", x: 600, y: 360, ports: ["eth0"] }], links: [{ id: "l1", from: "r1", to: "sw1", fromPort: "g0/0", toPort: "g0/1" }, { id: "l2", from: "sw1", to: "pc1", fromPort: "g0/2", toPort: "eth0" }] },
+    topology: { devices: [{ id: "r1", name: "CE-R1", kind: "router", role: "Inter-VLAN Router", x: 200, y: 180, ports: ["g0/0"] }, { id: "sw1", name: "CE-SW1", kind: "switch", role: "802.1Q Access Switch", x: 600, y: 180, ports: ["g0/1", "g0/2"] }, { id: "pc1", name: "ENG-PC1", kind: "pc", role: "Engineering Host", x: 600, y: 360, ports: ["eth0"] }], links: [{ id: "l1", from: "r1", to: "sw1", fromPort: "g0/0", toPort: "g0/1" }, { id: "l2", from: "sw1", to: "pc1", fromPort: "g0/2", toPort: "eth0" }] },
     initialState: {},
     steps: [
       { id: 1, label: "Privileged Mode", description: "Enter Privileged EXEC mode on the router.", targetDevice: "CE-R1", requiredMode: "user", expectedCommand: "enable", successMessage: "CE-R1 is ready for inter-VLAN routing.", validation: (state) => true },
@@ -1060,6 +1126,8 @@ export const LAB_REGISTRY: Record<string, LabConfig> = {
   },
   "sandbox-trunk-etherchannel": {
     id: "sandbox-trunk-etherchannel",
+    masterTranche: 1,
+    tranche: 2,
     type: "sandbox",
     title: "Trunk and EtherChannel Traffic Sandbox",
     description: "Build an 802.1Q trunk and an LACP EtherChannel between two switches, then generate a modeled ping probe across the topology.",
@@ -1142,7 +1210,7 @@ export const LAB_REGISTRY: Record<string, LabConfig> = {
     topology: {
       devices: [
         { id: "modem", name: "ISP-MODEM", kind: "modem", role: "ISP handoff", x: 60, y: 260, ports: ["wan", "eth0"], mountType: "floor", z: 0 },
-        { id: "firewall", name: "CE-FW1", kind: "firewall", role: "Security perimeter", x: 220, y: 260, ports: ["outside", "inside", "dmz"], mountType: "rack", z: 1 },
+        { id: "firewall", name: "CE-FW1", kind: "firewall", role: "Security perimeter", x: 220, y: 260, ports: ["ethernet0/0", "ethernet0/1", "ethernet0/2"], mountType: "rack", z: 1 },
         { id: "router", name: "CE-R1", kind: "router", role: "Inter-VLAN gateway", x: 390, y: 260, ports: ["g0/0", "g0/1", "g0/2"], mountType: "rack", z: 2 },
         { id: "sw1", name: "CE-SW1", kind: "switch", role: "Access switch 1", x: 570, y: 170, ports: ["g0/1", "g0/2", "g0/3", "g0/4", "g0/5", "g0/6", "g0/7", "g0/8"], mountType: "rack", z: 2 },
         { id: "sw2", name: "CE-SW2", kind: "switch", role: "Access switch 2", x: 570, y: 390, ports: ["g0/1", "g0/2", "g0/3", "g0/4", "g0/5", "g0/6", "g0/7", "g0/8"], mountType: "rack", z: 1 },
@@ -1156,8 +1224,8 @@ export const LAB_REGISTRY: Record<string, LabConfig> = {
         { id: "printer", name: "CE-PRN1", kind: "printer", role: "Shared printer · VLAN 30", x: 1020, y: 500, ports: ["eth0"], mountType: "floor", z: 0, vlan: 30 },
       ],
       links: [
-        { id: "isp-edge", from: "modem", to: "firewall", fromPort: "eth0", toPort: "outside", cableId: "cat6" },
-        { id: "security-core", from: "firewall", to: "router", fromPort: "inside", toPort: "g0/0", cableId: "cat6" },
+        { id: "isp-edge", from: "modem", to: "firewall", fromPort: "eth0", toPort: "ethernet0/0", cableId: "cat6" },
+        { id: "security-core", from: "firewall", to: "router", fromPort: "ethernet0/1", toPort: "g0/0", cableId: "cat6" },
         { id: "router-switch", from: "router", to: "sw1", fromPort: "g0/1", toPort: "g0/1", cableId: "cat6" },
         { id: "switch-uplink-a", from: "sw1", to: "sw2", fromPort: "g0/2", toPort: "g0/2", cableId: "cat6" },
         { id: "switch-uplink-b", from: "sw1", to: "sw2", fromPort: "g0/3", toPort: "g0/3", cableId: "cat6" },
@@ -1184,6 +1252,319 @@ export const LAB_REGISTRY: Record<string, LabConfig> = {
     steps: []
   }
 };
+
+const smallBusinessSteps: LabStep[] = [];
+function addSmallBusinessStep(label: string, description: string, targetDevice: string, requiredMode: LabStep["requiredMode"], expectedCommand: string, successMessage: string) {
+  smallBusinessSteps.push({ id: smallBusinessSteps.length + 1, label, description, targetDevice, requiredMode, expectedCommand, successMessage, validation: () => true });
+}
+
+addSmallBusinessStep("CE-R1 Privileged Mode", "Enter privileged EXEC mode on the inter-VLAN gateway.", "CE-R1", "user", "enable", "CE-R1 is ready for enterprise routing configuration.");
+addSmallBusinessStep("CE-R1 Global Configuration", "Enter global configuration mode on the routed core.", "CE-R1", "privileged", "configure terminal", "CE-R1 global configuration is active.");
+addSmallBusinessStep("CE-R1 Firewall Transit", "Open g0/0 toward CE-FW1 and address the routed handoff.", "CE-R1", "config", "interface g0/0", "The CE-R1 firewall transit interface is selected.");
+addSmallBusinessStep("CE-R1 Transit Address", "Assign 10.255.0.2/30 to the firewall handoff.", "CE-R1", "interface", "ip address 10.255.0.2 255.255.255.252", "CE-R1 has an address on the firewall transit network.");
+addSmallBusinessStep("CE-R1 Enable Transit", "Bring the CE-R1-to-firewall link online.", "CE-R1", "interface", "no shutdown", "The routed firewall handoff is administratively up.");
+addSmallBusinessStep("CE-R1 Return to Config", "Return to global configuration before creating VLAN gateways.", "CE-R1", "interface", "exit", "CE-R1 global configuration is restored.");
+
+const smallBusinessVlans = [
+  [10, "Engineering", "10.10.10.1"], [20, "Sales", "10.10.20.1"], [30, "Printers", "10.10.30.1"],
+  [40, "Servers", "10.10.40.1"], [50, "Corporate-WiFi", "10.10.50.1"], [60, "Guest-WiFi", "10.10.60.1"],
+] as const;
+for (const [vlan, name, gateway] of smallBusinessVlans) {
+  addSmallBusinessStep(`CE-R1 VLAN ${vlan} Gateway`, `Select g0/1.${vlan} for the ${name} gateway.`, "CE-R1", "config", `interface g0/1.${vlan}`, `The ${name} routed subinterface is selected.`);
+  addSmallBusinessStep(`CE-R1 VLAN ${vlan} Tag`, `Bind the ${name} gateway to 802.1Q VLAN ${vlan}.`, "CE-R1", "subinterface", `encapsulation dot1q ${vlan}`, `VLAN ${vlan} tagging is configured on CE-R1.`);
+  addSmallBusinessStep(`CE-R1 VLAN ${vlan} Address`, `Assign ${gateway}/24 as the ${name} default gateway.`, "CE-R1", "subinterface", `ip address ${gateway} 255.255.255.0`, `The ${name} gateway address is configured.`);
+  addSmallBusinessStep(`CE-R1 VLAN ${vlan} Enable`, `Enable the ${name} subinterface.`, "CE-R1", "subinterface", "no shutdown", `The ${name} routed gateway is active.`);
+  addSmallBusinessStep(`CE-R1 Exit VLAN ${vlan}`, "Return to global configuration for the next routed segment.", "CE-R1", "subinterface", "exit", "CE-R1 is ready for the next VLAN gateway.");
+}
+addSmallBusinessStep("CE-R1 DHCP Reservation", "Reserve gateway addresses from the endpoint pools.", "CE-R1", "config", "ip dhcp excluded-address 10.10.10.1 10.10.10.20", "Engineering infrastructure addresses are reserved.");
+for (const [pool, network, gateway] of [["ENGINEERING", "10.10.10.0", "10.10.10.1"], ["SALES", "10.10.20.0", "10.10.20.1"], ["GUEST", "10.10.60.0", "10.10.60.1"]] as const) {
+  addSmallBusinessStep(`Create ${pool} DHCP Pool`, `Create the ${pool} address pool.`, "CE-R1", "config", `ip dhcp pool ${pool}`, `${pool} DHCP configuration is open.`);
+  addSmallBusinessStep(`${pool} DHCP Network`, `Define the ${network}/24 client network.`, "CE-R1", "dhcp", `network ${network} 255.255.255.0`, `${pool} clients receive addresses from the correct network.`);
+  addSmallBusinessStep(`${pool} DHCP Gateway`, `Advertise ${gateway} as the default gateway.`, "CE-R1", "dhcp", `default-router ${gateway}`, `${pool} clients receive the correct gateway.`);
+  addSmallBusinessStep(`${pool} DHCP DNS`, "Advertise the enterprise services host as DNS.", "CE-R1", "dhcp", "dns-server 10.10.40.10", `${pool} clients receive enterprise DNS.`);
+  addSmallBusinessStep(`Exit ${pool} DHCP Pool`, "Return to global configuration.", "CE-R1", "dhcp", "exit", "CE-R1 is ready for the next DHCP scope.");
+}
+addSmallBusinessStep("CE-R1 Default Route", "Send unknown traffic toward CE-FW1.", "CE-R1", "config", "ip route 0.0.0.0 0.0.0.0 10.255.0.1", "The routed core has a default path to the firewall.");
+addSmallBusinessStep("Verify CE-R1 Interfaces", "Return to privileged EXEC and review routed interfaces.", "CE-R1", "config", "end", "CE-R1 is ready for routing verification.");
+addSmallBusinessStep("Show CE-R1 Interfaces", "Review the transit and inter-VLAN gateway state.", "CE-R1", "privileged", "show ip interface brief", "The routed core interfaces have been reviewed.");
+addSmallBusinessStep("Show CE-R1 Routes", "Confirm connected VLANs and the firewall default route.", "CE-R1", "privileged", "show ip route", "The enterprise routing table has been reviewed.");
+addSmallBusinessStep("Show CE-R1 DHCP", "Inspect the modeled DHCP pools.", "CE-R1", "privileged", "show ip dhcp pool", "The enterprise DHCP configuration has been reviewed.");
+
+function addSmallBusinessSwitchVlanSteps(device: string) {
+  addSmallBusinessStep(`${device} Privileged Mode`, `Enter privileged EXEC mode on ${device}.`, device, "user", "enable", `${device} is ready for switching configuration.`);
+  addSmallBusinessStep(`${device} Global Configuration`, `Enter global configuration mode on ${device}.`, device, "privileged", "configure terminal", `${device} global configuration is active.`);
+  for (const [vlan, name] of smallBusinessVlans) {
+    addSmallBusinessStep(`${device} Create VLAN ${vlan}`, `Create VLAN ${vlan} for ${name} traffic.`, device, "config", `vlan ${vlan}`, `${device} has entered VLAN ${vlan} configuration.`);
+    addSmallBusinessStep(`${device} Name VLAN ${vlan}`, `Name VLAN ${vlan} ${name}.`, device, "vlan", `name ${name}`, `VLAN ${vlan} is named ${name}.`);
+    addSmallBusinessStep(`${device} Exit VLAN ${vlan}`, "Return to global configuration.", device, "vlan", "exit", `${device} is ready for the next VLAN.`);
+  }
+}
+
+addSmallBusinessSwitchVlanSteps("CE-SW1");
+for (const [port, description, command, vlan] of [
+  ["g0/1", "router trunk", "switchport mode trunk", null], ["g0/2", "LACP member", "channel-group 1 mode active", null], ["g0/3", "LACP member", "channel-group 1 mode active", null],
+  ["g0/4", "services server", "switchport mode access", 40], ["g0/5", "north AP trunk", "switchport mode trunk", null], ["g0/6", "Engineering endpoint", "switchport mode access", 10], ["g0/7", "Engineering endpoint", "switchport mode access", 10],
+] as const) {
+  addSmallBusinessStep(`CE-SW1 ${port} Select`, `Select ${port} for the ${description}.`, "CE-SW1", "config", `interface ${port}`, `${port} is selected on CE-SW1.`);
+  addSmallBusinessStep(`CE-SW1 ${port} Configure`, `Configure ${port} as the ${description}.`, "CE-SW1", "interface", command, `${port} is configured for the ${description}.`);
+  if (vlan) addSmallBusinessStep(`CE-SW1 ${port} VLAN`, `Assign ${port} to VLAN ${vlan}.`, "CE-SW1", "interface", `switchport access vlan ${vlan}`, `${port} is assigned to VLAN ${vlan}.`);
+  if (port === "g0/1" || port === "g0/5") addSmallBusinessStep(`CE-SW1 ${port} Allowed VLANs`, "Permit the VLANs required by this trunk.", "CE-SW1", "interface", port === "g0/1" ? "switchport trunk allowed vlan 10,20,30,40,50,60" : "switchport trunk allowed vlan 50,60", `${port} carries the required VLANs.`);
+  addSmallBusinessStep(`CE-SW1 ${port} Enable`, `Enable ${port}.`, "CE-SW1", "interface", "no shutdown", `${port} is administratively up.`);
+  addSmallBusinessStep(`CE-SW1 Exit ${port}`, "Return to global configuration.", "CE-SW1", "interface", "exit", "CE-SW1 is ready for the next interface.");
+}
+addSmallBusinessStep("CE-SW1 Port-Channel", "Open the logical inter-switch bundle.", "CE-SW1", "config", "interface port-channel 1", "CE-SW1 Port-channel 1 is selected.");
+addSmallBusinessStep("CE-SW1 Bundle Trunk", "Make the inter-switch bundle an 802.1Q trunk.", "CE-SW1", "interface", "switchport mode trunk", "The CE-SW1 inter-switch bundle is trunking.");
+addSmallBusinessStep("CE-SW1 Bundle VLANs", "Permit all enterprise VLANs across the bundle.", "CE-SW1", "interface", "switchport trunk allowed vlan 10,20,30,40,50,60", "The CE-SW1 bundle carries all enterprise VLANs.");
+addSmallBusinessStep("Verify CE-SW1", "Review VLAN, trunk, and LACP state.", "CE-SW1", "interface", "end", "CE-SW1 is ready for verification.");
+for (const command of ["show vlan brief", "show interfaces trunk", "show etherchannel summary", "show interfaces status"]) addSmallBusinessStep(`CE-SW1 ${command}`, "Use the operational evidence command to verify the switching fabric.", "CE-SW1", "privileged", command, `${command} completed on CE-SW1.`);
+
+addSmallBusinessSwitchVlanSteps("CE-SW2");
+for (const [port, description, command, vlan] of [["g0/2", "LACP member", "channel-group 1 mode active", null], ["g0/3", "LACP member", "channel-group 1 mode active", null], ["g0/5", "south AP trunk", "switchport mode trunk", null], ["g0/6", "Sales endpoint", "switchport mode access", 20], ["g0/7", "Sales endpoint", "switchport mode access", 20], ["g0/8", "printer", "switchport mode access", 30]] as const) {
+  addSmallBusinessStep(`CE-SW2 ${port} Select`, `Select ${port} for the ${description}.`, "CE-SW2", "config", `interface ${port}`, `${port} is selected on CE-SW2.`);
+  addSmallBusinessStep(`CE-SW2 ${port} Configure`, `Configure ${port} as the ${description}.`, "CE-SW2", "interface", command, `${port} is configured for the ${description}.`);
+  if (vlan) addSmallBusinessStep(`CE-SW2 ${port} VLAN`, `Assign ${port} to VLAN ${vlan}.`, "CE-SW2", "interface", `switchport access vlan ${vlan}`, `${port} is assigned to VLAN ${vlan}.`);
+  if (port === "g0/5") addSmallBusinessStep("CE-SW2 AP Allowed VLANs", "Permit corporate and guest wireless VLANs.", "CE-SW2", "interface", "switchport trunk allowed vlan 50,60", "Wireless VLANs are allowed to CE-AP2.");
+  addSmallBusinessStep(`CE-SW2 ${port} Enable`, `Enable ${port}.`, "CE-SW2", "interface", "no shutdown", `${port} is administratively up.`);
+  addSmallBusinessStep(`CE-SW2 Exit ${port}`, "Return to global configuration.", "CE-SW2", "interface", "exit", "CE-SW2 is ready for the next interface.");
+}
+addSmallBusinessStep("CE-SW2 Port-Channel", "Open the logical inter-switch bundle.", "CE-SW2", "config", "interface port-channel 1", "CE-SW2 Port-channel 1 is selected.");
+addSmallBusinessStep("CE-SW2 Bundle Trunk", "Make the peer bundle an 802.1Q trunk.", "CE-SW2", "interface", "switchport mode trunk", "The CE-SW2 inter-switch bundle is trunking.");
+addSmallBusinessStep("CE-SW2 Bundle VLANs", "Permit all enterprise VLANs across the peer bundle.", "CE-SW2", "interface", "switchport trunk allowed vlan 10,20,30,40,50,60", "The CE-SW2 bundle carries all enterprise VLANs.");
+addSmallBusinessStep("Verify CE-SW2", "Review VLAN, trunk, and LACP state.", "CE-SW2", "interface", "end", "CE-SW2 is ready for verification.");
+for (const command of ["show vlan brief", "show interfaces trunk", "show etherchannel summary", "show interfaces status"]) addSmallBusinessStep(`CE-SW2 ${command}`, "Use the operational evidence command to verify the switching fabric.", "CE-SW2", "privileged", command, `${command} completed on CE-SW2.`);
+
+for (const [device, channel, power] of [["CE-AP1", 6, 17], ["CE-AP2", 11, 14]] as const) {
+  addSmallBusinessStep(`${device} Privileged Mode`, `Enter privileged EXEC mode on ${device}.`, device, "user", "enable", `${device} is ready for wireless configuration.`);
+  addSmallBusinessStep(`${device} Global Configuration`, `Enter global configuration mode on ${device}.`, device, "privileged", "configure terminal", `${device} global configuration is active.`);
+  addSmallBusinessStep(`${device} Corporate SSID`, "Create the corporate wireless service-set profile.", device, "config", "dot11 ssid CORP-WIFI", `${device} corporate SSID profile is created.`);
+  addSmallBusinessStep(`${device} RF Channel`, `Select deterministic channel ${channel}.`, device, "config", `wireless channel ${channel}`, `${device} RF channel is configured.`);
+  addSmallBusinessStep(`${device} RF Band`, "Prefer the 5 GHz band for corporate throughput.", device, "config", "wireless band 5ghz", `${device} 5 GHz operation is configured.`);
+  addSmallBusinessStep(`${device} RF Power`, `Set transmit power to ${power}.`, device, "config", `wireless power ${power}`, `${device} transmit power is configured.`);
+  addSmallBusinessStep(`${device} Complete`, "Return to privileged EXEC after RF configuration.", device, "config", "end", `${device} wireless configuration is complete.`);
+}
+
+addSmallBusinessStep("CE-FW1 Privileged Mode", "Enter privileged EXEC mode on the security perimeter.", "CE-FW1", "user", "enable", "CE-FW1 is ready for edge configuration.");
+addSmallBusinessStep("CE-FW1 Global Configuration", "Enter global configuration mode on the firewall.", "CE-FW1", "privileged", "configure terminal", "CE-FW1 global configuration is active.");
+addSmallBusinessStep("CE-FW1 Hostname", "Give the security appliance a stable identity.", "CE-FW1", "config", "hostname CE-FW1", "The firewall identity is configured.");
+addSmallBusinessStep("CE-FW1 Outside Interface", "Open Ethernet0/0 toward the ISP modem.", "CE-FW1", "config", "interface ethernet0/0", "The outside interface is selected.");
+for (const [command, description] of [["nameif outside", "Name the untrusted WAN zone."], ["security-level 0", "Set outside trust to level zero."], ["ip address 198.51.100.2 255.255.255.252", "Address the outside provider handoff."], ["no shutdown", "Enable the outside interface."]] as const) addSmallBusinessStep(`CE-FW1 Outside ${command}`, description, "CE-FW1", "interface", command, `${command} completed on the outside interface.`);
+addSmallBusinessStep("CE-FW1 Exit Outside", "Return to global configuration.", "CE-FW1", "interface", "exit", "CE-FW1 is ready for the trusted interface.");
+addSmallBusinessStep("CE-FW1 Inside Interface", "Open Ethernet0/1 toward CE-R1.", "CE-FW1", "config", "interface ethernet0/1", "The inside interface is selected.");
+for (const [command, description] of [["nameif inside", "Name the trusted core zone."], ["security-level 100", "Set inside trust to level 100."], ["ip address 10.255.0.1 255.255.255.252", "Address the routed core handoff."], ["no shutdown", "Enable the inside interface."]] as const) addSmallBusinessStep(`CE-FW1 Inside ${command}`, description, "CE-FW1", "interface", command, `${command} completed on the inside interface.`);
+addSmallBusinessStep("CE-FW1 Exit Inside", "Return to global configuration for NAT and policy.", "CE-FW1", "interface", "exit", "CE-FW1 is ready for edge policy.");
+addSmallBusinessStep("CE-FW1 NAT Object", "Create the private enterprise address object.", "CE-FW1", "config", "object network ENTERPRISE-LAN", "The enterprise NAT object is open.");
+addSmallBusinessStep("CE-FW1 NAT Subnet", "Define the routed enterprise address space.", "CE-FW1", "object-network", "subnet 10.10.0.0 255.255.0.0", "The enterprise subnet is defined.");
+addSmallBusinessStep("CE-FW1 Dynamic PAT", "Translate enterprise traffic to the outside interface address.", "CE-FW1", "object-network", "nat (inside,outside) dynamic interface", "Dynamic PAT is configured.");
+addSmallBusinessStep("CE-FW1 Exit NAT Object", "Return to global configuration.", "CE-FW1", "object-network", "exit", "CE-FW1 is ready for policy configuration.");
+addSmallBusinessStep("CE-FW1 HTTPS Policy", "Permit the modeled HTTPS service path through the edge policy.", "CE-FW1", "config", "access-list OUTSIDE-IN extended permit tcp any host 10.10.40.10 eq 443", "The modeled HTTPS policy is permitted.");
+addSmallBusinessStep("CE-FW1 Default Deny", "Make the default-deny teaching point explicit.", "CE-FW1", "config", "access-list OUTSIDE-IN extended deny ip any any", "Unmatched outside traffic is denied.");
+addSmallBusinessStep("CE-FW1 Apply Policy", "Attach the inbound policy to the outside zone.", "CE-FW1", "config", "access-group OUTSIDE-IN in interface outside", "The outside policy is attached.");
+addSmallBusinessStep("CE-FW1 Default Route", "Send unknown destinations toward the ISP next hop.", "CE-FW1", "config", "route outside 0.0.0.0 0.0.0.0 198.51.100.1", "The firewall default route is configured.");
+addSmallBusinessStep("Verify CE-FW1", "Return to privileged EXEC for edge verification.", "CE-FW1", "config", "end", "CE-FW1 is ready for verification.");
+for (const command of ["show interface ip brief", "show access-list", "show xlate", "show conn"]) addSmallBusinessStep(`CE-FW1 ${command}`, "Review the corresponding firewall operational evidence.", "CE-FW1", "privileged", command, `${command} completed on CE-FW1.`);
+
+addSmallBusinessStep("CE-SRV1 Privileged Mode", "Enter privileged EXEC mode on the enterprise services server.", "CE-SRV1", "user", "enable", "CE-SRV1 is ready for service configuration.");
+addSmallBusinessStep("CE-SRV1 Global Configuration", "Enter global configuration mode.", "CE-SRV1", "privileged", "configure terminal", "CE-SRV1 global configuration is active.");
+addSmallBusinessStep("CE-SRV1 DNS Service", "Enable the modeled DNS service.", "CE-SRV1", "config", "ip dns server", "CE-SRV1 DNS service is enabled.");
+addSmallBusinessStep("CE-SRV1 Portal Record", "Create a deterministic portal DNS record.", "CE-SRV1", "config", "ip host portal.corp 10.10.40.10", "portal.corp resolves to the services server.");
+addSmallBusinessStep("CE-SRV1 Interface", "Open the server-facing Ethernet interface.", "CE-SRV1", "config", "interface eth0", "The services interface is selected.");
+addSmallBusinessStep("CE-SRV1 Address", "Assign 10.10.40.10/24 in the services VLAN.", "CE-SRV1", "interface", "ip address 10.10.40.10 255.255.255.0", "The services server has a static address.");
+addSmallBusinessStep("CE-SRV1 Enable", "Enable the services interface.", "CE-SRV1", "interface", "no shutdown", "The services server interface is active.");
+addSmallBusinessStep("Verify CE-SRV1", "Return to privileged EXEC and inspect the services host.", "CE-SRV1", "interface", "end", "CE-SRV1 is ready for service verification.");
+addSmallBusinessStep("Show CE-SRV1 Interfaces", "Review the services server interface state.", "CE-SRV1", "privileged", "show ip interface brief", "The services interface has been reviewed.");
+addSmallBusinessStep("Show CE-SRV1 Hosts", "Review the modeled portal name-resolution record.", "CE-SRV1", "privileged", "show hosts", "The portal DNS record has been reviewed.");
+
+for (const [device, vlan, role] of [["ENG-PC1", 10, "Engineering"], ["SALES-PC1", 20, "Sales"], ["CE-PRN1", 30, "printer"]] as const) {
+  addSmallBusinessStep(`${device} Privileged Mode`, `Enter privileged EXEC mode on the ${role} endpoint.`, device, "user", "enable", `${device} is ready for endpoint addressing.`);
+  addSmallBusinessStep(`${device} Global Configuration`, "Enter global configuration mode.", device, "privileged", "configure terminal", `${device} global configuration is active.`);
+  addSmallBusinessStep(`${device} Interface`, "Select the endpoint Ethernet interface.", device, "config", "interface eth0", `${device} eth0 is selected.`);
+  addSmallBusinessStep(`${device} DHCP Lease`, `Request an address from the VLAN ${vlan} DHCP scope.`, device, "interface", "ip address dhcp", `${device} has started its DHCP request.`);
+  addSmallBusinessStep(`${device} Enable Interface`, "Enable the endpoint interface.", device, "interface", "no shutdown", `${device} is ready to use its assigned address.`);
+  addSmallBusinessStep(`${device} Complete`, "Return to privileged EXEC after endpoint setup.", device, "interface", "end", `${device} endpoint setup is complete.`);
+}
+addSmallBusinessStep("Generate Corporate Traffic", "Test routed reachability from CE-R1 to the services server.", "CE-R1", "privileged", "ping 10.10.40.10", "The modeled corporate-to-services flow has been released.");
+addSmallBusinessStep("Verify Enterprise Routes", "Review the final routed enterprise state.", "CE-R1", "privileged", "show ip route", "The small-business routing domain is complete.");
+addSmallBusinessStep("Save Core Configuration", "Save the completed CE-R1 configuration.", "CE-R1", "privileged", "copy running-config startup-config", "The CE-R1 enterprise configuration is saved.");
+
+LAB_REGISTRY["small-business-enterprise"].steps = smallBusinessSteps;
+
+type GuidedSpec = [string, string, string, LabStep["requiredMode"], string];
+
+function makeGuidedSteps(specs: GuidedSpec[]): LabStep[] {
+  return specs.map(([label, description, targetDevice, requiredMode, expectedCommand], index) => ({
+    id: index + 1,
+    label,
+    description,
+    targetDevice,
+    requiredMode,
+    expectedCommand,
+    successMessage: `${label} completed.`,
+    validation: () => true,
+  }));
+}
+
+function ospfAreaRouter(target: string, routerId: string, interfaces: Array<[string, string, string]>, networks: Array<[string, string, number]>, extra: string[] = []): LabStep[] {
+  const specs: GuidedSpec[] = [
+    ["Privileged Mode", `Enter Privileged EXEC mode on ${target}.`, target, "user", "enable"],
+    ["Global Configuration", `Enter Global Configuration mode on ${target}.`, target, "privileged", "configure terminal"],
+  ];
+  for (const [port, address, description] of interfaces) {
+    specs.push([`Select ${port}`, `Open ${port} on ${target}.`, target, "config", `interface ${port}`]);
+    specs.push([`Describe ${port}`, description, target, "interface", `description ${description}`]);
+    specs.push([`Address ${port}`, `Assign ${address} to ${target} ${port}.`, target, "interface", `ip address ${address}`]);
+    specs.push([`Enable ${port}`, `Bring ${target} ${port} online.`, target, "interface", "no shutdown"]);
+    specs.push([`Exit ${port}`, `Return to Global Configuration after preparing ${port}.`, target, "interface", "exit"]);
+  }
+  specs.push(["Start OSPFv2", `Create OSPF process 1 on ${target}.`, target, "config", "router ospf 1"]);
+  specs.push(["Set Router ID", `Set OSPF router ID ${routerId}.`, target, "router", `router-id ${routerId}`]);
+  for (const [network, wildcard, area] of networks) specs.push([`Advertise Area ${area}`, `Advertise ${network} in OSPF area ${area}.`, target, "router", `network ${network} ${wildcard} area ${area}`]);
+  for (const command of extra) specs.push([command === "area 20 stub" ? "Configure Stub Area" : "Apply OSPF Policy", `Apply ${command} on ${target}.`, target, "router", command]);
+  specs.push(["Finish OSPF Build", `Return ${target} to Privileged EXEC.`, target, "router", "end"]);
+  return makeGuidedSteps(specs);
+}
+
+const masterTwoVoipSteps = makeGuidedSteps([
+  ["CE-R1 Privileged Mode", "Enter Privileged EXEC on the voice edge router.", "CE-R1", "user", "enable"],
+  ["CE-R1 Global Configuration", "Enter Global Configuration mode.", "CE-R1", "privileged", "configure terminal"],
+  ["Select Voice Uplink", "Open the routed voice uplink.", "CE-R1", "config", "interface g0/0"],
+  ["Address Voice Uplink", "Assign 10.30.0.1/30 to the voice edge.", "CE-R1", "interface", "ip address 10.30.0.1 255.255.255.252"],
+  ["Enable Voice Uplink", "Bring the voice uplink online.", "CE-R1", "interface", "no shutdown"],
+  ["Finish CE-R1", "Return to Privileged EXEC.", "CE-R1", "interface", "end"],
+  ["CE-SW1 Privileged Mode", "Enter Privileged EXEC on the voice access switch.", "CE-SW1", "user", "enable"],
+  ["CE-SW1 Global Configuration", "Enter Global Configuration mode.", "CE-SW1", "privileged", "configure terminal"],
+  ["Create Voice VLAN", "Create VLAN 20 for voice traffic.", "CE-SW1", "config", "vlan 20"],
+  ["Name Voice VLAN", "Name VLAN 20 VOICE.", "CE-SW1", "vlan", "name VOICE"],
+  ["Return to Switch Config", "Return to Global Configuration.", "CE-SW1", "vlan", "exit"],
+  ["Select Phone Port", "Open the IP phone access port.", "CE-SW1", "config", "interface g0/2"],
+  ["Set Access Mode", "Keep the phone-facing port in access mode.", "CE-SW1", "interface", "switchport mode access"],
+  ["Assign Voice VLAN", "Place voice traffic into VLAN 20.", "CE-SW1", "interface", "switchport voice vlan 20"],
+  ["Enable Phone Port", "Bring the phone-facing port online.", "CE-SW1", "interface", "no shutdown"],
+  ["Return to Switch Config", "Return to Global Configuration for QoS policy.", "CE-SW1", "interface", "exit"],
+  ["Enable QoS", "Enable switch QoS processing for voice frames.", "CE-SW1", "config", "mls qos"],
+  ["Verify Voice Port", "Return to Privileged EXEC and inspect the voice port.", "CE-SW1", "config", "end"],
+  ["Show Voice Port", "Verify the access and voice VLAN state.", "CE-SW1", "privileged", "show interfaces g0/2 switchport"],
+]);
+
+const masterTwoCctvSteps = makeGuidedSteps([
+  ["Gateway Privileged Mode", "Enter Privileged EXEC on the surveillance gateway.", "CE-R1", "user", "enable"],
+  ["Gateway Global Configuration", "Enter Global Configuration mode on the surveillance gateway.", "CE-R1", "privileged", "configure terminal"],
+  ["Enable CCTV Multicast", "Enable IPv4 multicast routing so modeled camera streams can reach authorized receivers.", "CE-R1", "config", "ip multicast-routing"],
+  ["Select Surveillance Uplink", "Open the routed uplink toward the CCTV access switch.", "CE-R1", "config", "interface g0/0"],
+  ["Address Surveillance Uplink", "Assign 10.50.0.1/24 as the surveillance gateway address.", "CE-R1", "interface", "ip address 10.50.0.1 255.255.255.0"],
+  ["Enable Surveillance Uplink", "Bring the routed CCTV uplink online.", "CE-R1", "interface", "no shutdown"],
+  ["Finish Gateway", "Return to Privileged EXEC for verification.", "CE-R1", "interface", "end"],
+  ["Verify Gateway", "Inspect the active surveillance gateway interface.", "CE-R1", "privileged", "show ip interface brief"],
+  ["Switch Privileged Mode", "Enter Privileged EXEC on the CCTV access switch.", "CE-SW1", "user", "enable"],
+  ["Switch Global Configuration", "Enter Global Configuration mode on the access switch.", "CE-SW1", "privileged", "configure terminal"],
+  ["Create CCTV VLAN", "Create VLAN 50 for cameras and the NVR.", "CE-SW1", "config", "vlan 50"],
+  ["Name CCTV VLAN", "Name VLAN 50 CCTV.", "CE-SW1", "vlan", "name CCTV"],
+  ["Return to Switch Config", "Return to Global Configuration.", "CE-SW1", "vlan", "exit"],
+  ["Select Switch Uplink", "Open the trunk toward the surveillance gateway.", "CE-SW1", "config", "interface g0/1"],
+  ["Set CCTV Trunk", "Carry the surveillance VLAN across the switch uplink.", "CE-SW1", "interface", "switchport mode trunk"],
+  ["Allow CCTV VLAN", "Explicitly permit VLAN 50 on the surveillance trunk.", "CE-SW1", "interface", "switchport trunk allowed vlan add 50"],
+  ["Enable CCTV Trunk", "Bring the gateway-facing trunk online.", "CE-SW1", "interface", "no shutdown"],
+  ["Return to Switch Config", "Return to Global Configuration before assigning camera ports.", "CE-SW1", "interface", "exit"],
+  ["Select Camera Ports", "Select the NVR and camera-facing access ports.", "CE-SW1", "config", "interface range g0/2 - 4"],
+  ["Set Camera Access Mode", "Keep the surveillance endpoints in access mode.", "CE-SW1", "interface-range", "switchport mode access"],
+  ["Assign CCTV VLAN", "Place the NVR and cameras into VLAN 50.", "CE-SW1", "interface-range", "switchport access vlan 50"],
+  ["Enable Camera Ports", "Bring the surveillance endpoint ports online.", "CE-SW1", "interface-range", "no shutdown"],
+  ["Finish Switch", "Return to Privileged EXEC for verification.", "CE-SW1", "interface-range", "end"],
+  ["Verify CCTV VLAN", "Confirm the surveillance VLAN and endpoint membership.", "CE-SW1", "privileged", "show vlan brief"],
+  ["Verify CCTV Trunk", "Inspect the routed uplink carrying the surveillance segment.", "CE-SW1", "privileged", "show interfaces trunk"],
+  ["Verify Trunk Switchport Detail", "Inspect the full switchport detail for g0/1, including allowed VLANs.", "CE-SW1", "privileged", "show interfaces g0/1 switchport"],
+  ["Verify Camera Port Status", "Confirm the NVR and camera-facing ports are access ports in the expected operational state.", "CE-SW1", "privileged", "show interfaces status"],
+]);
+
+const masterTwoWirelessSteps = makeGuidedSteps([
+  ["AP Privileged Mode", "Enter Privileged EXEC on the access point.", "CE-AP1", "user", "enable"],
+  ["AP Global Configuration", "Enter Global Configuration mode.", "CE-AP1", "privileged", "configure terminal"],
+  ["Create WLAN Profile", "Create the CORP-WIFI service-set profile.", "CE-AP1", "config", "dot11 ssid CORP-WIFI"],
+  ["Select 2.4 GHz Channel", "Use channel 6 in the 2.4 GHz planning example.", "CE-AP1", "config", "wireless channel 6"],
+  ["Select 5 GHz Band", "Prefer the 5 GHz band for a cleaner high-throughput path.", "CE-AP1", "config", "wireless band 5ghz"],
+  ["Set RF Power", "Set a deterministic transmit-power value for coverage analysis.", "CE-AP1", "config", "wireless power 17"],
+  ["Select AP Uplink", "Open the wired uplink to the access switch.", "CE-AP1", "config", "interface eth0"],
+  ["Describe AP Uplink", "Document the AP uplink purpose.", "CE-AP1", "interface", "description WLAN UPLINK"],
+  ["Enable AP Uplink", "Bring the AP uplink online.", "CE-AP1", "interface", "no shutdown"],
+  ["Verify Wireless State", "Return to Privileged EXEC and inspect the AP uplink.", "CE-AP1", "interface", "end"],
+  ["Show AP Uplink", "Verify the physical path supporting the WLAN.", "CE-AP1", "privileged", "show interfaces eth0"],
+]);
+
+const masterTwoDiscoverySteps = makeGuidedSteps([
+  ["SW1 Privileged Mode", "Enter Privileged EXEC on CE-SW1.", "CE-SW1", "user", "enable"],
+  ["SW1 Global Configuration", "Enter Global Configuration mode.", "CE-SW1", "privileged", "configure terminal"],
+  ["Enable LLDP", "Enable the vendor-neutral neighbor discovery protocol.", "CE-SW1", "config", "lldp run"],
+  ["Select SW1 EtherChannel Members", "Select both inter-switch member ports.", "CE-SW1", "config", "interface range g0/1 - 2"],
+  ["Build SW1 LACP Bundle", "Use LACP active mode on both member ports.", "CE-SW1", "interface-range", "channel-group 1 mode active"],
+  ["Make SW1 Bundle a Trunk", "Carry the modeled campus VLANs across the bundle.", "CE-SW1", "interface-range", "switchport mode trunk"],
+  ["Enable SW1 Members", "Bring both physical member links online.", "CE-SW1", "interface-range", "no shutdown"],
+  ["Finish SW1", "Return to Privileged EXEC.", "CE-SW1", "interface-range", "end"],
+  ["Verify CDP", "Inspect Cisco neighbor discovery state.", "CE-SW1", "privileged", "show cdp neighbors"],
+  ["Verify LLDP", "Inspect vendor-neutral neighbor discovery state.", "CE-SW1", "privileged", "show lldp neighbors"],
+  ["Verify LACP", "Inspect the negotiated EtherChannel.", "CE-SW1", "privileged", "show etherchannel summary"],
+]);
+
+const masterTwoVpcSteps = makeGuidedSteps([
+  ["Peer 1 Privileged Mode", "Enter Privileged EXEC on the first vPC peer.", "CE-SW1", "user", "enable"],
+  ["Peer 1 Global Configuration", "Enter Global Configuration mode.", "CE-SW1", "privileged", "configure terminal"],
+  ["Create vPC Domain", "Create vPC domain 10 for the redundant pair.", "CE-SW1", "config", "vpc domain 10"],
+  ["Configure Peer Keepalive", "Model the peer-keepalive destination.", "CE-SW1", "config", "peer-keepalive destination 192.0.2.2"],
+  ["Select Peer-Link Members", "Select the two peer-link member ports.", "CE-SW1", "config", "interface range g0/1 - 2"],
+  ["Build Peer-Link LACP", "Bundle the peer-link members with LACP.", "CE-SW1", "interface-range", "channel-group 10 mode active"],
+  ["Select Peer-Link Port-Channel", "Open the logical peer-link interface.", "CE-SW1", "interface-range", "exit"],
+  ["Open Port-Channel 10", "Select the vPC peer-link interface.", "CE-SW1", "config", "interface port-channel 10"],
+  ["Mark vPC Peer-Link", "Identify this port-channel as the peer link.", "CE-SW1", "interface", "vpc peer-link"],
+  ["Enable Peer-Link", "Bring the peer link online.", "CE-SW1", "interface", "no shutdown"],
+  ["Verify vPC", "Return to Privileged EXEC and inspect peer state.", "CE-SW1", "interface", "end"],
+  ["Show vPC State", "Verify domain, peer-keepalive, and peer-link evidence.", "CE-SW1", "privileged", "show vpc"],
+  ["Show LACP State", "Verify the underlying aggregation protocol.", "CE-SW1", "privileged", "show etherchannel summary"],
+  ["Load Balancer Privileged Mode", "Enter Privileged EXEC on the upstream load-balancing device.", "CE-R1", "user", "enable"],
+  ["Load Balancer Global Configuration", "Enter Global Configuration mode.", "CE-R1", "privileged", "configure terminal"],
+  ["Create Application Server Farm", "Create the modeled application server pool.", "CE-R1", "config", "ip slb serverfarm APP-FARM"],
+  ["Add Pool Member", "Add APP-SERVER1 as a deterministic pool member.", "CE-R1", "config", "ip slb server APP-SERVER1 10.40.0.10"],
+  ["Create Virtual Service", "Publish the TCP virtual service at 10.40.0.100.", "CE-R1", "config", "ip slb virtual 10.40.0.100 tcp"],
+  ["Verify Load Balancing", "Return to Privileged EXEC and inspect the virtual service.", "CE-R1", "config", "end"],
+  ["Show Load-Balancing State", "Verify the server farm and virtual-service model.", "CE-R1", "privileged", "show ip slb"],
+]);
+
+const masterTwoMultiAreaSteps = [
+  ...ospfAreaRouter("CE-R1", "1.1.1.1", [["g0/0", "10.0.0.1 255.255.255.252", "OSPF AREA 0 TO CE-ABR1"], ["g0/1", "10.0.0.5 255.255.255.252", "OSPF AREA 0 TO CE-ABR2"]], [["10.0.0.0", "0.0.0.3", 0], ["10.0.0.4", "0.0.0.3", 0]]),
+  ...ospfAreaRouter("CE-ABR1", "2.2.2.2", [["g0/0", "10.0.0.2 255.255.255.252", "OSPF AREA 0 TO CE-R1"], ["g0/1", "10.0.10.1 255.255.255.252", "OSPF AREA 10 TO CE-R10"]], [["10.0.0.0", "0.0.0.3", 0], ["10.0.10.0", "0.0.0.3", 10]]),
+  ...ospfAreaRouter("CE-ABR2", "3.3.3.3", [["g0/0", "10.0.0.6 255.255.255.252", "OSPF AREA 0 TO CE-R1"], ["g0/1", "10.0.20.1 255.255.255.252", "OSPF STUB AREA 20 TO CE-R20"]], [["10.0.0.4", "0.0.0.3", 0], ["10.0.20.0", "0.0.0.3", 20]], ["area 20 stub"]),
+  ...ospfAreaRouter("CE-R10", "10.10.10.10", [["g0/0", "10.0.10.2 255.255.255.252", "OSPF AREA 10 TO CE-ABR1"]], [["10.0.10.0", "0.0.0.3", 10]]),
+  ...ospfAreaRouter("CE-R20", "20.20.20.20", [["g0/0", "10.0.20.2 255.255.255.252", "OSPF STUB AREA 20 TO CE-ABR2"]], [["10.0.20.0", "0.0.0.3", 20]], ["area 20 stub"]),
+  ...makeGuidedSteps([
+    ["Verify Backbone", "Inspect the Area 0 process and router ID.", "CE-R1", "privileged", "show ip ospf"],
+    ["Verify Area 10", "Inspect inter-area neighbors from the Area 10 ABR.", "CE-ABR1", "privileged", "show ip ospf neighbor"],
+    ["Verify Stub Area", "Inspect the stub-area router's learned routes.", "CE-R20", "privileged", "show ip route ospf"],
+    ["Verify Protocols", "Confirm the OSPF area configuration and ABR behavior.", "CE-ABR2", "privileged", "show ip protocols"],
+  ]),
+];
+
+LAB_REGISTRY["mt2-tr1-voip-qos"].steps = masterTwoVoipSteps;
+LAB_REGISTRY["mt2-tr1-voip-qos"].status = "active";
+LAB_REGISTRY["mt2-tr1-cctv-network"].steps = masterTwoCctvSteps;
+LAB_REGISTRY["mt2-tr1-cctv-network"].status = "active";
+LAB_REGISTRY["mt2-tr2-wireless-rf"].steps = masterTwoWirelessSteps;
+LAB_REGISTRY["mt2-tr2-wireless-rf"].status = "active";
+LAB_REGISTRY["mt2-tr3-discovery-aggregation"].steps = masterTwoDiscoverySteps;
+LAB_REGISTRY["mt2-tr3-discovery-aggregation"].status = "active";
+LAB_REGISTRY["mt2-tr4-load-balancing-vpc"].steps = masterTwoVpcSteps;
+LAB_REGISTRY["mt2-tr4-load-balancing-vpc"].status = "active";
+LAB_REGISTRY["mt2-tr5-ospf-multi-area"].steps = masterTwoMultiAreaSteps;
+LAB_REGISTRY["mt2-tr5-ospf-multi-area"].status = "active";
+
+Object.assign(LAB_REGISTRY["mt2-tr1-voip-qos"], { curriculumOrder: 1 });
+Object.assign(LAB_REGISTRY["mt2-tr1-cctv-network"], { curriculumOrder: 2 });
+Object.assign(LAB_REGISTRY["mt2-tr2-wireless-rf"], { curriculumOrder: 1 });
+Object.assign(LAB_REGISTRY["mt2-tr3-discovery-aggregation"], { curriculumOrder: 1 });
+Object.assign(LAB_REGISTRY["mt2-tr4-load-balancing-vpc"], { curriculumOrder: 1 });
+Object.assign(LAB_REGISTRY["mt2-tr5-ospf-multi-area"], { curriculumOrder: 1 });
+
+// Master Tranche Two is a five-by-five applied-networking curriculum. The
+// original six labs keep their stable IDs; this expansion fills the remaining
+// slots with the adjacent service, automation, high-availability, and edge
+// routing material instead of duplicating Master Tranche One foundations.
+Object.assign(LAB_REGISTRY, masterTwoExpansionLabs);
 
 function addMissingActivationSteps(lab: LabConfig) {
   const steps = [...lab.steps];
@@ -1307,6 +1688,61 @@ for (const [labId, extension] of Object.entries(PRACTICE_EXTENSIONS)) {
   lab.steps.push(...additionalSteps);
 }
 
+// Keep the OSPFv2 Network Sandbox aligned with the tranche curriculum while
+// giving it its own persisted scenario and editable topology state.
+const ospfGuidedLab = LAB_REGISTRY["tr3-ospfv2"];
+const ospfSandboxLab = LAB_REGISTRY["sandbox-ospfv2-multiplatform"];
+if (ospfGuidedLab && ospfSandboxLab) {
+  ospfSandboxLab.steps = ospfGuidedLab.steps.map((step) => ({ ...step }));
+}
+
+Object.assign(LAB_REGISTRY, troubleshootingLabs);
+Object.assign(LAB_REGISTRY, techSupportLabs);
+Object.assign(LAB_REGISTRY, cyberDefenseLabs);
+Object.assign(LAB_REGISTRY, ethicalHackingLabs);
+Object.assign(LAB_REGISTRY, fundamentalsLabs);
+
+// Each security incident follows the existing foundational support or repair lab
+// in its sub-tranche, without displacing the established curriculum.
+for (const lab of Object.values(LAB_REGISTRY)) {
+  if ((lab.masterTranche === 4 || lab.masterTranche === 5) && lab.curriculumOrder === undefined) lab.curriculumOrder = 1;
+}
+
+// Registry order is shared by curriculum menus and generated sandbox menus.
+// Place VLAN Basics after the four addressing fundamentals lessons.
+const vlanBasics = LAB_REGISTRY["vlan-basics"];
+delete LAB_REGISTRY["vlan-basics"];
+LAB_REGISTRY["vlan-basics"] = { ...vlanBasics, masterTranche: 1, tranche: 1 };
+applyMasterOneCurriculum(LAB_REGISTRY);
+addVocabularyCards(LAB_REGISTRY);
+
+// Every guided curriculum lab also gets an editable Network Sandbox counterpart.
+// Keeping these derived from the finalized registry prevents the two learning
+// paths from drifting as objectives or command sequences evolve.
+for (const guidedLab of Object.values(LAB_REGISTRY)) {
+  if (guidedLab.type !== "guided") continue;
+  const sandboxId = `sandbox-${guidedLab.id}`;
+  if (LAB_REGISTRY[sandboxId]) continue;
+  LAB_REGISTRY[sandboxId] = {
+    id: sandboxId,
+    type: "sandbox",
+    masterTranche: guidedLab.masterTranche ?? 1,
+    tranche: guidedLab.tranche ?? 1,
+    curriculumOrder: guidedLab.curriculumOrder,
+    status: "active",
+    outcomes: guidedLab.outcomes,
+    troubleshooting: guidedLab.troubleshooting,
+    title: `${guidedLab.title} Sandbox`,
+    description: `Explore ${guidedLab.title.toLowerCase()} in an editable topology while following the same guided objectives and IOS command path.`,
+    topology: {
+      devices: guidedLab.topology.devices.map((device: any) => ({ ...device })),
+      links: guidedLab.topology.links.map((link: any) => ({ ...link })),
+    },
+    initialState: structuredClone(guidedLab.initialState),
+    steps: guidedLab.steps.map((step) => ({ ...step })),
+  };
+}
+
 // --- THE COMPATIBILITY BRIDGE ---
 // This creates a separate list of templates for the Sandbox so the old imports still work.
 export const SANDBOX_TEMPLATES = Object.entries(LAB_REGISTRY)
@@ -1317,6 +1753,9 @@ export const SANDBOX_TEMPLATES = Object.entries(LAB_REGISTRY)
       description: config.description,
       nodes: config.topology.devices,
       links: config.topology.links,
+      masterTranche: config.masterTranche,
+      tranche: config.tranche,
+      curriculumOrder: config.curriculumOrder,
     };
     return acc;
   }, {} as Record<string, any>);

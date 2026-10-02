@@ -3,13 +3,13 @@ import type { EcosystemDeviceKind } from "@/lib/network-ecosystem";
 export type DeviceCapability = "vlan" | "trunk" | "etherchannel" | "poe" | "mac-table" | "stp" | "ip" | "routing" | "ospf" | "dhcp-relay" | "acl" | "nat" | "vpn" | "inspection" | "dhcp" | "dns" | "http" | "ftp" | "ssid" | "wpa2" | "wpa3" | "vlan-mapping" | "dhcp-client" | "dns-client" | "wan" | "nat-passthrough";
 
 export const CAPABILITY_MATRIX: Record<EcosystemDeviceKind, DeviceCapability[]> = {
-  switch: ["vlan", "trunk", "etherchannel", "poe", "mac-table", "stp"],
+  switch: ["vlan", "trunk", "etherchannel", "poe", "mac-table", "stp", "dhcp"],
   router: ["ip", "routing", "ospf", "dhcp", "dhcp-relay", "dns", "acl", "nat"],
   firewall: ["ip", "routing", "acl", "nat", "inspection"],
-  server: ["dhcp", "dns", "http", "ftp"],
-  "access-point": ["ssid", "wpa2", "wpa3", "poe", "vlan-mapping", "dhcp-client"],
-  pc: ["dhcp-client", "dns-client"],
-  printer: ["dhcp-client"],
+  server: ["ip", "dhcp", "dns", "http", "ftp"],
+  "access-point": ["ssid", "wpa2", "wpa3", "poe", "vlan-mapping", "dhcp-client", "trunk"],
+  pc: ["ip", "dhcp-client", "dns-client"],
+  printer: ["ip", "dhcp-client"],
   modem: ["wan", "nat-passthrough"],
   hub: [],
   "console-server": [],
@@ -18,7 +18,7 @@ export const CAPABILITY_MATRIX: Record<EcosystemDeviceKind, DeviceCapability[]> 
 // Capability ownership describes the device roadmap; this set describes what
 // the current simulator release actually models.
 export const IMPLEMENTED_CAPABILITIES = new Set<DeviceCapability>([
-  "vlan", "trunk", "etherchannel", "poe", "mac-table", "stp", "ip", "routing", "ospf", "acl", "nat", "inspection", "dhcp", "dns", "dns-client",
+  "vlan", "trunk", "etherchannel", "poe", "mac-table", "stp", "ip", "routing", "ospf", "acl", "nat", "inspection", "dhcp", "dns", "dns-client", "dhcp-client",
 ]);
 
 export function commandCapability(command: string): DeviceCapability | null {
@@ -45,10 +45,18 @@ export function commandCapability(command: string): DeviceCapability | null {
 }
 
 export function supportsCommand(command: string, kind: EcosystemDeviceKind, context?: string | null): boolean {
+  if (/^show (?:ip|ipv6) interface/.test(command)) return true;
+  if (kind === 'router' && /^show mac address-table/.test(command)) return true;
   const capability = commandCapability(command);
   // A Layer 2 switch can be assigned a management address on an SVI, not on
   // an ordinary physical switchport. Keep the device capability check aware
   // of the current interface context so invalid routed-port commands fail.
   if (capability === "ip" && kind === "switch") return context?.startsWith("vlan ") ?? false;
-  return capability === null || (IMPLEMENTED_CAPABILITIES.has(capability) && CAPABILITY_MATRIX[kind].includes(capability));
+  return capability === null || (IMPLEMENTED_CAPABILITIES.has(capability) && (CAPABILITY_MATRIX[kind] || []).includes(capability));
+}
+
+export function supportsDeviceCommand(command: string, node: { kind: string; role?: string }, context?: string | null) {
+  if ((node.kind === 'router' || /Layer 3|OSPF Speaker/.test(node.role || '')) && /^(router ospf \d+|show ip ospf(?: |$))/.test(command)) return true;
+  if (/Layer 3/.test(node.role || '') && /^(ip address |show ip interface|ip route |show ip route)/.test(command)) return true;
+  return supportsCommand(command, node.kind as EcosystemDeviceKind, context);
 }

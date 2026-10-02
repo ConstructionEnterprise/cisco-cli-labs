@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import FundamentalsWorksheet from "@/components/FundamentalsWorksheet";
+import { compareCurriculumOrder } from '@/labs/masterOneCurriculum';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import NetworkSandbox from "@/components/NetworkSandbox";
 import OperationsSandbox from "@/components/OperationsSandbox";
@@ -6,9 +8,16 @@ import TrafficDataPanel from "@/components/TrafficDataPanel";
 import GuidedPacketTrace, { getGuidedTraceProfile } from "@/components/GuidedPacketTrace";
 import TrancheVerificationPanel from "@/components/TrancheVerificationPanel";
 import ResizeGrabBar from "@/components/ResizeGrabBar";
+import LearningWorkbench from '@/components/LearningWorkbench';
+import NetworkingVocabulary from '@/components/NetworkingVocabulary';
+import DeviceSelectionAlert from '@/components/DeviceSelectionAlert';
+import { canonicalCommand, DEFAULT_LEARNING_MODE, seedSessions, gradeLab, recordAttempt, type LearningMode } from '@/lib/learning-engine';
+import { executeNetworkCommand } from '@/lib/sandbox-network-engine';
+import { executeAttackCommand, isAttackCommand } from '@/lib/attack-console-engine';
+import { protocolEvidence } from '@/lib/operational-evidence';
 import { toast } from "sonner";
-import { applyCommand, applyModeledLayer2Learning, applyModeledNeighborDiscovery, boot, isCiscoCommand, modePrompt, normalizeCommand, type Mode, type Session } from "@/lib/ios-engine";
-import { Check, ChevronDown, ChevronUp, CircleHelp, Copy, Database, History, Minimize2, Network, Play, RotateCcw, TerminalSquare, Wrench } from "lucide-react";
+import { applyCommand, applyModeledLayer2Learning, applyModeledNeighborDiscovery, boot, iosContextHelp, isCiscoCommand, modePrompt, normalizeCommand, type Mode, type Session } from "@/lib/ios-engine";
+import { BookOpenCheck, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Copy, Database, History, Minimize2, Network, Play, RotateCcw, TerminalSquare, Wrench } from "lucide-react";
 import { LAB_REGISTRY, type LabConfig } from "@/labs/labDefinitions";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
@@ -18,10 +27,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, D
  */
 
 function initialSessions(lab: LabConfig): Record<string, Session> {
-  return Object.fromEntries(lab.topology.devices.map((device: any) => [device.name || device.id, boot(device.name || device.id, device.role)]));
+  return seedSessions(lab);
 }
 
-type LabMenuEntry = { title: string; placeholder?: boolean };
+type LabMenuEntry = { title: string; placeholder?: boolean; planned?: boolean };
 
 type TrancheMenuProps = {
   name: string;
@@ -84,7 +93,7 @@ function MasterTrancheMenu({ name, tranches, selectedLabId, onSelectLab }: Maste
             <DropdownMenuSubTrigger className="px-2.5 py-2.5 text-[#d7e4e4] focus:bg-[#2a2112] focus:text-white"><span className="font-mono text-[10px] uppercase tracking-wider text-[#f4d998]">{name}</span></DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-80 border-[#29424a] bg-[#101923] p-2 text-[#edf4f3]">
               <div className="px-2 pb-2 pt-1"><div className="font-mono text-[10px] uppercase tracking-[.16em] text-[#63e6e2]">{name}</div><div className="mt-1 text-[11px] text-[#778a92]">Select a guided lab path.</div></div>
-              {labs.length > 0 ? labs.map(([id, item]) => <DropdownMenuItem key={id} onSelect={() => !item.placeholder && onSelectLab(id)} disabled={item.placeholder} className={`cursor-pointer gap-3 px-2.5 py-2.5 ${item.placeholder ? "text-[#667780]" : selectedLabId === id ? "bg-[#173038] text-white focus:bg-[#1b4148]" : "text-[#9aabb1] focus:bg-white/[.06] focus:text-white"}`}><span className="w-28 shrink-0 font-mono text-[10px] text-[#63e6e2]">{id.toUpperCase()}</span><span className="min-w-0 flex-1 truncate text-xs">{item.title}</span>{id === selectedLabId && <span className="rounded bg-[#f5b74b]/10 px-1.5 py-0.5 font-mono text-[9px] text-[#f5b74b]">ACTIVE</span>}</DropdownMenuItem>) : <div className="px-2.5 py-3 text-xs text-[#778a92]">No labs assigned yet.</div>}
+              {labs.length > 0 ? labs.map(([id, item]) => <DropdownMenuItem key={id} onSelect={() => !item.placeholder && !item.planned && onSelectLab(id)} disabled={item.placeholder || item.planned} className={`cursor-pointer gap-3 px-2.5 py-2.5 ${item.placeholder || item.planned ? "text-[#667780]" : selectedLabId === id ? "bg-[#173038] text-white focus:bg-[#1b4148]" : "text-[#9aabb1] focus:bg-white/[.06] focus:text-white"}`}><span className="w-28 shrink-0 font-mono text-[10px] text-[#63e6e2]">{id.toUpperCase()}</span><span className="min-w-0 flex-1 truncate text-xs">{item.title}</span>{item.planned && <span className="rounded bg-[#f5b74b]/10 px-1.5 py-0.5 font-mono text-[9px] text-[#f4d998]">PLANNED</span>}{id === selectedLabId && <span className="rounded bg-[#f5b74b]/10 px-1.5 py-0.5 font-mono text-[9px] text-[#f5b74b]">ACTIVE</span>}</DropdownMenuItem>) : <div className="px-2.5 py-3 text-xs text-[#778a92]">No labs assigned yet.</div>}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
         ))}
@@ -95,13 +104,15 @@ function MasterTrancheMenu({ name, tranches, selectedLabId, onSelectLab }: Maste
 
 export default function Home() {
   // State now uses the lab ID (string) from the registry
-  const [selectedLabId, setSelectedLabId] = useState("lab-1");
+  const [selectedLabId, setSelectedLabId] = useState("mt1-tr1-binary-foundations");
   const [sandboxOpen, setSandboxOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "sandbox");
   const [operationsOpen, setOperationsOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("view") === "operations");
   const [trafficDataOpen, setTrafficDataOpen] = useState(false);
+  const [networkingVocabularyOpen, setNetworkingVocabularyOpen] = useState(false);
+  const [learningMode, setLearningMode] = useState<LearningMode>(DEFAULT_LEARNING_MODE);
   
   // Derive the current lab config from the registry
-  const lab = LAB_REGISTRY[selectedLabId] || LAB_REGISTRY["lab-1"];
+  const lab = LAB_REGISTRY[selectedLabId] || LAB_REGISTRY["mt1-tr1-binary-foundations"];
   
   const [stepIndex, setStepIndex] = useState(0);
   const [sessions, setSessions] = useState<Record<string, Session>>(() => initialSessions(lab));
@@ -117,12 +128,25 @@ export default function Home() {
   const [verificationHeight, setVerificationHeight] = useState(320);
   const [terminalMinimized, setTerminalMinimized] = useState(false);
   const [verificationMinimized, setVerificationMinimized] = useState(false);
+  const curriculumRibbonRef = useRef<HTMLDivElement>(null);
+  const terminalScrollbackRef = useRef<HTMLDivElement>(null);
 
   const step = lab.steps[Math.min(stepIndex, lab.steps.length - 1)];
   const session = sessions[activeDevice];
   const prompt = session ? modePrompt(activeDevice, session) : "";
-  const complete = stepIndex >= lab.steps.length;
-  const percent = Math.round((stepIndex / lab.steps.length) * 100);
+  const stateGrade = useMemo(() => gradeLab(lab, sessions), [lab, sessions]);
+  const stepDone = (item: typeof step) => Boolean(sessions[item.targetDevice]?.completedLabSteps?.[item.id] || (item.exercise && sessions[item.targetDevice]?.lessonAnswers?.[item.id]));
+  const completedCount = lab.steps.filter(stepDone).length;
+  const complete = stepIndex >= lab.steps.length && (learningMode === 'guided' ? completedCount === lab.steps.length : stateGrade.passed);
+  const percent = learningMode === 'guided' ? Math.round((completedCount / Math.max(1, lab.steps.length)) * 100) : stateGrade.percent;
+  useEffect(() => {
+    if (stepIndex < lab.steps.length || complete) return;
+    const unfinished = lab.steps.findIndex(item => !sessions[item.targetDevice]?.completedLabSteps?.[item.id] && !(item.exercise && sessions[item.targetDevice]?.lessonAnswers?.[item.id]));
+    if (unfinished >= 0) {
+      setStepIndex(unfinished);
+      setActiveDevice(lab.steps[unfinished].targetDevice);
+    }
+  }, [stepIndex, lab, sessions, complete]);
   const tracePlaybackRun = selectedLabId === "tr4-nat-pat"
     ? Object.values(sessions).some((deviceSession) => deviceSession.runningConfig.some((command) => normalizeCommand(command) === "ip nat inside source list 1 interface g0/1 overload"))
       ? Math.max(traceRun, 1)
@@ -130,6 +154,12 @@ export default function Home() {
     : traceRun;
   const guidedTrace = useMemo(() => {
     const profile = getGuidedTraceProfile(selectedLabId, lab.topology.devices.map((device: any) => device.name || device.id));
+    const evidence = protocolEvidence(lab, sessions);
+    if (evidence.length) return { title: 'Live modeled protocol evidence', frames: evidence.map(row => ({
+      name: `${row.protocol} ${row.state}`, detail: `${row.link}: ${row.reason}`, layer2: row.protocol === 'OSPF' ? '01:00:5E:00:00:05' : row.protocol === 'LACP' ? '01:80:C2:00:00:02' : 'CLIENT / SERVER',
+      layer3: row.protocol === 'OSPF' ? '224.0.0.5' : row.protocol === 'LACP' ? 'L2 CONTROL (NO IP)' : 'UDP 67 / 68',
+      direction: 'forward' as const, kind: ['DOWN', 'SUSPENDED', 'EXPIRED'].includes(row.state) ? 'drop' as const : 'control' as const,
+    })) };
     if (selectedLabId === "tr3-ospfv2") {
       const ospfDevices = lab.topology.devices.filter((device: any) => ["router", "switch", "firewall"].includes(device.kind));
       const configured = ospfDevices.filter((device: any) => Object.keys(sessions[device.name || device.id]?.ospfProcesses || {}).length > 0);
@@ -167,8 +197,9 @@ export default function Home() {
   }, [selectedLabId, sandboxOpen, operationsOpen]);
 
   function selectLab(id: string) {
+    setLearningMode(DEFAULT_LEARNING_MODE);
     setSelectedLabId(id); 
-    const nextLab = LAB_REGISTRY[id] || LAB_REGISTRY["lab-1"];
+    const nextLab = LAB_REGISTRY[id] || LAB_REGISTRY["mt1-tr1-binary-foundations"];
     setStepIndex(0); 
     setSessions(initialSessions(nextLab)); 
     setActiveDevice(nextLab.topology.devices[0]?.name || nextLab.topology.devices[0]?.id); 
@@ -235,31 +266,69 @@ export default function Home() {
     
     const expectedDevice = step.targetDevice;
     const expectedMode = step.requiredMode;
-    const normalized = normalizeCommand(raw);
+    const normalized = canonicalCommand(raw);
 
-    if (complete) {
+    if (complete && learningMode === 'guided') {
       setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, "Lab complete. Reset to run this sequence again."] } })); 
       setInput(""); 
       return;
     }
 
-    if (activeDevice !== expectedDevice || current.mode !== expectedMode || !isCiscoCommand(normalized, current.mode) || normalized !== normalizeCommand(step.expectedCommand)) {
-      const reason = activeDevice !== expectedDevice ? `Switch to ${expectedDevice}.` : current.mode !== expectedMode ? `Use the ${expectedMode === "user" ? "user EXEC" : expectedMode === "privileged" ? "privileged EXEC" : expectedMode} prompt.` : !isCiscoCommand(normalized, current.mode) ? `That command is not valid in Cisco IOS ${current.mode} mode.` : `Expected the full command: ${step.expectedCommand}`;
+    const isAttackConsole = current.terminalKind === 'attack';
+    const help = isAttackConsole ? null : iosContextHelp(raw, current.mode);
+    if (help) {
+      setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, ...help] } }));
+      setInput('');
+      setHint(false);
+      return;
+    }
+    const commandValid = isAttackConsole ? isAttackCommand(normalized) : isCiscoCommand(normalized, current.mode);
+    if (!commandValid || learningMode === 'guided' && (activeDevice !== expectedDevice || current.mode !== expectedMode || normalized !== canonicalCommand(step.expectedCommand))) {
+      recordAttempt(lab.id, 'errors');
+      const reason = activeDevice !== expectedDevice ? `Switch to ${expectedDevice}.` : current.mode !== expectedMode ? `Use the ${expectedMode === "shell" ? "Linux shell" : expectedMode === "user" ? "user EXEC" : expectedMode === "privileged" ? "privileged EXEC" : expectedMode} prompt.` : !commandValid ? isAttackConsole ? 'That command is not valid in the synthetic Linux attack console.' : `That command is not valid in Cisco IOS ${current.mode} mode.` : `Expected the full command: ${step.expectedCommand}`;
       setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, `% Invalid input detected at '^' marker. Hint: ${reason}`] } }));
       setInput(""); 
       return;
     }
 
-    const nextSession = applyCommand(current, raw, [...updatedHistory, step.successMessage]);
-    const nextSessions = applyModeledLayer2Learning(applyModeledNeighborDiscovery({ ...sessions, [activeDevice]: nextSession }, lab.topology), lab.topology);
+    const matchesStep = activeDevice === expectedDevice && current.mode === expectedMode && normalized === canonicalCommand(step.expectedCommand);
+    if (learningMode === 'guided') recordAttempt(lab.id, 'hints');
+    if (isAttackConsole) {
+      const result = executeAttackCommand(current, normalized, sessions);
+      if (!result.accepted) {
+        recordAttempt(lab.id, 'errors');
+        setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, ...result.output] } }));
+        setInput('');
+        return;
+      }
+      const nextAttackSession = { ...result.session, history: [...updatedHistory, ...result.output], completedLabSteps: matchesStep ? { ...result.session.completedLabSteps, [step.id]: true } : result.session.completedLabSteps };
+      setSessions((all) => ({ ...all, [activeDevice]: nextAttackSession }));
+      if (matchesStep) setStepIndex((index) => Math.min(index + 1, lab.steps.length));
+      setInput('');
+      setHint(false);
+      return;
+    }
+    const node = lab.topology.devices.find(device => device.name === activeDevice)!;
+    const byId = Object.fromEntries(lab.topology.devices.map(device => [device.id, sessions[device.name]]));
+    const result = executeNetworkCommand(node, { name: lab.title, description: lab.description, nodes: lab.topology.devices, links: lab.topology.links }, byId, normalized);
+    if (!result.accepted) {
+      recordAttempt(lab.id, 'errors');
+      setSessions(all => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, ...result.output] } }));
+      setInput(''); return;
+    }
+    const named = Object.fromEntries(lab.topology.devices.map(device => [device.name, result.sessions[device.id]]));
+    named[activeDevice] = { ...named[activeDevice], history: [...updatedHistory, ...result.output] };
+    const nextSessions = applyModeledLayer2Learning(applyModeledNeighborDiscovery(named, lab.topology), lab.topology);
+    if (matchesStep) nextSessions[activeDevice] = { ...nextSessions[activeDevice], completedLabSteps: { ...nextSessions[activeDevice].completedLabSteps, [step.id]: true } };
     setSessions(nextSessions);
-    setStepIndex((index) => index + 1); 
+    if (matchesStep) setStepIndex((index) => Math.min(index + 1, lab.steps.length));
     if (lab.type === "guided" && !["enable", "configure terminal", "exit", "end"].includes(normalized)) setTraceRun((run) => run + 1);
     setInput(""); 
     setHint(false);
   }
 
   function runSuggested() {
+    recordAttempt(lab.id, 'hints');
     if (complete) return;
     if (activeDevice !== step.targetDevice) { 
       setPendingCommand(step.expectedCommand); 
@@ -276,10 +345,17 @@ export default function Home() {
     submit(step.expectedCommand);
   }
 
-  const recent = session ? session.history.slice(-3) : [];
+  const terminalLines = session?.history ?? [];
+  useLayoutEffect(() => {
+    const terminal = terminalScrollbackRef.current;
+    if (terminal && !terminalMinimized) terminal.scrollTop = terminal.scrollHeight;
+  }, [activeDevice, session?.history.length, stepIndex, terminalMinimized]);
   const activeCommandHistory = commandHistory[activeDevice] || [];
   const allDone = useMemo(() => complete, [complete]);
-  const labsForTranche = (tranche: 1 | 2 | 3 | 4 | 5) => Object.entries(LAB_REGISTRY).filter(([id, item]) => id !== "blank" && (item.tranche ?? 1) === tranche);
+  const labsForTranche = (masterTranche: 1 | 2 | 3 | 4 | 5 | 6, tranche: 1 | 2 | 3 | 4 | 5) => Object.entries(LAB_REGISTRY)
+    .filter(([id, item]) => id !== "blank" && item.type === 'guided' && (item.masterTranche ?? 1) === masterTranche && (item.tranche ?? 1) === tranche)
+    .sort(([, a], [, b]) => compareCurriculumOrder(a, b))
+    .map(([id, item]) => [id, { title: item.title, planned: item.status === "planned" }] as [string, LabMenuEntry]);
 
   useEffect(() => {
     if (pendingCommand && activeDevice === step.targetDevice) {
@@ -289,6 +365,7 @@ export default function Home() {
     }
   }, [activeDevice, pendingCommand, step.targetDevice]);
 
+  if (networkingVocabularyOpen) return <NetworkingVocabulary mode={learningMode} onMode={setLearningMode} onExit={() => setNetworkingVocabularyOpen(false)} />;
   if (operationsOpen) return <OperationsSandbox onExit={() => setOperationsOpen(false)} />;
   if (sandboxOpen) return <NetworkSandbox onExit={() => setSandboxOpen(false)} labId={selectedLabId} />;
 
@@ -313,8 +390,20 @@ export default function Home() {
         </div>
       </header>
 
-      <nav className="border-b border-white/10 bg-[#0d151e] px-5 py-3 lg:px-8">
-        <div className="mx-auto flex max-w-[1500px] items-center gap-2 overflow-x-auto pb-1">
+      <nav className="border-b border-white/10 bg-[#0d151e] px-5 py-3 lg:px-8" aria-label="Primary curriculum navigation">
+        <div className="mx-auto flex max-w-[1500px] items-center gap-2">
+          <button
+            type="button"
+            aria-label="Show earlier curriculum options"
+            onClick={() => curriculumRibbonRef.current?.scrollBy({ left: -360, behavior: "smooth" })}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#101923] text-[#8ea0a7] transition hover:border-[#63e6e2]/45 hover:bg-[#173038] hover:text-[#63e6e2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#63e6e2]"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <div
+            ref={curriculumRibbonRef}
+            className="curriculum-ribbon flex min-w-0 flex-1 items-center gap-2 overflow-x-auto scroll-smooth"
+          >
           <span className="mr-2 shrink-0 font-mono text-[10px] uppercase tracking-[.16em] text-[#667780]">Curriculum</span>
           <button type="button" onClick={() => { setOperationsOpen(true); setSandboxOpen(false); }} className="flex shrink-0 items-center gap-2 rounded-lg border border-[#63e6e2]/35 bg-[#173038] px-3 py-2 text-left text-[#b9eeee] transition hover:border-[#63e6e2]/70 hover:bg-[#1b4148]">
             <Wrench className="h-3.5 w-3.5" /><span className="font-mono text-[10px] uppercase tracking-wider">Operations Sandbox</span>
@@ -322,15 +411,18 @@ export default function Home() {
           <button type="button" onClick={() => setSandboxOpen(true)} className="flex shrink-0 items-center gap-2 rounded-lg border border-[#f5b74b]/40 bg-[#2a2112] px-3 py-2 text-left text-[#f4d998] transition hover:border-[#f5b74b]/70 hover:bg-[#3a2a16]">
             <Network className="h-3.5 w-3.5" /><span className="font-mono text-[10px] uppercase tracking-wider">Network Sandbox</span>
           </button>
-          {["One", "Two", "Three", "Four", "Five"].map((masterName) => (
+          <button type="button" onClick={() => { setNetworkingVocabularyOpen(true); setSandboxOpen(false); setOperationsOpen(false); }} className="flex shrink-0 items-center gap-2 rounded-lg border border-[#63e6e2]/45 bg-[#10252b] px-3 py-2 text-left text-[#b9eeee] transition hover:border-[#63e6e2]/75 hover:bg-[#173038]">
+            <BookOpenCheck className="h-3.5 w-3.5 text-[#63e6e2]" /><span className="font-mono text-[10px] uppercase tracking-wider">Networking Vocabulary</span>
+          </button>
+          {["One", "Two", "Three", "Four", "Five", "Six"].map((masterName, masterIndex) => (
             <MasterTrancheMenu
               key={masterName}
               name={`Master Tranche ${masterName}`}
               tranches={[1, 2, 3, 4, 5].map((tranche) => ({
                 name: `Tranche ${["One", "Two", "Three", "Four", "Five"][tranche - 1]}`,
-                labs: masterName === "One"
-                  ? labsForTranche(tranche as 1 | 2 | 3 | 4 | 5)
-                  : [[`master-${masterName.toLowerCase()}-${tranche}-placeholder`, { title: "Placeholder Lab", placeholder: true }]],
+                labs: masterName === "Three"
+                  ? [[`master-${masterName.toLowerCase()}-${tranche}-placeholder`, { title: "Placeholder Lab", placeholder: true }]]
+                  : labsForTranche((masterIndex + 1) as 1 | 2 | 3 | 4 | 5 | 6, tranche as 1 | 2 | 3 | 4 | 5),
               }))}
               selectedLabId={selectedLabId}
               onSelectLab={selectLab}
@@ -341,10 +433,19 @@ export default function Home() {
               <button type="button" className="flex shrink-0 items-center gap-2 rounded-lg border border-[#63e6e2]/35 bg-[#173038] px-3 py-2 text-left text-white transition hover:border-[#63e6e2]/65 hover:bg-[#1b4148]"><Database className="h-3.5 w-3.5 text-[#63e6e2]" /><span className="font-mono text-[10px] uppercase tracking-wider text-[#63e6e2]">Data</span><ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#63e6e2]" /></button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-72 border-[#29424a] bg-[#101923] p-2 text-[#edf4f3]">
-              <div className="px-2 pb-2 pt-1"><div className="font-mono text-[10px] uppercase tracking-[.16em] text-[#63e6e2]">Data</div><div className="mt-1 text-[11px] text-[#778a92]">Inspect reusable modeled network data.</div></div>
-              <DropdownMenuItem onSelect={() => setTrafficDataOpen(true)} className="cursor-pointer gap-3 px-2.5 py-3 text-[#9aabb1] focus:bg-[#173038] focus:text-white"><Database className="h-4 w-4 text-[#63e6e2]" /><span className="text-xs">Internet Traffic Data</span></DropdownMenuItem>
+              <div className="px-2 pb-2 pt-1"><div className="font-mono text-[10px] uppercase tracking-[.16em] text-[#63e6e2]">Data</div><div className="mt-1 text-[11px] text-[#778a92]">Inspect modeled traffic and fictional training assets.</div></div>
+              <DropdownMenuItem onSelect={() => setTrafficDataOpen(true)} className="cursor-pointer gap-3 px-2.5 py-3 text-[#9aabb1] focus:bg-[#173038] focus:text-white"><Database className="h-4 w-4 text-[#63e6e2]" /><span className="text-xs">Traffic and Target Range</span></DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          </div>
+          <button
+            type="button"
+            aria-label="Show later curriculum options"
+            onClick={() => curriculumRibbonRef.current?.scrollBy({ left: 360, behavior: "smooth" })}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-[#101923] text-[#8ea0a7] transition hover:border-[#63e6e2]/45 hover:bg-[#173038] hover:text-[#63e6e2] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#63e6e2]"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
         </div>
       </nav>
 
@@ -363,13 +464,22 @@ export default function Home() {
             <div className="mt-4 font-mono text-[10px] uppercase tracking-wider text-[#63e6e2]">{lab.topology.devices.map((d: any) => d.name || d.id).join(" ⇄ ")}</div>
           </div>
           <nav className="max-h-[calc(100vh-28rem)] space-y-1.5 overflow-y-auto pr-1" aria-label="Lab command path">
-            {lab.steps.map((item, index) => { 
-              const done = index < stepIndex; 
+            {(learningMode === 'guided' || lab.steps.some(item => item.exercise)) && lab.steps.map((item, index) => {
+              const done = stepDone(item);
               const current = index === stepIndex && !complete; 
               return (
                 <button 
                   key={`${item.expectedCommand}-${index}`} 
-                  onClick={() => { setActiveDevice(item.targetDevice); if (index <= stepIndex) setStepIndex(index); }} 
+                  aria-current={current ? 'step' : undefined}
+                  title={item.label}
+                  onClick={() => {
+                    setActiveDevice(item.targetDevice);
+                    setStepIndex(index);
+                    setInput('');
+                    setHint(false);
+                    setPendingCommand(null);
+                    requestAnimationFrame(() => document.getElementById('active-lab-step')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+                  }}
                   className={`group flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition ${current ? "bg-[#173038] text-white shadow-[inset_3px_0_0_#63e6e2]" : "text-[#82919a] hover:bg-white/[.04] hover:text-white"}`}
                 >
                   <span className="w-5 font-mono text-[10px] text-[#667780]">{String(index + 1).padStart(2, "0")}</span>
@@ -378,7 +488,6 @@ export default function Home() {
                 </button>
               ); 
             })}
-            {lab.steps.length > 16 && <div className="px-3 py-2 font-mono text-[10px] text-[#667780]">+ {lab.steps.length - 16} more IOS commands below</div>}
           </nav>
           <div className="mt-7 border-t border-white/10 pt-5">
             <div className="mb-2 flex justify-between font-mono text-[10px] uppercase tracking-wider text-[#77858d]">
@@ -413,7 +522,7 @@ export default function Home() {
               </div>}
             </div>
 
-            <div className="mb-6 grid gap-3 xl:grid-cols-[1.05fr_.95fr]">
+            {!step?.exercise && <div className="mb-6 grid gap-3 xl:grid-cols-[1.05fr_.95fr]">
               <div className="panel-surface p-4">
                 <div className="instrument-label text-[#f5b74b]">PACKET TRACE / OPERATIONAL CONTEXT</div>
                 <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#0e1720] p-3 font-mono text-center text-xs">
@@ -446,15 +555,15 @@ export default function Home() {
                     <div className="mt-3">
                       <div className="text-[10px] font-mono uppercase text-[#84969d] mb-1">Command to enter:</div>
                       <div className="font-mono text-lg font-bold text-[#63e6e2] bg-black/40 p-3 rounded border border-[#63e6e2]/20">
-                        {step.expectedCommand}
+                        {learningMode === 'guided' ? step.expectedCommand : learningMode === 'assisted' ? 'Configure the objective; request a hint if needed.' : 'Meet the configuration requirements in the learning workspace.'}
                       </div>
                     </div>
 
                     {/* The "What" */}
-                    <div className="mt-3 font-display text-xl font-semibold text-white">{step.label}</div>
+                    <div className="mt-3 font-display text-xl font-semibold text-white">{learningMode === 'guided' ? step.label : lab.title}</div>
 
                     {/* The "Why" (Instructional Description) */}
-                    <p className="mt-2 text-sm leading-6 text-[#aebbc0]">{step.description}</p>
+                    <p className="mt-2 text-sm leading-6 text-[#aebbc0]">{learningMode === 'guided' ? step.description : lab.description}</p>
 
                     {/* Context */}
                     <div className="mt-3 rounded-lg border border-[#f5b74b]/20 bg-[#f5b74b]/10 p-3">
@@ -463,23 +572,30 @@ export default function Home() {
                         <span>{step.targetDevice}</span><span>·</span><span>{step.requiredMode}</span>
                       </div>
                     </div>
+                    {learningMode === 'guided' && <DeviceSelectionAlert activeDevice={activeDevice} requiredDevice={step.targetDevice} />}
                   </>
                 ) : (
                   <>
                     <div className="mt-3 font-display text-xl font-semibold text-white">Evidence accepted.</div>
-                    <p className="mt-2 text-sm leading-6 text-[#aebbc0]">You completed the full IOS command path for this lab.</p>
+                    <p className="mt-2 text-sm leading-6 text-[#aebbc0]">{learningMode === 'guided' ? 'You completed the full guided command path for this lab.' : 'All modeled configuration requirements are satisfied.'}</p>
                   </>
                 )}
               </div>
-            </div>
+            </div>}
 
-            <div className="terminal-shell" style={{ minHeight: 0 }}>
+            <LearningWorkbench key={lab.id} lab={lab} catalog={LAB_REGISTRY} sessions={sessions} step={stepIndex} mode={learningMode} onMode={setLearningMode} onSelect={selectLab} onRestore={(restored, index) => { setSessions(restored); setStepIndex(index); setCommandHistory({}); setPendingCommand(null); setInput(''); }} />
+            <div id="active-lab-step" className="scroll-mt-6" />
+            {step?.exercise && !complete && <FundamentalsWorksheet key={lab.id + ':' + step.id + ':' + learningMode} step={step} labId={lab.id} mode={learningMode} onComplete={() => {
+              setSessions(current => ({ ...current, [step.targetDevice]: { ...current[step.targetDevice], lessonAnswers: { ...current[step.targetDevice]?.lessonAnswers, [step.id]: true } } }));
+              setStepIndex(index => Math.min(index + 1, lab.steps.length));
+            }} />}
+            {!step?.exercise && <div className="terminal-shell" style={{ minHeight: 0 }}>
               <div className="relative flex flex-wrap items-center justify-between gap-3 border-b border-white/10 bg-[#111b24] px-5 py-3">
                 <div className="flex items-center gap-2">
                   <div className="flex gap-1.5">
                     <span className="h-2.5 w-2.5 rounded-full bg-[#f07178]" /><span className="h-2.5 w-2.5 rounded-full bg-[#f5b74b]" /><span className="h-2.5 w-2.5 rounded-full bg-[#63e6e2]" />
                   </div>
-                  <span className="ml-2 font-mono text-[10px] uppercase tracking-[.18em] text-[#74848d]">ios-sim / {activeDevice}</span>
+                  <span className="ml-2 font-mono text-[10px] uppercase tracking-[.18em] text-[#74848d]">{session?.terminalKind === 'attack' ? 'attack-console /' : 'ios-sim /'} {activeDevice}</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="font-mono text-[10px] uppercase tracking-wider text-[#667780]">{prompt}</div>
@@ -496,36 +612,37 @@ export default function Home() {
                   {activeCommandHistory.length ? activeCommandHistory.map((command, index) => <div key={`${command}-${index}`} className="flex gap-3 border-b border-white/[.06] py-1.5 font-mono text-[10px] text-[#b5c2c6]"><span className="w-5 shrink-0 text-right text-[#667780]">{index + 1}</span><span>{command}</span></div>) : <div className="py-3 text-xs text-[#778a92]">No commands entered on this device yet.</div>}
                 </div>}
               </div>
-              {!terminalMinimized && <div id="tranche-ios-sim-body" className="terminal-output overflow-y-auto" style={{ height: terminalHeight, minHeight: 0 }} aria-live="polite">
-                {recent.map((line, index) => (
+              {!terminalMinimized && <div ref={terminalScrollbackRef} id="tranche-ios-sim-body" className="terminal-output terminal-scrollback" style={{ height: terminalHeight, minHeight: 0, overflowY: "scroll" }} aria-live="polite" aria-label="Scrollable IOS terminal output" tabIndex={0}>
+                {terminalLines.map((line, index) => (
                   <div key={`${line}-${index}`} className={`${line.startsWith("%") ? "text-[#f07178]" : line.startsWith("Hint:") ? "text-[#f5b74b]" : line.startsWith("Cisco") || line.includes("·") || line.startsWith("Full IOS") ? "text-[#72848d]" : line.startsWith("✓") || line.includes("applied") || line.includes("enabled") || line.includes("entered") || line.includes("configured") || line.includes("visible") || line.includes("Success") ? "text-[#b5d8d4]" : "text-[#a4b2b7]"}`}>{line || "\u00a0"}</div>
                 ))}
-                {!complete && (
+                {(!complete || learningMode !== 'guided') && (
                   <div className="mt-4 flex items-center gap-2">
                     <span className="text-[#63e6e2]">{prompt}</span>
-                    <input autoFocus value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submit()} className="min-w-0 flex-1 bg-transparent font-mono text-sm text-white outline-none placeholder:text-[#42535c]" placeholder="type the full Cisco IOS command..." aria-label="Cisco IOS command" />
+                    <input autoFocus value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submit()} className="min-w-0 flex-1 bg-transparent font-mono text-sm text-white outline-none placeholder:text-[#42535c]" placeholder={session?.terminalKind === 'attack' ? 'type a synthetic Linux range command...' : 'type IOS command or ? for help...'} aria-label={session?.terminalKind === 'attack' ? 'Linux attack console command' : 'Cisco IOS command'} />
                   </div>
                 )}
               </div>}
               {!terminalMinimized && <div className="border-t border-white/10 bg-[#0e1720] px-5 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
+                  {hint && learningMode !== 'assessment' && <p className="mb-3 text-xs text-[#f4d998]">On {step.targetDevice}, in {step.requiredMode} mode: {step.expectedCommand}</p>}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="border-white/15 bg-transparent text-[#94a4aa] hover:bg-white/10 hover:text-white" onClick={() => setHint((value) => !value)}>
+                    <Button disabled={learningMode === 'assessment'} variant="outline" size="sm" className="border-white/15 bg-transparent text-[#94a4aa] hover:bg-white/10 hover:text-white" onClick={() => { recordAttempt(lab.id, 'hints'); setHint((value) => !value); }}>
                       <CircleHelp className="mr-2 h-3.5 w-3.5" /> {hint ? "Hide hint" : "Need a nudge?"}
                     </Button>
-                    <Button variant="outline" size="sm" className="border-white/15 bg-transparent text-[#94a4aa] hover:bg-white/10 hover:text-white" onClick={() => { navigator.clipboard?.writeText(step.expectedCommand); toast("Exact command copied"); }}>
+                    <Button disabled={learningMode === 'assessment'} variant="outline" size="sm" className="border-white/15 bg-transparent text-[#94a4aa] hover:bg-white/10 hover:text-white" onClick={() => { recordAttempt(lab.id, 'hints'); navigator.clipboard?.writeText(step.expectedCommand); toast("Exact command copied"); }}>
                       <Copy className="mr-2 h-3.5 w-3.5" /> Copy command
                     </Button>
                   </div>
-                  <Button size="sm" className="bg-[#f5b74b] text-[#1c160b] hover:bg-[#ffca69]" onClick={runSuggested}>
+                  <Button disabled={learningMode !== 'guided'} size="sm" className="bg-[#f5b74b] text-[#1c160b] hover:bg-[#ffca69]" onClick={runSuggested}>
                     <Play className="mr-2 h-3.5 w-3.5" /> Run suggested
                   </Button>
                 </div>
               </div>}
-            </div>
+            </div>}
 
-            {!terminalMinimized && <ResizeGrabBar
-              label="Resize IOS simulator"
+            {!step?.exercise && !terminalMinimized && <ResizeGrabBar
+              label={session?.terminalKind === 'attack' ? 'Resize attack console' : 'Resize IOS simulator'}
               value={terminalHeight}
               min={220}
               max={760}
@@ -551,12 +668,12 @@ export default function Home() {
                 <div className="mt-2 font-mono text-sm text-[#63e6e2]">{activeDevice}</div>
               </div>
               <div className="panel-surface p-4">
-                <div className="instrument-label">IOS PROMPT</div>
+                <div className="instrument-label">{session?.terminalKind === 'attack' ? 'ATTACK PROMPT' : 'IOS PROMPT'}</div>
                 <div className="mt-2 font-mono text-sm text-[#f5b74b]">{prompt}</div>
               </div>
               <div className="panel-surface p-4">
                 <div className="instrument-label">LAB STANDARD</div>
-                <div className="mt-2 text-sm text-[#dce5e5]">Full IOS vocabulary</div>
+                <div className="mt-2 text-sm text-[#dce5e5]">{session?.terminalKind === 'attack' ? 'Synthetic Linux range tools' : 'Full IOS vocabulary'}</div>
               </div>
             </div>
           </div>
