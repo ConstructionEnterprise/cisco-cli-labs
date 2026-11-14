@@ -11,13 +11,13 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import FundamentalsWorksheet from '../components/FundamentalsWorksheet';
 
-test('vocabulary is distributed across every Master One lab in tranches 1-4, never tranche 5', () => {
+test('vocabulary is distributed across Master One lessons without interrupting the IOS help walkthrough', () => {
   const terms = Object.values(VOCABULARY_GROUPS).flatMap(group => group.split('\n').map(line => line.split('|')[0]));
-  assert.equal(terms.length, 160);
-  assert.equal(new Set(terms).size, 160);
+  assert.equal(terms.length, 168);
+  assert.equal(new Set(terms).size, 168);
   for (const lab of Object.values(LAB_REGISTRY).filter(lab => lab.type === 'guided')) {
     const cards = lab.steps.filter(step => step.exercise?.section === 'Vocabulary match');
-    const eligible = (lab.masterTranche ?? 1) === 1 && (lab.tranche ?? 1) <= 4;
+    const eligible = (lab.masterTranche ?? 1) === 1 && (lab.tranche ?? 1) <= 4 && lab.id !== 'mt1-tr2-ios-context-help';
     assert.equal(cards.length > 0, eligible, lab.id);
     if (!eligible) continue;
     assert.ok(VOCABULARY_GROUPS[lab.id]);
@@ -59,7 +59,7 @@ test('multiple-choice cards render accessible radio choices and honor the learni
 test('Master One progression preserves every existing lab and aligns sandbox placement', () => {
   const expectedIds = MASTER_ONE_CURRICULUM.flatMap(group => [...group.labs]);
   const existing = Object.values(LAB_REGISTRY).filter(lab => lab.type === 'guided' && (lab.masterTranche ?? 1) === 1 && (lab.tranche ?? 1) !== 1);
-  assert.equal(new Set(expectedIds).size, 22);
+  assert.equal(new Set(expectedIds).size, 24);
   assert.deepEqual(existing.map(lab => lab.id).sort(), [...expectedIds].sort());
   for (const group of MASTER_ONE_CURRICULUM) {
     const actual = existing.filter(lab => lab.tranche === group.tranche).sort(compareCurriculumOrder);

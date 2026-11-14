@@ -164,6 +164,14 @@ VPN|A virtual private network providing protected connectivity across another ne
 WPA3|A modern Wi-Fi security suite with stronger authentication protections than legacy open or WEP networks.
 RF channel|A selected radio-frequency portion of the spectrum used for wireless communication.
 WLC|A controller used to coordinate and manage wireless access points.`,
+  'tr2-vtp': `VTP|A Cisco protocol that propagates VLAN configuration across switches in a domain.
+VTP domain|A group of switches sharing one VLAN database through VTP advertisements.
+VTP server|A VTP mode that creates VLANs and advertises the VLAN database.
+VTP client|A VTP mode that learns the VLAN database and cannot create VLANs.
+VTP transparent|A VTP mode that keeps local VLANs and neither learns nor advertises a database.
+Configuration revision|A counter tracking VLAN database changes; the highest revision wins.
+MD5 digest|A hash summarizing the VLAN database; matching digests mean switches are in sync.
+VTP password|A shared secret that must match for switches to exchange VTP advertisements.`,
 };
 
 export type NetworkingVocabularyCard = {
@@ -202,6 +210,15 @@ export function networkingVocabularyCards(): NetworkingVocabularyCard[] {
       choices: ordered.map((choice) => ({ label: choice.term, explanation: choice.definition })),
     };
   });
+}
+
+export function shuffleVocabularyCards(cards: readonly NetworkingVocabularyCard[], random: () => number = Math.random): NetworkingVocabularyCard[] {
+  const shuffled = [...cards];
+  for (let index = shuffled.length - 1; index > 0; index--) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+  }
+  return shuffled;
 }
 
 export function addVocabularyCards(registry: Record<string, LabConfig>) {

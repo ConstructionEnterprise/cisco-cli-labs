@@ -5,9 +5,10 @@ import { namedSessions, type Sessions } from './learning-engine';
 export function interfaceEvidence(session: Session | undefined, port: string) {
   const state = session?.interfaces[port];
   const parent = port.includes('.') ? session?.interfaces[port.split('.')[0]] : undefined;
-  const up = !!state && !state.shutdown && state.status !== 'err-disabled' && (!port.includes('.') || !!parent && !parent.shutdown);
+  const up = !!state && !state.shutdown && state.status === 'up' && (!port.includes('.') || !!parent && !parent.shutdown && parent.status === 'up');
   const method = state?.dhcpClient ? 'DHCP' : state?.ipv4.length ? 'manual' : 'unset';
-  return { port, address: state?.ipv4.join(', ') || 'unassigned', valid: 'YES', method, admin: state?.shutdown === false ? 'up' : 'administratively down', protocol: up ? 'up' : 'down', up };
+  const admin = !state || state.shutdown ? 'administratively down' : state.status === 'err-disabled' ? 'err-disabled' : state.status;
+  return { port, address: state?.ipv4.join(', ') || 'unassigned', valid: 'YES', method, admin, protocol: up ? 'up' : 'down', up };
 }
 const ipNumber = (ip: string) => ip.split('.').reduce((total, part) => (total << 8) | Number(part), 0) >>> 0;
 export function leaseState(lease: { state: string; leaseEnd?: string }, now = Date.now()) {
@@ -508,13 +509,27 @@ export function evidenceOutput(command: string, session: Session, lab: LabConfig
     const device = lab.topology.devices.find(d => d.name === session.hostname);
     const ports = Array.from(new Set<string>([...(device?.ports || []), ...Object.keys(session.interfaces)]));
     const peers = protocolEvidence(lab, sessions);
-    return ['Interface          IP-Address                  OK? Method Status                 Protocol', ...ports.map(port => { const row = interfaceRelationships(session, port, peers); return `${port.padEnd(18)} ${row.address.padEnd(27)} ${row.valid.padEnd(3)} ${row.method.padEnd(6)} ${row.admin.padEnd(22)} ${row.protocol}`; })];
+    const named = namedSessions(lab, sessions);
+    return ['Interface          IP-Address                  OK? Method Status                 Protocol', ...ports.map(port => {
+      const row = interfaceRelationships(session, port, peers);
+      const physical = device?.ports.includes(port) && !/^vlan|^port-channel/i.test(port);
+      const link = physical && device && lab.topology.links.find(item => item.from === device.id && item.fromPort === port || item.to === device.id && item.toPort === port);
+      const remoteId = link && device ? link.from === device.id ? link.to : link.from : undefined;
+      const remotePort = link && device ? link.from === device.id ? link.toPort : link.fromPort : undefined;
+      const remote = lab.topology.devices.find(item => item.id === remoteId);
+      const connected = !!link && !!remote && !!remotePort && row.up && interfaceEvidence(named[remote.name], remotePort).up;
+      const status = physical && row.admin !== 'administratively down' && !connected ? 'down' : row.admin;
+      const protocol = physical && !connected ? 'down' : row.protocol;
+      const address = row.address === 'unassigned' ? row.address : row.address.split(' ')[0];
+      return `${port.padEnd(18)} ${address.padEnd(27)} ${row.valid.padEnd(3)} ${row.method.padEnd(6)} ${status.padEnd(22)} ${protocol}`;
+    })];
   }
-  if (command === 'show ip ospf neighbor' || command === 'show ipv6 ospf neighbor' || command === 'show etherchannel summary') {
-    const ospf = command.includes('ospf');
-    if (ospf) return formatOspfNeighborCli(ospfOperationalEvidence(lab, sessions, session.hostname, command.startsWith('show ipv6') ? 'ipv6' : 'ipv4'));
-    const rows = protocolEvidence(lab, sessions).filter(row => (ospf ? row.protocol === 'OSPF' : ['LACP', 'Static'].includes(row.protocol)) && row.link.includes(`${session.hostname} `));
-    return rows.length ? rows.map(row => `${row.link} | ${row.state} | ${row.reason}`) : [ospf ? 'No OSPF peers configured.' : 'No EtherChannel peers configured.'];
+  // show etherchannel summary is NOT handled here: outputFor's IOS-format
+  // EtherChannel handler owns every show etherchannel form. Returning the
+  // protocol-evidence rows for it used to shadow that handler (and the
+  // old summary table before it) whenever LACP/Static evidence existed.
+  if (command === 'show ip ospf neighbor' || command === 'show ipv6 ospf neighbor') {
+    return formatOspfNeighborCli(ospfOperationalEvidence(lab, sessions, session.hostname, command.startsWith('show ipv6') ? 'ipv6' : 'ipv4'));
   }
   return undefined;
 }

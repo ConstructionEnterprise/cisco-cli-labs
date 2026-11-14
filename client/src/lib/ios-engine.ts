@@ -75,6 +75,24 @@ export type InterfaceState = {
 };
 
 export type DhcpClientState = { mac: string; interface: string; state: "INIT" | "OFFERED" | "BOUND" | "EXPIRED"; ip?: string; mask?: string; gateway?: string; dns?: string; poolName?: string; leaseStart?: string; leaseEnd?: string };
+export type VtpMode = "server" | "client" | "transparent";
+export type VtpState = {
+  mode: VtpMode;
+  domain: string;
+  version: 1 | 2;
+  password: string;
+  revision: number;
+  lastModifiedBy: string;
+  lastModifiedAt: string;
+};
+export type StpMode = "pvst" | "rapid-pvst";
+export type StpState = {
+  mode: StpMode;
+  vlanPriority: Record<string, number>;
+  vlanRoot: Record<string, "primary" | "secondary">;
+  portfast: Record<string, boolean>;
+  bpduguard: Record<string, boolean>;
+};
 export type SyntheticContainerEvent = { tick: number; level: "info" | "warn" | "error"; source: string; message: string };
 export type SyntheticSocketEvent = { tick: number; type: "syn-received" | "accept" | "close" | "refused" | "throttled"; remoteIp: string; remotePort: number; reason?: string };
 export type SyntheticContainerRuntime = {
@@ -86,7 +104,9 @@ export type SyntheticContainerRuntime = {
 };
 // The attacker console owns this state. It shares the lab session record with
 // IOS so both consoles can observe the same fictional range and policy state.
-export type AttackTerminalState = { selectedModule?: string; rhosts?: string; executionLog: string[]; snmpValues: Record<string, string>; containerRuntime: Record<string, SyntheticContainerRuntime> };
+export type RangePhase = "validation" | "probe" | "enumeration";
+export type RangeEvidence = { targetId: string; phase: RangePhase; command: string; output: string[] };
+export type AttackTerminalState = { selectedModule?: string; rhosts?: string; executionLog: string[]; snmpValues: Record<string, string>; containerRuntime: Record<string, SyntheticContainerRuntime>; rangePhase: Record<string, RangePhase>; rangeEvidence: RangeEvidence[] };
 
 export type Session = {
   simulationTick?: number;
@@ -116,6 +136,8 @@ export type Session = {
   dnsCache: Record<string, string>;
   ospfProcesses: Record<string, OspfProcess>;
   fhrpGroups: Record<string, FhrpGroup>;
+  vtp?: VtpState;
+  stp?: StpState;
   attackTerminal?: AttackTerminalState;
 };
 
@@ -144,7 +166,8 @@ export function boot(name: string, role: string, terminalKind: "ios" | "attack" 
     dnsCache: {},
     ospfProcesses: {},
     fhrpGroups: {},
-    attackTerminal: terminalKind === "attack" ? { executionLog: [], snmpValues: {}, containerRuntime: {} } : undefined,
+    vtp: { mode: "server", domain: "", version: 1, password: "", revision: 0, lastModifiedBy: "0.0.0.0", lastModifiedAt: "0-0-00 00:00:00" },
+    attackTerminal: terminalKind === "attack" ? { executionLog: [], snmpValues: {}, containerRuntime: {}, rangePhase: {}, rangeEvidence: [] } : undefined,
     history: [
       terminalKind === "attack" ? "Kali Linux (synthetic training range)" : "Cisco IOS Software, CCNA Lab Simulator",
       `${name} · ${role}`,
@@ -186,22 +209,89 @@ export function normalizeCommand(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLowerCase();
 }
 
+// `show cdp neighbors ?` interface-type keywords visible in the CML
+// reference video (head + tail). The middle of that video list scrolled
+// past, so the full IOS image lists additional types between Multilink
+// and fcpa — those are deliberately not invented here. Shared by the
+// generic help map below and the device-aware help in
+// ios-device-reference.ts so both CLIs agree.
+export const CDP_NEIGHBOR_INTERFACE_TYPES: Array<[string, string]> = [
+  ['Async', 'Async interface'],
+  ['Auto-Template', 'Auto-Template interface'],
+  ['BVI', 'Bridge-Group Virtual Interface'],
+  ['Bluetooth', 'Bluetooth interface'],
+  ['CTunnel', 'CTunnel interface'],
+  ['Dialer', 'Dialer interface'],
+  ['EsconPhy', 'ESCON interface'],
+  ['Filter', 'Filter interface'],
+  ['Filtergroup', 'Filter Group interface'],
+  ['GMPLS', 'MPLS interface'],
+  ['GigabitEthernet', 'GigabitEthernet IEEE 802.3z'],
+  ['GroupVI', 'Group Virtual Interface'],
+  ['LISP', 'Locator/ID Separation Protocol Virtual Interface'],
+  ['Lex', 'Lex interface'],
+  ['Lspvif', 'LSP virtual interface'],
+  ['MFR', 'Multilink Frame Relay bundle interface'],
+  ['Multilink', 'Multilink-group interface'],
+  ['fcpa', 'Fiber Channel'],
+  ['voaBypassIn', 'VOA-Bypass-In interface'],
+  ['voaBypassOut', 'VOA-Bypass-Out interface'],
+  ['voaFilterIn', 'VOA-Filter-In interface'],
+  ['voaFilterOut', 'VOA-Filter-Out interface'],
+  ['voaIn', 'VOA-In interface'],
+  ['voaOut', 'VOA-Out interface'],
+  ['|', 'Output modifiers'],
+  ['<cr>', ''],
+];
+
+export const CDP_NEIGHBORS_HELP_FOOTER = 'Study reference: interface-type keywords require an interface number in IOS; only show cdp neighbors, detail, and a modeled local-interface filter are simulated.';
+
+// show etherchannel ? — verbatim from the CML screenshot (Percipio CCNA
+// Switching Lab, SW2). There is no <cr>: a bare "show etherchannel" is
+// incomplete in IOS, and the emulator rejects it the same way.
+export const ETHERCHANNEL_HELP: Array<[string, string]> = [
+  ['<1-255>', 'Channel group number'],
+  ['auto', 'Displays summary of auto formed etherchannel'],
+  ['detail', 'Detail information'],
+  ['load-balance', 'Load-balance/frame-distribution scheme among ports in port-channel'],
+  ['port', 'Port information'],
+  ['port-channel', 'Port-channel information'],
+  ['protocol', 'Protocol enabled'],
+  ['summary', 'One-line summary per channel-group'],
+];
+
+export const ETHERCHANNEL_HELP_FOOTER = 'Study reference: Auto LAG is not modeled; load-balance shows the modeled default (src-mac), not a configured scheme.';
+
 const IOS_HELP: Record<string, string[]> = {
   'user:': ['enable                         Turn on privileged commands', 'exit                           Exit from the EXEC'],
   'privileged:': ['clear                          Reset functions', 'configure                      Enter configuration mode', 'copy                           Copy from one file to another', 'disable                        Turn off privileged commands', 'ping                           Send echo messages', 'show                           Show running system information', 'terminal                       Set terminal line parameters', 'traceroute                     Trace route to destination', 'write                          Write running configuration'],
-  'privileged:show': ['access-lists                   List access lists', 'arp                            ARP table', 'cdp                            CDP information', 'etherchannel                   EtherChannel information', 'interfaces                     Interface status and configuration', 'ip                             IP information', 'ipv6                           IPv6 information', 'mac                            MAC forwarding information', 'running-config                 Current operating configuration', 'spanning-tree                  Spanning-tree information', 'vlan                           VLAN information'],
+  'privileged:show': ['access-lists                   List access lists', 'arp                            ARP table', 'cdp                            CDP information', 'etherchannel                   EtherChannel information', 'interfaces                     Interface status and configuration', 'ip                             IP information', 'ipv6                           IPv6 information', 'mac                            MAC forwarding information', 'running-config                 Current operating configuration', 'spanning-tree                  Spanning-tree information', 'vlan                           VLAN information', 'vtp                            VTP information'],
   'privileged:show ip': ['arp                            IP ARP table', 'bgp                            BGP routing information', 'dhcp                           DHCP information', 'interface                      Interface IP status and configuration', 'nat                            Network address translation', 'ospf                           OSPF information', 'route                          IP routing table', 'vrf                            VRF information'],
   'privileged:show ipv6': ['interface                      IPv6 interface status and configuration', 'neighbors                      IPv6 neighbor cache', 'ospf                           IPv6 OSPF information', 'route                          IPv6 routing table'],
   'privileged:show interfaces': ['<interface>                    Interface name', 'counters errors                Interface error counters', 'status                         Interface status summary', 'switchport                     Switchport information', 'trunk                          Trunking information'],
   'privileged:show running-config': ['interface                      Interface configuration', '| section                      Include matching configuration section'],
+  'privileged:show cdp': ['neighbors                      Show CDP neighbor entries'],
+  'privileged:show cdp neighbors': [...CDP_NEIGHBOR_INTERFACE_TYPES.map(([word, description]) => word === '<cr>' ? '<cr>' : `${word.padEnd(30)} ${description}`), CDP_NEIGHBORS_HELP_FOOTER],
+  'privileged:show etherchannel': [...ETHERCHANNEL_HELP.map(([word, description]) => `${word.padEnd(30)} ${description}`), ETHERCHANNEL_HELP_FOOTER],
+  'privileged:show vtp': ['status                         VTP status'],
+  'privileged:show spanning-tree': ['<cr>                           Display spanning-tree information', 'vlan                           Spanning tree for one VLAN', 'root                           Spanning-tree root status', 'summary                        Spanning-tree summary', 'interface                      Spanning tree for an interface'],
   'privileged:configure': ['terminal                       Configure from the terminal'],
   'privileged:copy': ['running-config                  Copy from the running configuration'],
   'privileged:ping': ['A.B.C.D                        IPv4 destination address', 'hostname                       Name resolved by configured DNS'],
-  'config:': ['access-list                    Add an access-list entry', 'hostname                       Set system network name', 'interface                      Select an interface to configure', 'ip                             Configure IP parameters', 'ipv6                           Configure IPv6 parameters', 'router                         Enable a routing process', 'vlan                           Create or select a VLAN'],
+  'config:': ['access-list                    Add an access-list entry', 'hostname                       Set system network name', 'interface                      Select an interface to configure', 'ip                             Configure IP parameters', 'ipv6                           Configure IPv6 parameters', 'router                         Enable a routing process', 'spanning-tree                  Configure spanning tree', 'vlan                           Create or select a VLAN', 'vtp                            Configure VTP'],
+  'config:vtp': ['mode                           Set VTP mode', 'domain                         Set VTP domain', 'version                        Set VTP version', 'password                       Set VTP password'],
+  'config:vtp mode': ['server                         VTP server mode', 'client                         VTP client mode', 'transparent                    VTP transparent mode'],
+  'config:vtp domain': ['WORD                           VTP domain name'],
+  'config:vtp version': ['1                              VTP version 1', '2                              VTP version 2'],
+  'config:vtp password': ['WORD                           VTP password'],
+  'config:spanning-tree': ['mode                           Select spanning-tree mode', 'vlan                           Set root or priority for a VLAN'],
+  'config:spanning-tree mode': ['pvst                           Per-Vlan spanning tree mode', 'rapid-pvst                     Per-Vlan rapid spanning tree mode'],
+  'config:spanning-tree vlan': ['WORD                           vlan range, example: 1,3-5,7,9-11'],
   'config:interface': ['g0/0                           GigabitEthernet interface', 'g0/1                           GigabitEthernet interface', 'loopback                       Loopback interface', 'vlan                           Switched virtual interface'],
   'config:ip': ['access-list                    Configure an IP access list', 'dhcp                           Configure DHCP', 'domain-name                    Define the default domain name', 'route                          Configure a static route'],
   'config:router': ['bgp                            Configure a BGP routing process', 'ospf                           Configure an OSPF routing process'],
-  'interface:': ['description                    Add an interface description', 'ip                             Configure IPv4 parameters', 'ipv6                           Configure IPv6 parameters', 'shutdown                       Disable the interface', 'switchport                     Configure switching characteristics', 'no shutdown                    Enable the interface'],
+  'interface:': ['description                    Add an interface description', 'ip                             Configure IPv4 parameters', 'ipv6                           Configure IPv6 parameters', 'shutdown                       Disable the interface', 'spanning-tree                  Configure interface spanning tree', 'switchport                     Configure switching characteristics', 'no shutdown                    Enable the interface'],
+  'interface:spanning-tree': ['portfast                       Enable PortFast on this edge port', 'bpduguard enable               Enable BPDU Guard on this port'],
   'interface:ip': ['address                        Set the IPv4 address', 'access-group                   Apply an IP access list', 'helper-address                 Configure a DHCP relay'],
   'interface:ipv6': ['address                        Set the IPv6 address', 'ospf                           Configure OSPFv3 on this interface'],
   'interface:switchport': ['access                         Configure an access VLAN', 'mode                           Set access or trunk mode', 'trunk                          Configure trunk properties'],
@@ -214,6 +304,18 @@ export function iosContextHelp(value: string, mode: Mode): string[] | null {
   if (mode === 'shell' || !value.trim().endsWith('?')) return null;
   const stem = normalizeCommand(value.slice(0, -1));
   const modeKey = mode === 'subinterface' ? 'interface' : mode;
+  // `do` reuses the privileged EXEC help from any configuration mode.
+  if (modeKey !== 'privileged' && modeKey !== 'user' && (stem === 'do' || stem.startsWith('do '))) {
+    const innerStem = stem === 'do' ? '' : stem.slice(3);
+    return IOS_HELP[`privileged:${innerStem}`] || [`% Unrecognized command: ${stem || '?'}`];
+  }
+  // `spanning-tree vlan <range> root ?` — the range varies, so it is dynamic.
+  if (modeKey === 'config' && /^spanning-tree vlan [\d,-]+ root$/.test(stem)) {
+    return [
+      'primary                        Configure this switch as primary root for this spanning tree',
+      'secondary                      Configure switch as secondary root',
+    ];
+  }
   const exactKey = `${modeKey}:${stem}`;
   const options = IOS_HELP[exactKey] || (stem ? undefined : IOS_HELP[`${modeKey}:`]);
   if (options) return options;
@@ -333,7 +435,11 @@ export function applyModeledLayer2Learning(sessions: Record<string, Session>, to
     for (const [switchId, hostId, switchPort] of [[link.from, link.to, link.fromPort], [link.to, link.from, link.toPort]] as Array<[string, string, string | undefined]>) {
       if (devices.get(switchId)?.kind !== "switch" || !['pc', 'server', 'printer', 'access-point', 'iot'].includes(devices.get(hostId)?.kind || '') || !switchPort) continue;
       const hostPort = switchId === link.from ? link.toPort : link.fromPort;
-      if (!activePort(nameFor(hostId), hostPort)) continue;
+      // End hosts power their own NICs: a host with no interface entry is
+      // up (hosts run no IOS session in the labs, so nothing ever creates
+      // one), while an explicit shutdown/down entry still wins.
+      const hostState = hostPort ? next[nameFor(hostId)]?.interfaces[hostPort] : undefined;
+      if (hostState ? hostState.shutdown || hostState.status !== "up" : !hostPort) continue;
       const switchSession = next[nameFor(switchId)];
       const port = switchSession?.interfaces[switchPort];
       if (!switchSession || !port || port.shutdown || port.status !== "up" || port.switchportMode !== "access") continue;
@@ -386,6 +492,10 @@ export function applyModeledLayer2Learning(sessions: Record<string, Session>, to
 export function isCiscoCommand(command: string, mode: Mode): boolean {
   if (mode === "shell") return false;
   if (iosContextHelp(command, mode)) return true;
+  // `do` runs a privileged EXEC command from any configuration mode.
+  if (command.startsWith("do ") && mode !== "user" && mode !== "privileged") {
+    return isCiscoCommand(command.slice(3).trim(), "privileged");
+  }
   if (command === "enable") return mode === "user";
   if (command === "disable") return mode === "privileged";
   if (command === "configure terminal") return mode === "privileged";
@@ -402,11 +512,11 @@ export function isCiscoCommand(command: string, mode: Mode): boolean {
   if ((mode === "interface" || mode === "subinterface") && command === "power inline auto") return true;
 
   if (mode === "privileged") {
-    return /^(show (access-lists(?: \S+)?|arp|cdp neighbors(?: detail)?|clock|controllers|crypto key mypubkey rsa|etherchannel summary|interfaces(?: (?:g\d+\/\d+(?:\.\d+)?(?: switchport)?|gigabitethernet ?\d+\/\d+(?: switchport)?|port-channel ?\d+(?: switchport)?|status|trunk|counters errors|switchport))?|ip (?:arp inspection|bgp(?: summary)?|dhcp (?:binding|conflict|pool|server statistics|snooping)|http server secure-status|interface(?: brief| \S+)?|mroute|nat (?:translations(?: verbose)?|statistics)|ospf(?: neighbor| interface(?: brief| \S+)?)?|pim (?:neighbor|interface)|protocols|route(?: (?:connected|static|ospf|vrf \S+|\S+))?|vrf)|ipv6 (?:interface(?: brief| \S+)?|mroute|neighbors|ospf(?: neighbor| interface)|route(?: (?:connected|static|ospf|\S+))?|pim (?:neighbor|interface))|mac address-table(?: (?:dynamic|secure|interface \S+))?|port-security(?: interface \S+)?|running-config(?: (?:interface \S+|\| section (?:interface|ipv6|ip route|nat|access-list|dhcp|router ospf|username|line vty|crypto|multicast)))?|spanning-tree(?: (?:vlan \d+|root|summary|interface \S+ detail))?|startup-config|users|version|vlan brief|ip ssh|login|ntp associations|ptp clock|ppp multilink|glbp(?: brief)?|vrrp brief)|ping (?:[0-9a-f:.]+|\S+)|traceroute [0-9a-f:.]+|copy running-config startup-config|write memory|terminal (?:length \d+|monitor)|clear (?:counters|ip route|ipv6 route))$/.test(command);
+    return /^(show (access-lists(?: \S+)?|arp|cdp neighbors(?: detail| (?:g\d+\/\d+|gig ?\d+\/\d+|gigabitethernet ?\d+\/\d+|port-channel ?\d+|vlan \d+|loopback \d+|tunnel \d+|serial ?\d+\/\d+)(?: detail)?)?|clock|controllers|crypto key mypubkey rsa|etherchannel(?: summary| auto| detail| load-balance| port-channel(?: \d+)?| port(?: (?:g\d+\/\d+|gig ?\d+\/\d+))?| protocol| \d+(?: (?:detail|port|port-channel|protocol|summary))?)|interfaces(?: (?:g\d+\/\d+(?:\.\d+)?(?: switchport)?|gigabitethernet ?\d+\/\d+(?: switchport)?|port-channel ?\d+(?: switchport)?|status|trunk|counters errors|switchport))?|ip (?:arp inspection|bgp(?: summary)?|dhcp (?:binding|conflict|pool|server statistics|snooping)|http server secure-status|interface(?: brief| \S+)?|mroute|nat (?:translations(?: verbose)?|statistics)|ospf(?: neighbor| interface(?: brief| \S+)?)?|pim (?:neighbor|interface)|protocols|route(?: (?:connected|static|ospf|vrf \S+|\S+))?|vrf)|ipv6 (?:interface(?: brief| \S+)?|mroute|neighbors|ospf(?: neighbor| interface)|route(?: (?:connected|static|ospf|\S+))?|pim (?:neighbor|interface))|mac address-table(?: (?:dynamic|secure|interface \S+))?|port-security(?: interface \S+)?|running-config(?: (?:interface \S+|\| section (?:interface|ipv6|ip route|nat|access-list|dhcp|router ospf|username|line vty|crypto|multicast)))?|spanning-tree(?: (?:vlan \d+|root|summary|interface \S+ detail))?|startup-config|users|version|vlan brief|vtp status|ip ssh|login|ntp associations|ptp clock|ppp multilink|glbp(?: brief)?|vrrp brief)|ping (?:[0-9a-f:.]+|\S+)|traceroute [0-9a-f:.]+|copy running-config startup-config|write memory|terminal (?:length \d+|monitor)|clear (?:counters|ip route|ipv6 route))$/.test(command);
   }
 
   if (mode === "config") {
-    return /^(hostname [a-z0-9][a-z0-9.-]{0,62}|enable secret \S+|no ip domain-lookup|ip domain-name \S+|crypto key generate rsa modulus \d+|ip multicast-routing|ipv6 unicast-routing|ipv6 multicast-routing|vlan (?:[1-9]\d{0,3})|interface (?:g\d+\/\d+(?:\.\d+)?|gigabitethernet ?\d+\/\d+|ethernet\d+\/\d+|eth\d+|loopback \d+|vlan \d+|port-channel ?\d+)|interface range .+|router (?:ospf|bgp) \d+|ipv6 router ospf \d+|ip dhcp (?:excluded-address [0-9.]+(?: [0-9.]+)?|pool \S+|snooping(?: vlan \d+)?)|ip arp inspection vlan \d+|line (?:vty \d+(?: \d+)?|console \d+)|ip access-list (?:standard|extended) \S+|object network \S+|access-list (?:\d+|\S+) (?:permit|deny|extended) .+|access-group \S+ in interface (?:outside|inside|dmz)|ip nat inside source list \d+ interface (?:g\d+\/\d+|gigabitethernet ?\d+\/\d+) overload|nat \(inside,outside\) dynamic interface|route (?:outside|inside|dmz) [0-9.]+ [0-9.]+ [0-9.]+|spanning-tree (?:mode (?:rapid-pvst|pvst)|vlan \d+ (?:root (?:primary|secondary)|priority \d+))|username \S+ (?:privilege \d+ )?secret \S+|ip route [0-9.]+ [0-9.]+ [0-9.]+|ipv6 route [0-9a-f:]+\/\d+ [0-9a-f:]+|ip default-gateway [0-9.]+|mls qos|vpc domain \d+|peer-keepalive destination [0-9.]+|dot11 ssid \S+|wireless (?:channel \d+|band (?:2\.4ghz|5ghz)|power \d+)|ip slb .+|ntp server [0-9.]+|ptp mode (?:boundary|ordinary)|ip http (?:secure-(?:server|port \d+)|rate-limit \d+|authentication token-required)|ip vrf \S+)$/.test(command);
+    return /^(hostname [a-z0-9][a-z0-9.-]{0,62}|enable secret \S+|no ip domain-lookup|ip domain-name \S+|crypto key generate rsa modulus \d+|ip multicast-routing|ipv6 unicast-routing|ipv6 multicast-routing|vlan (?:[1-9]\d{0,3})|vtp (?:mode (?:server|client|transparent)|domain \S+|version [12]|password \S+)|interface (?:g\d+\/\d+(?:\.\d+)?|gigabitethernet ?\d+\/\d+|ethernet\d+\/\d+|eth\d+|loopback \d+|vlan \d+|port-channel ?\d+)|interface range .+|router (?:ospf|bgp) \d+|ipv6 router ospf \d+|ip dhcp (?:excluded-address [0-9.]+(?: [0-9.]+)?|pool \S+|snooping(?: vlan \d+)?)|ip arp inspection vlan \d+|line (?:vty \d+(?: \d+)?|console \d+)|ip access-list (?:standard|extended) \S+|object network \S+|access-list (?:\d+|\S+) (?:permit|deny|extended) .+|access-group \S+ in interface (?:outside|inside|dmz)|ip nat inside source list \d+ interface (?:g\d+\/\d+|gigabitethernet ?\d+\/\d+) overload|nat \(inside,outside\) dynamic interface|route (?:outside|inside|dmz) [0-9.]+ [0-9.]+ [0-9.]+|spanning-tree (?:mode (?:rapid-pvst|pvst)|vlan \d+(?:[,-]\d+)* (?:root (?:primary|secondary)|priority \d+))|username \S+ (?:privilege \d+ )?secret \S+|ip route [0-9.]+ [0-9.]+ [0-9.]+|ipv6 route [0-9a-f:]+\/\d+ [0-9a-f:]+|ip default-gateway [0-9.]+|mls qos|vpc domain \d+|peer-keepalive destination [0-9.]+|dot11 ssid \S+|wireless (?:channel \d+|band (?:2\.4ghz|5ghz)|power \d+)|ip slb .+|ntp server [0-9.]+|ptp mode (?:boundary|ordinary)|ip http (?:secure-(?:server|port \d+)|rate-limit \d+|authentication token-required)|ip vrf \S+)$/.test(command);
   }
 
   if (mode === "vlan") return /^(name [a-z0-9][a-z0-9 _.-]{0,31}|exit)$/.test(command);
@@ -467,7 +577,8 @@ export function applyCommand(session: Session, command: string, history: string[
     interfaces: Object.fromEntries(Object.entries(session.interfaces).map(([name, state]) => [name, { ...state, ipv4: [...state.ipv4], ipv6: [...state.ipv6], commands: [...state.commands], errors: { ...state.errors }, poe: { ...state.poe } }])),
       vlans: { ...session.vlans },
       fhrpGroups: Object.fromEntries(Object.entries(session.fhrpGroups || {}).map(([id, group]) => [id, { ...group }])),
-    attackTerminal: session.attackTerminal ? { selectedModule: session.attackTerminal.selectedModule, rhosts: session.attackTerminal.rhosts, executionLog: [...session.attackTerminal.executionLog], snmpValues: { ...session.attackTerminal.snmpValues }, containerRuntime: { ...session.attackTerminal.containerRuntime } } : undefined,
+      vtp: session.vtp ? { ...session.vtp } : undefined,
+    attackTerminal: session.attackTerminal ? { selectedModule: session.attackTerminal.selectedModule, rhosts: session.attackTerminal.rhosts, executionLog: [...session.attackTerminal.executionLog], snmpValues: { ...session.attackTerminal.snmpValues }, containerRuntime: { ...session.attackTerminal.containerRuntime }, rangePhase: { ...session.attackTerminal.rangePhase }, rangeEvidence: [...(session.attackTerminal.rangeEvidence || [])] } : undefined,
     macTable: (session.macTable || []).map((entry) => ({ ...entry })),
     arpTable: (session.arpTable || []).map((entry) => ({ ...entry })),
     routingTable: (session.routingTable || []).map((entry) => ({ ...entry })),
@@ -485,7 +596,7 @@ export function applyCommand(session: Session, command: string, history: string[
   // Preserve configuration by context and setting, so later edits replace values.
   if (!['user', 'privileged'].includes(session.mode) && !/^(exit|end|interface |router ospf |ipv6 router ospf |vlan |line |ip dhcp pool )/.test(canonical)) {
     const scope = `${session.mode}:${session.context || 'global'}`;
-    const setting = canonical.match(/^(hostname|enable secret|ip domain-name|username \S+|transport input|login|password|wireless (?:channel|band|power)|dot11 ssid|switchport voice vlan|switchport port-security maximum|switchport port-security violation|spanning-tree vlan \d+ (?:priority|root)|ip route \S+ \S+|ipv6 route \S+|area \d+ stub|vpc domain|peer-keepalive destination|ip slb \S+)/)?.[1];
+    const setting = canonical.match(/^(hostname|enable secret|ip domain-name|username \S+|transport input|login|password|wireless (?:channel|band|power)|dot11 ssid|switchport voice vlan|switchport port-security maximum|switchport port-security violation|spanning-tree vlan [\d,-]+ (?:priority|root)|ip route \S+ \S+|ipv6 route \S+|area \d+ stub|vpc domain|peer-keepalive destination|ip slb \S+)/)?.[1];
     if (setting) next.settings![scope] = { ...next.settings![scope], [setting]: canonical.slice(setting.length).trim() || 'enabled' };
   }
 
@@ -499,11 +610,106 @@ export function applyCommand(session: Session, command: string, history: string[
     const scope = `line:${session.context}`;
     next.settings![scope] = { ...next.settings![scope], 'exec-timeout': canonical.slice(13) };
   }
+  // VTP revision bookkeeping: creating a VLAN or renaming one changes the
+  // VLAN database, so a server or transparent switch bumps its revision.
+  // A client cannot change the database at all — the command is a no-op
+  // (executeNetworkCommand surfaces the rejection message) and the
+  // session stays in global configuration, as on real IOS.
+  const vtpDefaults: VtpState = { mode: "server", domain: "", version: 1, password: "", revision: 0, lastModifiedBy: "0.0.0.0", lastModifiedAt: "0-0-00 00:00:00" };
+  const bumpVtpRevision = () => {
+    const current = next.vtp || vtpDefaults;
+    const updater = Object.entries(next.interfaces)
+      .map(([name, state]) => ({ vlan: Number(name.match(/^vlan (\d+)$/i)?.[1] || NaN), ip: state.ipv4[0]?.split(" ")[0] }))
+      .filter((entry) => Number.isFinite(entry.vlan) && entry.ip)
+      .sort((a, b) => a.vlan - b.vlan)[0];
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, "0");
+    next.vtp = {
+      ...current,
+      revision: current.revision + 1,
+      lastModifiedBy: updater?.ip || "0.0.0.0",
+      lastModifiedAt: `${now.getMonth() + 1}-${now.getDate()}-${String(now.getFullYear()).slice(2)} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`,
+    };
+  };
   if (session.mode === "config" && canonical.startsWith("vlan ")) {
-    next.vlans[canonical.slice(5)] = next.vlans[canonical.slice(5)] || "default";
+    const id = canonical.slice(5);
+    if ((session.vtp?.mode || "server") === "client") {
+      next.mode = "config";
+      next.context = null;
+    } else {
+      const isNew = !(id in next.vlans);
+      next.vlans[id] = next.vlans[id] || "default";
+      if (isNew) bumpVtpRevision();
+    }
   }
   if (session.mode === "vlan" && session.context && canonical.startsWith("name ")) {
-    next.vlans[session.context] = typed.slice("name ".length).trim();
+    const name = typed.slice("name ".length).trim();
+    if ((session.vtp?.mode || "server") !== "client" && next.vlans[session.context] !== name) {
+      next.vlans[session.context] = name;
+      bumpVtpRevision();
+    }
+  }
+  if (session.mode === "config" && canonical.startsWith("vtp ")) {
+    const current = next.vtp || vtpDefaults;
+    next.vtp = { ...current };
+    const mode = canonical.match(/^vtp mode (server|client|transparent)$/);
+    if (mode) next.vtp.mode = mode[1] as VtpMode;
+    const domain = canonical.match(/^vtp domain (\S+)$/);
+    if (domain) {
+      const name = typed.slice("vtp domain ".length).trim();
+      if (name !== current.domain) {
+        // Changing the domain resets the configuration revision, as on IOS.
+        next.vtp.domain = name;
+        next.vtp.revision = 0;
+        next.vtp.lastModifiedBy = "0.0.0.0";
+        next.vtp.lastModifiedAt = "0-0-00 00:00:00";
+      }
+    }
+    const version = canonical.match(/^vtp version ([12])$/);
+    if (version) next.vtp.version = Number(version[1]) as 1 | 2;
+    const password = canonical.match(/^vtp password (\S+)$/);
+    if (password) next.vtp.password = typed.slice("vtp password ".length).trim();
+  }
+  // Spanning-tree configuration is stored so `show spanning-tree` reflects
+  // the configured mode, per-VLAN priority/root, and edge-port settings.
+  // `spanning-tree mode mst` stays rejected by the grammar: MST is not
+  // modeled, the same way VTPv3 is rejected rather than pretended.
+  if (session.mode === "config" && canonical.startsWith("spanning-tree ")) {
+    const current = next.stp || { mode: "pvst" as StpMode, vlanPriority: {}, vlanRoot: {}, portfast: {}, bpduguard: {} };
+    next.stp = {
+      mode: current.mode,
+      vlanPriority: { ...current.vlanPriority },
+      vlanRoot: { ...current.vlanRoot },
+      portfast: { ...current.portfast },
+      bpduguard: { ...current.bpduguard },
+    };
+    const stpMode = canonical.match(/^spanning-tree mode (pvst|rapid-pvst)$/);
+    if (stpMode) next.stp.mode = stpMode[1] as StpMode;
+    const stpRoot = canonical.match(/^spanning-tree vlan ([\d,-]+) root (primary|secondary)$/);
+    if (stpRoot) {
+      // A VLAN range applies the root role to every VLAN in the range.
+      for (const id of Array.from(vlanMembers(stpRoot[1]))) {
+        next.stp.vlanRoot[String(id)] = stpRoot[2] as "primary" | "secondary";
+        next.stp.vlanPriority[String(id)] = stpRoot[2] === "primary" ? 24576 : 28672;
+      }
+    }
+    const stpPriority = canonical.match(/^spanning-tree vlan ([\d,-]+) priority (\d+)$/);
+    if (stpPriority) {
+      for (const id of Array.from(vlanMembers(stpPriority[1]))) next.stp.vlanPriority[String(id)] = Number(stpPriority[2]);
+    }
+  }
+  if ((session.mode === "interface" || session.mode === "subinterface") && session.context && canonical.startsWith("spanning-tree ")) {
+    const ifname = session.context.replace(/^port-channel(\d+)$/, "port-channel $1");
+    const current = next.stp || { mode: "pvst" as StpMode, vlanPriority: {}, vlanRoot: {}, portfast: {}, bpduguard: {} };
+    next.stp = {
+      mode: current.mode,
+      vlanPriority: { ...current.vlanPriority },
+      vlanRoot: { ...current.vlanRoot },
+      portfast: { ...current.portfast },
+      bpduguard: { ...current.bpduguard },
+    };
+    if (canonical === "spanning-tree portfast") next.stp.portfast[ifname] = true;
+    if (canonical === "spanning-tree bpduguard enable") next.stp.bpduguard[ifname] = true;
   }
   if (session.mode === "config" && canonical.startsWith("ip dhcp pool ")) {
     const name = canonical.slice("ip dhcp pool ".length).trim();

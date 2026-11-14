@@ -55,17 +55,19 @@ const save = (device: string): Action[] => [
   [device, 'privileged', 'show startup-config', 'Blue Team: verify saved controls', 'Confirm the simulated control remains after saving.'],
 ];
 
+const blueAssetSite = targetRangeSite(1, 'portal');
+seedTargetAccess(blueAssetSite, 'APPLICATION-DMZ', 'TRAINING-PORTAL APPROVED ASSET');
 const passiveRecon = build(1, 'blue-authorized-passive-recon', 'Blue Team: Authorized Asset Defense',
-  'Red Team operates under a written scope and uses only passive modeled evidence to inventory the assessment segment. Blue Team confirms the asset map and hardens the employee edge against unapproved identities. No scanning, exploitation, or traffic generation against real systems is included.',
-  standardTopology(1, 'Authorized Red Team assessment workstation', 'In-scope internal assessment service'), [
-    ['CE-SW1', 'privileged', 'show cdp neighbors detail', 'Red Team: collect modeled neighbor evidence', 'Use only the in-scope topology relationship evidence.'],
-    ['CE-SW1', 'privileged', 'show mac address-table', 'Red Team: record modeled Layer 2 identities', 'MAC data is an inventory clue, not personal attribution.'],
-    ['ASSESS-PC1', 'privileged', 'show ip interface brief', 'Red Team: validate assessment host address', 'Confirm that the simulator workstation is in the approved segment.'],
-    ['ASSESS-PC1', 'privileged', 'show arp', 'Red Team: inspect local neighbor evidence', 'Observe modeled ARP state without manipulating it.'],
+  'ATTACKER-KALI inventories the fictional training portal from the authorized assessment edge. Blue Team reviews the switch evidence and hardens that edge against unapproved identities. No external system is contacted.',
+  blueAssetSite.site, [
+    ['ATTACKER-KALI', 'shell', 'nmap -sV --version-light portal', 'Red Team: inventory the scoped portal', 'Use the synthetic target alias from the Linux console.'],
+    ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py portal', 'Red Team: record the portal asset', 'Capture the fictional VLAN, zone, and service identity.'],
+    ['CE-SW1', 'privileged', 'show cdp neighbors detail', 'Blue Team: collect modeled neighbor evidence', 'Use the in-scope topology relationship evidence.'],
+    ['CE-SW1', 'privileged', 'show mac address-table', 'Blue Team: record modeled Layer 2 identities', 'MAC data is an inventory clue, not personal attribution.'],
     ['CE-SW1', 'privileged', 'show interfaces status', 'Blue Team: review access-port baseline', 'Identify the dedicated assessment workstation edge.'],
     ['CE-SW1', 'privileged', 'configure terminal', 'Blue Team: enter endpoint hardening', 'Apply scoped controls only to the assessment port.'],
-    ['CE-SW1', 'config', 'interface g0/2', 'Blue Team: select assessment port', 'g0/2 is cabled to ASSESS-PC1.'],
-    ['CE-SW1', 'interface', 'description ASSESS-PC1 AUTHORIZED SCOPE', 'Blue Team: document authorized scope', 'A description preserves the approved assessment context.'],
+    ['CE-SW1', 'config', 'interface g0/2', 'Blue Team: select assessment port', 'g0/2 is cabled to ATTACKER-KALI.'],
+    ['CE-SW1', 'interface', 'description ATTACKER-KALI AUTHORIZED SCOPE', 'Blue Team: document authorized scope', 'A description preserves the approved assessment context.'],
     ['CE-SW1', 'interface', 'switchport mode access', 'Blue Team: enforce access mode', 'An assessment endpoint is not a trunk.'],
     ['CE-SW1', 'interface', 'switchport access vlan 10', 'Blue Team: retain assessment VLAN', 'Keep the authorized endpoint in its designated segment.'],
     ['CE-SW1', 'interface', 'switchport port-security', 'Blue Team: enable identity control', 'Enable the modeled access-edge control.'],
@@ -76,33 +78,41 @@ const passiveRecon = build(1, 'blue-authorized-passive-recon', 'Blue Team: Autho
     ...save('CE-SW1'),
   ], [requirement('CE-SW1', ['runningConfig'], ['switchport port-security maximum 1', 'switchport port-security mac-address sticky'], 'Authorized assessment port is protected')]);
 
+const blueWebSite = targetRangeSite(2, 'api');
+seedTargetAccess(blueWebSite, 'APPLICATION-DMZ', 'TRAINING-API APPROVED SERVICE');
 const webAssessment = build(2, 'blue-web-api-exposure-review', 'Blue Team: Web and API Exposure Review',
   'Red Team validates the modeled web-service exposure within scope; Blue Team enables the approved TLS listener and limits the service boundary with an explicit policy. This teaches evidence-driven web assessment, not payload delivery, exploitation, or credential attacks.',
-  standardTopology(2, 'Authorized application assessor', 'In-scope web and API service'), [
-    ['CE-R1', 'privileged', 'show ip http server secure-status', 'Red Team: inspect modeled TLS exposure', 'Read the simulator service state without attempting exploitation.'],
-    ['CE-R1', 'privileged', 'show ip interface brief', 'Red Team: validate service boundary address', 'Confirm the in-scope gateway interface.'],
-    ['CE-SW1', 'privileged', 'show mac address-table', 'Red Team: record service-path Layer 2 evidence', 'Use topology evidence to document the path.'],
+  blueWebSite.site, [
+    ['ATTACKER-KALI', 'shell', 'nmap -sV --version-light api', 'Red Team: inventory the scoped API', 'Use the fictional API alias from the Linux console.'],
+    ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py api', 'Red Team: document API scope', 'Record synthetic service and zone metadata.'],
+    ['CE-R1', 'privileged', 'show ip http server secure-status', 'Blue Team: inspect modeled TLS exposure', 'Read the simulator service state before changing policy.'],
+    ['CE-R1', 'privileged', 'show ip interface brief', 'Blue Team: validate service boundary address', 'Confirm the in-scope gateway interface.'],
+    ['CE-SW1', 'privileged', 'show mac address-table', 'Blue Team: record service-path Layer 2 evidence', 'Use topology evidence to document the path.'],
     ['CE-R1', 'privileged', 'configure terminal', 'Blue Team: enter service hardening', 'Publish only the approved encrypted listener.'],
     ['CE-R1', 'config', 'ip http secure-server', 'Blue Team: enable TLS listener', 'Use the modeled HTTPS service rather than plaintext service exposure.'],
     ['CE-R1', 'config', 'ip http secure-port 443', 'Blue Team: set approved HTTPS port', 'Document the standard encrypted service port.'],
     ['CE-R1', 'config', 'ip access-list extended ASSESS-HTTPS', 'Blue Team: create service policy', 'Create a named least-privilege policy.'],
-    ['CE-R1', 'acl', 'permit tcp any host 10.76.2.1', 'Blue Team: permit approved modeled service', 'The policy represents the approved in-scope service path.'],
+    ['CE-R1', 'acl', 'permit tcp any host 10.76.20.81 eq 443', 'Blue Team: permit approved modeled service', 'Permit the fictional API HTTPS listener, not an unrelated gateway address.'],
     ['CE-R1', 'acl', 'deny ip any any', 'Blue Team: deny other modeled traffic', 'Keep an explicit default deny in the instructional policy.'],
     ['CE-R1', 'acl', 'exit', 'Blue Team: return to global configuration', 'Attach the finished policy at the boundary.'],
     ['CE-R1', 'config', 'interface g0/0', 'Blue Team: select service boundary', 'Apply the policy at the routed edge.'],
     ['CE-R1', 'interface', 'ip access-group ASSESS-HTTPS in', 'Blue Team: attach service policy', 'Record the inbound policy attachment.'],
     ['CE-R1', 'interface', 'end', 'Blue Team: return to verification', 'Confirm both service and policy evidence.'],
-    ['CE-R1', 'privileged', 'show ip http server secure-status', 'Red Team: validate remediation evidence', 'Validate the intended TLS state inside the simulator.'],
+    ['CE-R1', 'privileged', 'show ip http server secure-status', 'Blue Team: validate remediation evidence', 'Validate the intended TLS state inside the simulator.'],
     ['CE-R1', 'privileged', 'show access-lists', 'Blue Team: review service policy', 'Review the permit and deny order.'],
     ...save('CE-R1'),
   ], [requirement('CE-R1', ['runningConfig'], ['ip http secure-server', 'ip http secure-port 443', 'ip access-group ASSESS-HTTPS in'], 'TLS service boundary hardened')]);
 
+const blueIdentitySite = targetRangeSite(3, 'bastion-1');
+seedTargetAccess(blueIdentitySite, 'MANAGEMENT', 'BASTION-01 APPROVED REMOTE ACCESS');
 const credentialDefense = build(3, 'blue-credential-access-review', 'Blue Team: Credential and Remote Access Review',
   'Red Team documents modeled remote-access exposure without guessing credentials or attempting login. Blue Team implements an SSH-only, locally authenticated administrative baseline and validates the saved policy.',
-  standardTopology(3, 'Authorized identity-assessment workstation', 'Identity and directory service'), [
-    ['CE-SW1', 'privileged', 'show users', 'Red Team: review console-session evidence', 'Do not treat this simulator output as real identity attribution.'],
-    ['CE-SW1', 'privileged', 'show running-config | section line vty', 'Red Team: review remote-access policy', 'Document current transport and authentication intent.'],
-    ['CE-SW1', 'privileged', 'show ip ssh', 'Red Team: review SSH status', 'Collect service evidence without performing authentication attempts.'],
+  blueIdentitySite.site, [
+    ['ATTACKER-KALI', 'shell', 'nmap -Pn -p 22 bastion-1', 'Red Team: inventory the scoped SSH listener', 'Use the fictional bastion alias without attempting login.'],
+    ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py bastion-1', 'Red Team: record remote-access scope', 'Capture the synthetic management-zone metadata.'],
+    ['CE-SW1', 'privileged', 'show users', 'Blue Team: review console-session evidence', 'Do not treat this simulator output as real identity attribution.'],
+    ['CE-SW1', 'privileged', 'show running-config | section line vty', 'Blue Team: review remote-access policy', 'Document current transport and authentication intent.'],
+    ['CE-SW1', 'privileged', 'show ip ssh', 'Blue Team: review SSH status', 'Collect service evidence without performing authentication attempts.'],
     ['CE-SW1', 'privileged', 'configure terminal', 'Blue Team: enter access hardening', 'Apply the approved administration baseline.'],
     ['CE-SW1', 'config', 'ip domain-name assessment.example', 'Blue Team: set management domain', 'Record the SSH domain prerequisite.'],
     ['CE-SW1', 'config', 'username blueadmin privilege 15 secret TRAINING-ONLY-MT6', 'Blue Team: create simulator administrator', 'This value is simulator-only and must never be used in production.'],
@@ -112,38 +122,46 @@ const credentialDefense = build(3, 'blue-credential-access-review', 'Blue Team: 
     ['CE-SW1', 'line', 'transport input ssh', 'Blue Team: restrict to SSH', 'Exclude Telnet from the baseline.'],
     ['CE-SW1', 'line', 'exec-timeout 5 0', 'Blue Team: set idle timeout', 'Reduce unattended-session exposure.'],
     ['CE-SW1', 'line', 'end', 'Blue Team: return to verification', 'Review remote-access evidence.'],
-    ['CE-SW1', 'privileged', 'show running-config | section line vty', 'Red Team: validate remediated policy', 'Confirm SSH-only and local-login intent.'],
+    ['CE-SW1', 'privileged', 'show running-config | section line vty', 'Blue Team: validate remediated policy', 'Confirm SSH-only and local-login intent.'],
     ['CE-SW1', 'privileged', 'show running-config | section username', 'Blue Team: validate account intent', 'Inspect configuration rather than attempting a login.'],
     ...save('CE-SW1'),
   ], [requirement('CE-SW1', ['settings', 'line:line vty 0 4', 'transport input'], 'ssh', 'Remote access is SSH only'), requirement('CE-SW1', ['settings', 'line:line vty 0 4', 'login'], 'local', 'Remote access requires local authentication')]);
 
+const blueSegmentationSite = targetRangeSite(4, 'cam-1', true);
+seedTargetAccess(blueSegmentationSite, 'PHYSICAL-SECURITY', 'CAM-01 APPROVED SEGMENTATION');
 const lateralMovement = build(4, 'blue-lateral-movement-controls', 'Blue Team: Lateral Movement Control Validation',
   'Red Team uses the modeled topology and trunk state to document a potential lateral-movement path. Blue Team hardens the user access edge and confirms that endpoint ports cannot become modeled trunks. No pivoting, credential access, or lateral movement is executed.',
-  standardTopology(4, 'Authorized lateral-path assessor', 'In-scope internal service', true), [
-    ['CE-SW1', 'privileged', 'show cdp neighbors', 'Red Team: inventory network-capable peers', 'Use only the approved modeled topology.'],
-    ['CE-SW1', 'privileged', 'show interfaces trunk', 'Red Team: inspect allowed VLAN paths', 'Document trunk evidence without attempting VLAN traversal.'],
-    ['CE-SW2', 'privileged', 'show vlan brief', 'Red Team: inspect endpoint VLAN membership', 'Confirm the assessment host remains on its assigned VLAN.'],
+  blueSegmentationSite.site, [
+    ['ATTACKER-KALI', 'shell', 'nmap -sV --version-light cam-1', 'Red Team: inventory the scoped camera', 'Use the fictional IoT alias from the Linux console.'],
+    ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py cam-1', 'Red Team: record segmentation scope', 'Capture the synthetic camera VLAN and zone.'],
+    ['CE-SW1', 'privileged', 'show cdp neighbors', 'Blue Team: inventory network-capable peers', 'Use only the approved modeled topology.'],
+    ['CE-SW1', 'privileged', 'show interfaces trunk', 'Blue Team: inspect allowed VLAN paths', 'Document trunk evidence without attempting VLAN traversal.'],
+    ['CE-SW2', 'privileged', 'show vlan brief', 'Blue Team: inspect endpoint VLAN membership', 'Confirm the assessment host remains on its assigned VLAN.'],
     ['CE-SW2', 'privileged', 'show interfaces g0/2 switchport', 'Blue Team: inspect user-edge configuration', 'Review the endpoint port before making changes.'],
     ['CE-SW2', 'privileged', 'configure terminal', 'Blue Team: enter edge hardening', 'Apply the explicit access-port baseline.'],
-    ['CE-SW2', 'config', 'interface g0/2', 'Blue Team: select assessment endpoint edge', 'g0/2 connects to ASSESS-PC1.'],
-    ['CE-SW2', 'interface', 'description ASSESS-PC1 SEGMENTED ACCESS', 'Blue Team: document segment ownership', 'Make the security boundary visible to operators.'],
+    ['CE-SW2', 'config', 'interface g0/2', 'Blue Team: select assessment endpoint edge', 'g0/2 connects to ATTACKER-KALI.'],
+    ['CE-SW2', 'interface', 'description ATTACKER-KALI SEGMENTED ACCESS', 'Blue Team: document segment ownership', 'Make the security boundary visible to operators.'],
     ['CE-SW2', 'interface', 'switchport mode access', 'Blue Team: force access mode', 'Prevent the endpoint edge from acting as a modeled trunk.'],
     ['CE-SW2', 'interface', 'switchport access vlan 10', 'Blue Team: restore assessment VLAN', 'Keep the endpoint in its authorized segment.'],
     ['CE-SW2', 'interface', 'spanning-tree portfast', 'Blue Team: configure endpoint PortFast', 'Use PortFast only on the endpoint edge.'],
     ['CE-SW2', 'interface', 'spanning-tree bpduguard enable', 'Blue Team: enable BPDU Guard', 'Guard against unexpected bridge behavior on the endpoint port.'],
     ['CE-SW2', 'interface', 'end', 'Blue Team: return to verification', 'Confirm the final edge state.'],
-    ['CE-SW2', 'privileged', 'show interfaces g0/2 switchport', 'Red Team: validate access-only evidence', 'Use the evidence to validate remediation, not to bypass it.'],
+    ['CE-SW2', 'privileged', 'show interfaces g0/2 switchport', 'Blue Team: validate access-only evidence', 'Use the evidence to validate remediation, not to bypass it.'],
     ['CE-SW2', 'privileged', 'show mac address-table', 'Blue Team: review endpoint learning', 'Confirm the modeled endpoint is learned on the expected edge.'],
     ...save('CE-SW2'),
   ], [requirement('CE-SW2', ['interfaces', 'g0/2', 'switchportMode'], 'access', 'Assessment edge is access only'), requirement('CE-SW2', ['interfaces', 'g0/2', 'accessVlan'], 10, 'Assessment edge remains in VLAN 10')]);
 
+const blueRoutingSite = targetRangeSite(5, 'monitor-1');
+seedTargetAccess(blueRoutingSite, 'OPERATIONS-SERVICES', 'MONITOR-01 APPROVED ROUTING REVIEW');
 const capstone = build(5, 'blue-routing-incident-capstone', 'Blue Team: Routing Incident Capstone',
   'Red Team provides a simulated routing-control finding from the authorized lab; Blue Team constrains OSPF participation and adds authentication intent. Together, both teams validate evidence, controls, and reporting-quality configuration state. No route injection is performed.',
-  standardTopology(5, 'Authorized Purple Team assessment workstation', 'In-scope monitoring and evidence service'), [
-    ['CE-R1', 'privileged', 'show ip ospf', 'Red Team: inspect routing process evidence', 'Document modeled process state and scope.'],
-    ['CE-R1', 'privileged', 'show ip ospf interface brief', 'Red Team: identify participating interfaces', 'Use the simulator control-plane evidence only.'],
-    ['CE-R1', 'privileged', 'show ip ospf neighbor', 'Red Team: inspect adjacency evidence', 'Do not attempt to establish unapproved adjacencies.'],
-    ['CE-R1', 'privileged', 'show ip ospf database', 'Red Team: review modeled LSDB evidence', 'Use LSDB evidence to formulate a defensive finding.'],
+  blueRoutingSite.site, [
+    ['ATTACKER-KALI', 'shell', 'nmap -sV --version-light monitor-1', 'Red Team: inventory the scoped monitor', 'Use the fictional operations alias from the Linux console.'],
+    ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py monitor-1', 'Red Team: record control-plane scope', 'Capture the synthetic monitor identity and zone.'],
+    ['CE-R1', 'privileged', 'show ip ospf', 'Blue Team: inspect routing process evidence', 'Document modeled process state and scope.'],
+    ['CE-R1', 'privileged', 'show ip ospf interface brief', 'Blue Team: identify participating interfaces', 'Use the simulator control-plane evidence only.'],
+    ['CE-R1', 'privileged', 'show ip ospf neighbor', 'Blue Team: inspect adjacency evidence', 'Do not attempt to establish unapproved adjacencies.'],
+    ['CE-R1', 'privileged', 'show ip ospf database', 'Blue Team: review modeled LSDB evidence', 'Use LSDB evidence to formulate a defensive finding.'],
     ['CE-R1', 'privileged', 'configure terminal', 'Blue Team: enter routing hardening', 'Constrain the authorization boundary in the modeled process.'],
     ['CE-R1', 'config', 'router ospf 1', 'Blue Team: select OSPF process', 'Apply process-level safeguards.'],
     ['CE-R1', 'router', 'router-id 10.76.5.1', 'Blue Team: assign stable router ID', 'Use a documented deterministic identifier.'],
@@ -153,7 +171,7 @@ const capstone = build(5, 'blue-routing-incident-capstone', 'Blue Team: Routing 
     ['CE-R1', 'config', 'interface g0/0', 'Blue Team: select authorized transit interface', 'Apply the modeled OSPF authentication control.'],
     ['CE-R1', 'interface', 'ip ospf authentication message-digest', 'Blue Team: require message-digest intent', 'The simulator records protocol-control intent; it does not manage shared keys.'],
     ['CE-R1', 'interface', 'end', 'Blue Team: return to verification', 'Review the final Purple Team evidence.'],
-    ['CE-R1', 'privileged', 'show ip ospf interface brief', 'Red Team: validate remediation evidence', 'Check the modeled interface participation after hardening.'],
+    ['CE-R1', 'privileged', 'show ip ospf interface brief', 'Blue Team: validate remediation evidence', 'Check the modeled interface participation after hardening.'],
     ['CE-R1', 'privileged', 'show running-config | section router ospf', 'Blue Team: review final process policy', 'Confirm the passive-default and scoped network intent.'],
     ['CE-R1', 'privileged', 'show ip ospf database', 'Purple Team: document post-change evidence', 'Capture the modeled control-plane state for the training report.'],
     ...save('CE-R1'),
@@ -274,12 +292,14 @@ function targetRangeSite(tranche: number, targetId: keyof typeof simulatedTarget
 
 function seedTargetAccess(site: ReturnType<typeof targetRangeSite>, vlanName: string, description: string) {
   const { target } = site;
-  site.site.commands['CE-SW1'].push(
+  const cable = site.site.topology.links.find(link => link.id === 'server-access')!;
+  const switchName = site.site.topology.devices.find(device => device.id === cable.from)!.name;
+  site.site.commands[switchName].push(
     'configure terminal',
     `vlan ${target.vlan}`,
     `name ${vlanName}`,
     'exit',
-    'interface g0/3',
+    `interface ${cable.fromPort}`,
     'switchport mode access',
     `switchport access vlan ${target.vlan}`,
     `description ${description}`,
@@ -361,16 +381,16 @@ const redControlPlaneSimulation = build(5, 'red-pentest-control-plane', 'Red Tea
   ], [requirement('CE-R1', ['runningConfig'], ['description MONITOR-01 CONTROL PLANE FINDING REVIEWED'], 'Control-plane simulation finding documented')], 3);
 
 const vlanHoppingSite = targetRangeSite(1, 'cam-1', true);
-vlanHoppingSite.site.commands['CE-SW1'].push('configure terminal', 'vlan 50', 'name PHYSICAL-SECURITY', 'exit', 'interface g0/3', 'switchport access vlan 50', 'description CAM-01 SYNTHETIC VLAN BOUNDARY', 'end');
+seedTargetAccess(vlanHoppingSite, 'PHYSICAL-SECURITY', 'CAM-01 SYNTHETIC VLAN BOUNDARY');
 const vlanHoppingSimulation = build(1, 'purple-vlan-boundary', 'Purple Team Simulation: CAM-01 VLAN Boundary',
   `A deliberately modeled VLAN-boundary condition protects ${vlanHoppingSite.target.name} (${vlanHoppingSite.target.address}) in ${vlanHoppingSite.target.zone}. Red Team collects trunk and endpoint evidence. Blue Team hardens the native VLAN and endpoint mode, then both teams verify the control. No double-tagging, frame crafting, or bypass traffic is generated.`,
   vlanHoppingSite.site, [
     ['ATTACKER-KALI', 'shell', 'nmap -sV --version-light cam-1', 'Red Team: inventory CAM-01 synthetic service', 'Collect scoped service metadata from the Linux attack console.'],
     ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py cam-1', 'Red Team: record CAM-01 target context', 'Capture fictional VLAN and zone data before Blue Team changes.'],
-    ['CE-SW1', 'privileged', 'show interfaces trunk', 'Red Team: inspect CAM-01 transit evidence', 'Record native VLAN and allowed-VLAN state from the synthetic topology.'],
-    ['CE-SW1', 'privileged', 'show vlan brief', 'Red Team: inspect CAM-01 membership', 'Confirm that CAM-01 is modeled in VLAN 50.'],
-    ['CE-SW2', 'privileged', 'show interfaces g0/3 switchport', 'Red Team: inspect the peer endpoint edge', 'Use switchport evidence, not crafted traffic.'],
-    ['CE-SW2', 'privileged', 'show mac address-table', 'Red Team: record CAM-01 Layer 2 placement', 'Source-MAC learning is a topology clue only.'],
+    ['CE-SW1', 'privileged', 'show interfaces trunk', 'Blue Team: inspect CAM-01 transit evidence', 'Record native VLAN and allowed-VLAN state from the synthetic topology.'],
+    ['CE-SW1', 'privileged', 'show vlan brief', 'Blue Team: inspect CAM-01 membership', 'Confirm that CAM-01 is modeled in VLAN 50.'],
+    ['CE-SW2', 'privileged', 'show interfaces g0/3 switchport', 'Blue Team: inspect the peer endpoint edge', 'Use switchport evidence, not crafted traffic.'],
+    ['CE-SW2', 'privileged', 'show mac address-table', 'Blue Team: record CAM-01 Layer 2 placement', 'Source-MAC learning is a topology clue only.'],
     ['CE-SW1', 'privileged', 'configure terminal', 'Blue Team: enter trunk hardening', 'Apply a safe modeled boundary control.'],
     ['CE-SW1', 'config', 'vlan 999', 'Blue Team: reserve unused native VLAN', 'Create an unused VLAN for native-frame hygiene.'],
     ['CE-SW1', 'vlan', 'name UNUSED-NATIVE', 'Blue Team: label native VLAN', 'Make the unused role clear to operators.'],
@@ -391,10 +411,10 @@ const dhcpIntegritySimulation = build(2, 'purple-dhcp-integrity', 'Purple Team S
   dhcpSite.site, [
     ['ATTACKER-KALI', 'shell', 'nmap -sV --version-light sensor-1', 'Red Team: inventory SENSOR-01 synthetic service', 'Use the fictional facilities-IoT target alias.'],
     ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py sensor-1', 'Red Team: record SENSOR-01 target context', 'Capture deterministic asset metadata before remediation.'],
-    ['CE-SW1', 'privileged', 'show ip dhcp server statistics', 'Red Team: inspect synthetic lease telemetry', 'Use pre-generated simulator telemetry; do not generate DHCP requests.'],
-    ['CE-SW1', 'privileged', 'show ip dhcp binding', 'Red Team: review modeled bindings', 'Record current binding evidence for the report.'],
-    ['CE-SW1', 'privileged', 'show interfaces status', 'Red Team: inspect SENSOR-01 edge', 'Identify the synthetic IoT port and status.'],
-    ['CE-SW1', 'privileged', 'show running-config interface g0/3', 'Red Team: confirm target association', 'Confirm the port label links the evidence to SENSOR-01.'],
+    ['CE-SW1', 'privileged', 'show ip dhcp server statistics', 'Blue Team: inspect synthetic lease telemetry', 'Use pre-generated simulator telemetry; do not generate DHCP requests.'],
+    ['CE-SW1', 'privileged', 'show ip dhcp binding', 'Blue Team: review modeled bindings', 'Record current binding evidence for the report.'],
+    ['CE-SW1', 'privileged', 'show interfaces status', 'Blue Team: inspect SENSOR-01 edge', 'Identify the synthetic IoT port and status.'],
+    ['CE-SW1', 'privileged', 'show running-config interface g0/3', 'Blue Team: confirm target association', 'Confirm the port label links the evidence to SENSOR-01.'],
     ['CE-SW1', 'privileged', 'configure terminal', 'Blue Team: enter DHCP integrity controls', 'Enable the modeled Layer 2 protection.'],
     ['CE-SW1', 'config', 'ip dhcp snooping', 'Blue Team: enable DHCP snooping', 'Enable deterministic DHCP source validation.'],
     ['CE-SW1', 'config', 'ip dhcp snooping vlan 60', 'Blue Team: protect Facilities IoT VLAN', 'Bind snooping policy to SENSOR-01 VLAN 60.'],
@@ -412,10 +432,10 @@ const arpIntegritySimulation = build(3, 'purple-arp-integrity', 'Purple Team Sim
   arpSite.site, [
     ['ATTACKER-KALI', 'shell', 'nmap -sV --version-light badge-1', 'Red Team: inventory BADGE-01 synthetic service', 'Collect scoped badge-controller metadata from ATTACKER-KALI.'],
     ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py badge-1', 'Red Team: record BADGE-01 target context', 'Use the in-app dataset only.'],
-    ['CE-SW1', 'privileged', 'show arp', 'Red Team: review synthetic ARP evidence', 'Observe the modeled neighbor table only.'],
-    ['CE-SW1', 'privileged', 'show mac address-table', 'Red Team: record BADGE-01 Layer 2 location', 'Use learned MAC evidence to document the affected edge.'],
-    ['CE-SW1', 'privileged', 'show vlan brief', 'Red Team: confirm physical-security VLAN', 'Confirm the target belongs to VLAN 50.'],
-    ['CE-SW1', 'privileged', 'show running-config interface g0/3', 'Red Team: confirm synthetic alert scope', 'The device label establishes a fictional training condition.'],
+    ['CE-SW1', 'privileged', 'show arp', 'Blue Team: review synthetic ARP evidence', 'Observe the modeled neighbor table only.'],
+    ['CE-SW1', 'privileged', 'show mac address-table', 'Blue Team: record BADGE-01 Layer 2 location', 'Use learned MAC evidence to document the affected edge.'],
+    ['CE-SW1', 'privileged', 'show vlan brief', 'Blue Team: confirm physical-security VLAN', 'Confirm the target belongs to VLAN 50.'],
+    ['CE-SW1', 'privileged', 'show running-config interface g0/3', 'Blue Team: confirm synthetic alert scope', 'The device label establishes a fictional training condition.'],
     ['CE-SW1', 'privileged', 'configure terminal', 'Blue Team: enter ARP integrity controls', 'Apply the deterministic inspection baseline.'],
     ['CE-SW1', 'config', 'ip dhcp snooping', 'Blue Team: enable binding source', 'DHCP snooping provides modeled binding evidence.'],
     ['CE-SW1', 'config', 'ip dhcp snooping vlan 50', 'Blue Team: protect VLAN 50 bindings', 'Limit binding validation to the physical-security segment.'],
@@ -434,10 +454,10 @@ const otSegmentationSimulation = build(4, 'purple-ot-segmentation', 'Purple Team
   otSite.site, [
     ['ATTACKER-KALI', 'shell', 'nmap -sV --version-light cam-1', 'Red Team: inventory OT-adjacent camera service', 'Collect synthetic service evidence without OT protocol interaction.'],
     ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py cam-1', 'Red Team: record OT target context', 'Capture fictional zone and safety context.'],
-    ['CE-SW1', 'privileged', 'show vlan brief', 'Red Team: identify CAM-01 security zone', 'Record the dedicated physical-security VLAN.'],
-    ['CE-SW1', 'privileged', 'show mac address-table', 'Red Team: locate CAM-01', 'Use modeled MAC learning to identify the local edge.'],
-    ['CE-R1', 'privileged', 'show ip interface brief', 'Red Team: review routed boundary', 'Document the gateway boundary without sending OT traffic.'],
-    ['CE-R1', 'privileged', 'show access-lists', 'Red Team: inspect existing IT/OT policy', 'Record policy evidence for the finding.'],
+    ['CE-SW1', 'privileged', 'show vlan brief', 'Blue Team: identify CAM-01 security zone', 'Record the dedicated physical-security VLAN.'],
+    ['CE-SW1', 'privileged', 'show mac address-table', 'Blue Team: locate CAM-01', 'Use modeled MAC learning to identify the local edge.'],
+    ['CE-R1', 'privileged', 'show ip interface brief', 'Blue Team: review routed boundary', 'Document the gateway boundary without sending OT traffic.'],
+    ['CE-R1', 'privileged', 'show access-lists', 'Blue Team: inspect existing IT/OT policy', 'Record policy evidence for the finding.'],
     ['CE-R1', 'privileged', 'configure terminal', 'Blue Team: enter OT boundary hardening', 'Create a least-privilege modeled policy.'],
     ['CE-R1', 'config', 'ip access-list extended OT-BOUNDARY', 'Blue Team: define OT boundary policy', 'Create the named boundary policy.'],
     ['CE-R1', 'acl', 'deny ip any host 10.76.50.21', 'Blue Team: block unapproved IT-to-CAM-01 path', 'Model a deny for unapproved access to the fictional camera.'],
@@ -451,16 +471,17 @@ const otSegmentationSimulation = build(4, 'purple-ot-segmentation', 'Purple Team
   ], [requirement('CE-R1', ['runningConfig'], ['ip access-group OT-BOUNDARY in'], 'CAM-01 has an IT/OT policy boundary')], 4);
 
 const apiSite = targetRangeSite(5, 'api');
+seedTargetAccess(apiSite, 'APPLICATION-DMZ', 'TRAINING-API SYNTHETIC AUTHZ REVIEW');
 apiSite.site.commands['CE-R1'].push('configure terminal', 'ip http secure-server', 'ip http secure-port 443', 'interface g0/0', 'description TRAINING-API SYNTHETIC AUTHZ REVIEW', 'end');
 const apiBoundarySimulation = build(5, 'purple-api-boundary', 'Purple Team Simulation: training-api.example Boundary',
   `The fictional ${apiSite.target.name} (${apiSite.target.address}) is a deterministic API-boundary training asset. Red Team reviews the modeled TLS and policy context, then stops at a documented authorization finding. Blue Team publishes an explicit boundary ACL. No IDOR attempts, token manipulation, JWT forging, requests, or payloads are performed.`,
   apiSite.site, [
     ['ATTACKER-KALI', 'shell', 'nmap -sV --version-light api', 'Red Team: inventory training API service', 'Use the fictional API alias from the Linux console.'],
     ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py api', 'Red Team: record API target context', 'Capture synthetic authorization-boundary metadata.'],
-    ['CE-R1', 'privileged', 'show ip http server secure-status', 'Red Team: inspect API TLS intent', 'Review the modeled HTTPS listener only.'],
-    ['CE-R1', 'privileged', 'show ip interface brief', 'Red Team: record API boundary address', 'Confirm the fictional API network context.'],
-    ['CE-R1', 'privileged', 'show access-lists', 'Red Team: inspect API policy baseline', 'Read existing configuration evidence without API interaction.'],
-    ['CE-SW1', 'privileged', 'show mac address-table', 'Red Team: record API path evidence', 'Use Layer 2 evidence for a scoped report.'],
+    ['CE-R1', 'privileged', 'show ip http server secure-status', 'Blue Team: inspect API TLS intent', 'Review the modeled HTTPS listener only.'],
+    ['CE-R1', 'privileged', 'show ip interface brief', 'Blue Team: record API boundary address', 'Confirm the fictional API network context.'],
+    ['CE-R1', 'privileged', 'show access-lists', 'Blue Team: inspect API policy baseline', 'Read existing configuration evidence without API interaction.'],
+    ['CE-SW1', 'privileged', 'show mac address-table', 'Blue Team: record API path evidence', 'Use Layer 2 evidence for a scoped report.'],
     ['CE-R1', 'privileged', 'configure terminal', 'Blue Team: enter API boundary hardening', 'Create a deterministic permit-and-deny policy.'],
     ['CE-R1', 'config', 'ip http rate-limit 60', 'Blue Team: model API rate limit', 'Record a deterministic request-rate policy in the simulator; no requests are generated.'],
     ['CE-R1', 'config', 'ip http authentication token-required', 'Blue Team: require modeled API token', 'Record token-enforcement intent without issuing, manipulating, or testing credentials.'],
@@ -483,10 +504,10 @@ const ransomwareRecoverySimulation = build(5, 'purple-ransomware-recovery', 'Pur
   ransomwareSite.site, [
     ['ATTACKER-KALI', 'shell', 'nmap -sV --version-light printer-1', 'Red Team: inventory PRINT-01 synthetic service', 'Collect scoped printer-service metadata without print interaction.'],
     ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py printer-1', 'Red Team: record PRINT-01 target context', 'Use the fictional recovery-drill dataset only.'],
-    ['CE-SW1', 'privileged', 'show interfaces status', 'Red Team: inspect PRINT-01 edge baseline', 'Use pre-generated alert context, not malware execution.'],
-    ['CE-SW1', 'privileged', 'show mac address-table', 'Red Team: record PRINT-01 identity evidence', 'Capture modeled Layer 2 placement for the incident report.'],
-    ['CE-SW1', 'privileged', 'show vlan brief', 'Red Team: confirm shared-services scope', 'Confirm the target belongs to VLAN 70.'],
-    ['CE-SW1', 'privileged', 'show running-config interface g0/3', 'Red Team: validate synthetic alert marker', 'The port description establishes a fictional recovery drill.'],
+    ['CE-SW1', 'privileged', 'show interfaces status', 'Blue Team: inspect PRINT-01 edge baseline', 'Use pre-generated alert context, not malware execution.'],
+    ['CE-SW1', 'privileged', 'show mac address-table', 'Blue Team: record PRINT-01 identity evidence', 'Capture modeled Layer 2 placement for the incident report.'],
+    ['CE-SW1', 'privileged', 'show vlan brief', 'Blue Team: confirm shared-services scope', 'Confirm the target belongs to VLAN 70.'],
+    ['CE-SW1', 'privileged', 'show running-config interface g0/3', 'Blue Team: validate synthetic alert marker', 'The port description establishes a fictional recovery drill.'],
     ['CE-SW1', 'privileged', 'configure terminal', 'Blue Team: enter containment workflow', 'Isolate only the fictional training endpoint.'],
     ['CE-SW1', 'config', 'interface g0/3', 'Blue Team: select PRINT-01 edge', 'g0/3 is the modeled shared-service device edge.'],
     ['CE-SW1', 'interface', 'shutdown', 'Blue Team: isolate synthetic incident endpoint', 'Contain the simulated event without touching real systems.'],
@@ -506,7 +527,7 @@ const legacyServiceRetirementSimulation = build(1, 'purple-legacy-service-retire
   legacyServiceSite.site, [
     ['ATTACKER-KALI', 'shell', 'nmap -sV --version-light legacy-ftp-1', 'Red Team: inventory legacy-service exposure', 'Run the real Nmap-shaped command from the synthetic Linux attack workstation.'],
     ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py legacy-ftp-1', 'Red Team: document legacy-service scope', 'Use the synthetic Linux reporting script to capture approved asset metadata.'],
-    ['CE-SW1', 'privileged', 'show vlan brief', 'Red Team: record legacy-service placement', 'Confirm the dedicated legacy-services VLAN.'],
+    ['CE-SW1', 'privileged', 'show vlan brief', 'Blue Team: record legacy-service placement', 'Confirm the dedicated legacy-services VLAN.'],
     ['CE-R1', 'privileged', 'configure terminal', 'Blue Team: enter retirement control workflow', 'Create an explicit modeled policy for the retired service.'],
     ['CE-R1', 'config', 'ip access-list extended LEGACY-FTP-RETIRED', 'Blue Team: define retirement boundary', 'Create a named policy for the fictional target.'],
     ['CE-R1', 'acl', 'deny ip any host 10.76.80.21', 'Blue Team: deny retired service access', 'Block all modeled access to the retired service address.'],
@@ -526,7 +547,7 @@ const fileAccessSimulation = build(2, 'purple-file-access-policy', 'Purple Team 
   fileAccessSite.site, [
     ['ATTACKER-KALI', 'shell', 'nmap -sV --version-light file-1', 'Red Team: inventory shared-file service', 'Run the real Nmap-shaped command from the synthetic Linux attack workstation.'],
     ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py file-1', 'Red Team: document shared-service scope', 'Use the synthetic Linux reporting script; no share connection is made.'],
-    ['CE-SW1', 'privileged', 'show mac address-table', 'Red Team: record FILE-01 edge evidence', 'Use modeled Layer 2 placement for the report.'],
+    ['CE-SW1', 'privileged', 'show mac address-table', 'Blue Team: record FILE-01 edge evidence', 'Use modeled Layer 2 placement for the report.'],
     ['CE-R1', 'privileged', 'configure terminal', 'Blue Team: enter shared-service hardening', 'Publish an explicit approved-source policy.'],
     ['CE-R1', 'config', 'ip access-list extended FILE-01-APPROVED', 'Blue Team: define approved file-service path', 'Create the named synthetic service policy.'],
     ['CE-R1', 'acl', 'permit ip host 10.76.2.20 host 10.76.70.60', 'Blue Team: permit assessment path', 'Represent the approved training path only.'],
@@ -547,7 +568,7 @@ const remoteAdministrationSimulation = build(3, 'purple-remote-administration-hy
   bastionSite.site, [
     ['ATTACKER-KALI', 'shell', 'nmap -Pn -p 22 bastion-1', 'Red Team: inventory remote-administration surface', 'Run the real Nmap-shaped command from the synthetic Linux attack workstation.'],
     ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py bastion-1', 'Red Team: document privileged-access scope', 'Use the synthetic Linux reporting script to capture boundary metadata.'],
-    ['CE-SW1', 'privileged', 'show running-config | section line vty', 'Red Team: inspect administrative access baseline', 'Read VTY configuration without attempting authentication.'],
+    ['CE-SW1', 'privileged', 'show running-config | section line vty', 'Blue Team: inspect administrative access baseline', 'Read VTY configuration without attempting authentication.'],
     ['CE-SW1', 'privileged', 'configure terminal', 'Blue Team: enter remote-administration hardening', 'Apply the SSH-only administrative baseline.'],
     ['CE-SW1', 'config', 'line vty 0 4', 'Blue Team: select remote terminal lines', 'Harden the modeled remote administration plane.'],
     ['CE-SW1', 'line', 'login local', 'Blue Team: require local authentication', 'Require the modeled approved account policy.'],
@@ -565,7 +586,7 @@ const directoryTrustSimulation = build(4, 'purple-directory-trust-boundary', 'Pu
   directorySite.site, [
     ['ATTACKER-KALI', 'shell', 'nmap -Pn -p 88,389 kdc-1', 'Red Team: inventory identity-service surface', 'Run the real Nmap-shaped command from the synthetic Linux attack workstation.'],
     ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py kdc-1', 'Red Team: document directory trust scope', 'Use the synthetic Linux reporting script; no directory query occurs.'],
-    ['CE-SW2', 'privileged', 'show interfaces trunk', 'Red Team: record identity transit evidence', 'Document the modeled path without attempting traversal.'],
+    ['CE-SW2', 'privileged', 'show interfaces trunk', 'Blue Team: record identity transit evidence', 'Document the modeled path without attempting traversal.'],
     ['CE-R1', 'privileged', 'configure terminal', 'Blue Team: enter identity-boundary hardening', 'Create a restrictive policy for the fictional directory service.'],
     ['CE-R1', 'config', 'ip access-list extended KDC-01-TRUST', 'Blue Team: define directory trust policy', 'Create an explicit named boundary.'],
     ['CE-R1', 'acl', 'permit ip host 10.76.99.20 host 10.76.30.11', 'Blue Team: permit management review path', 'Represent the approved management source.'],
@@ -586,7 +607,7 @@ const authenticationAnomalySimulation = build(5, 'purple-authentication-anomaly'
   cacheSite.site, [
     ['ATTACKER-KALI', 'shell', 'nmap -Pn -p 8443 cache-1', 'Red Team: inventory application-service surface', 'Run the real Nmap-shaped command from the synthetic Linux attack workstation.'],
     ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py cache-1', 'Red Team: document authentication-anomaly context', 'Use the synthetic Linux reporting script to preserve the alert context.'],
-    ['CE-R1', 'privileged', 'show ip http server secure-status', 'Red Team: inspect modeled service baseline', 'Review the current simulator listener policy.'],
+    ['CE-R1', 'privileged', 'show ip http server secure-status', 'Blue Team: inspect modeled service baseline', 'Review the current simulator listener policy.'],
     ['CE-R1', 'privileged', 'configure terminal', 'Blue Team: enter anomaly-containment workflow', 'Apply deterministic service controls without producing traffic.'],
     ['CE-R1', 'config', 'ip http secure-server', 'Blue Team: require modeled TLS service', 'Enable the approved encrypted listener.'],
     ['CE-R1', 'config', 'ip http rate-limit 60', 'Blue Team: apply modeled rate policy', 'Record a request-rate limit in simulator state.'],
@@ -610,7 +631,7 @@ const dnsInventorySimulation = build(5, 'purple-dns-service-inventory', 'Purple 
   dnsSite.site, [
     ['ATTACKER-KALI', 'shell', 'nmap -sV --version-light dns-1', 'Red Team: inventory naming-service exposure', 'Run the real Nmap-shaped command from the synthetic Linux attack workstation.'],
     ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py dns-1', 'Red Team: document naming-service scope', 'Use the synthetic Linux reporting script; no DNS query is made.'],
-    ['CE-SW1', 'privileged', 'show interfaces status', 'Red Team: record DNS-01 edge baseline', 'Capture modeled port state for the assessment report.'],
+    ['CE-SW1', 'privileged', 'show interfaces status', 'Blue Team: record DNS-01 edge baseline', 'Capture modeled port state for the assessment report.'],
     ['CE-R1', 'privileged', 'configure terminal', 'Blue Team: enter naming-service hardening', 'Create a least-privilege modeled boundary.'],
     ['CE-R1', 'config', 'ip access-list extended DNS-01-MANAGEMENT', 'Blue Team: define naming-service policy', 'Create the explicit approved source policy.'],
     ['CE-R1', 'acl', 'permit ip host 10.76.99.20 host 10.76.40.53', 'Blue Team: permit management path', 'Represent the approved management route only.'],
@@ -637,7 +658,7 @@ const containerRuntimeSimulation = build(5, 'purple-container-runtime-boundary',
     ['ATTACKER-KALI', 'shell', 'set RHOSTS container-api-1', 'Red Team: set fictional container target', 'RHOSTS accepts only a fictional range alias, never an external address or hostname.'],
     ['ATTACKER-KALI', 'shell', 'run', 'Red Team: execute modeled module workflow', 'The synthetic range records deterministic service metadata only.'],
     ['ATTACKER-KALI', 'shell', 'python3 training/scripts/range_inventory.py container-api-1', 'Red Team: record container runtime metadata', 'Capture modeled image, network, port, health, restart, volume, log, and finding data.'],
-    ['CE-SW1', 'privileged', 'show mac address-table', 'Red Team: record container service edge', 'Use Layer 2 evidence to document the synthetic service path.'],
+    ['CE-SW1', 'privileged', 'show mac address-table', 'Blue Team: record container service edge', 'Use Layer 2 evidence to document the synthetic service path.'],
     ['CE-R1', 'privileged', 'configure terminal', 'Blue Team: enter container-service hardening', 'Apply deterministic ingress controls for the fictional workload.'],
     ['CE-R1', 'config', 'ip http secure-server', 'Blue Team: require modeled TLS listener', 'Enable the approved encrypted service boundary.'],
     ['CE-R1', 'config', 'ip http secure-port 8443', 'Blue Team: record published container port', 'Match the modeled published service port.'],

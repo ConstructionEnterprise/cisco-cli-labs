@@ -1,11 +1,32 @@
-import type { Session, SyntheticContainerRuntime } from './ios-engine';
+import type { RangePhase, Session, SyntheticContainerRuntime } from './ios-engine';
 import { simulatedTargetById } from './simulated-target-range';
 
 const systemOid = '1.3.6.1.2.1.1';
 const sysContactOid = `${systemOid}.4.0`;
 
+const threatCommands = new Set([
+  'dig @dns-1 payroll.training.example',
+  'curl -i "https://xss-lab.example/search?q=%3cb%3etraining%3c%2fb%3e"',
+  'curl -i "https://files-lab.example/download?file=../training-canary.txt"',
+  "ssh trainee@linux-lab 'sudo -l'",
+  "ssh trainee@linux-lab 'sudo -n id'",
+  "curl -i --data-binary 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' https://legacy-app.example/input",
+  "ssh analyst@legacy-app 'journalctl -u legacy-app --no-pager'",
+  'curl -i https://unknown-app.example/health',
+  "ssh analyst@unknown-app 'journalctl -u unknown-app --no-pager'",
+]);
+
+const rangeProbeTargets: Record<string, string> = {
+  'dig @dns-1 payroll.training.example': 'dns-1',
+  'curl -i https://unknown-app.example/health': 'unknown-app',
+  'curl -i "https://xss-lab.example/search?q=%3cb%3etraining%3c%2fb%3e"': 'xss-lab',
+  'curl -i "https://files-lab.example/download?file=../training-canary.txt"': 'files-lab',
+  "ssh trainee@linux-lab 'sudo -n id'": 'linux-lab',
+  "curl -i --data-binary 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' https://legacy-app.example/input": 'legacy-app',
+};
+
 export function isAttackCommand(command: string): boolean {
-  return /^(?:nmap (?:-sv --version-light|-pn -p [0-9,]+) [a-z0-9-]+|snmpwalk -v2c -c trainingro [a-z0-9-]+ 1\.3\.6\.1\.2\.1\.1|snmpset -v2c -c trainingrw [a-z0-9-]+ 1\.3\.6\.1\.2\.1\.1\.4\.0 s range-owner|msfconsole|search type:auxiliary name:http_version|info auxiliary\/scanner\/http\/http_version|use auxiliary\/scanner\/http\/http_version|set rhosts [a-z0-9-]+|run|python3 training\/scripts\/range_inventory\.py [a-z0-9-]+|openssl s_client -connect container-api-1:8443|curl -ss(?: -h "authorization: bearer training-token")? https:\/\/container-api-1:8443\/api\/status|for i in \{1\.\.100\}; do curl -ss -h "authorization: bearer training-token" https:\/\/container-api-1:8443\/api\/status; done|ss -tnlp|cat \/proc\/self\/status|journalctl -u container-api-1 --no-pager)$/.test(command);
+  return threatCommands.has(command) || /^(?:nmap (?:-sv --version-light|-pn -p [0-9,]+) [a-z0-9-]+|snmpwalk -v2c -c trainingro [a-z0-9-]+ 1\.3\.6\.1\.2\.1\.1|snmpset -v2c -c trainingrw [a-z0-9-]+ 1\.3\.6\.1\.2\.1\.1\.4\.0 s range-owner|msfconsole|search type:auxiliary name:http_version|info auxiliary\/scanner\/http\/http_version|use auxiliary\/scanner\/http\/http_version|set rhosts [a-z0-9-]+|run|python3 training\/scripts\/range_inventory\.py [a-z0-9-]+|openssl s_client -connect container-api-1:8443|curl -ss(?: -h "authorization: bearer training-token")? https:\/\/container-api-1:8443\/api\/status|for i in \{1\.\.100\}; do curl -ss -h "authorization: bearer training-token" https:\/\/container-api-1:8443\/api\/status; done|ss -tnlp|cat \/proc\/self\/status|journalctl -u container-api-1 --no-pager)$/.test(command);
 }
 
 function targetAddress(address: string) {
@@ -18,7 +39,7 @@ function isPortFiltered(targetId: string, port: string, sessions: Record<string,
   const address = targetAddress(target.address);
   return Object.values(sessions).some((session) => {
     const config = session.runningConfig || [];
-    return config.some((line) => line === `deny tcp any host ${address} eq ${port}`)
+    return config.some((line) => line === `deny tcp any host ${address} eq ${port}` || line === `deny ip any host ${address}`)
       && config.some((line) => /^ip access-group .+ in$/.test(line));
   });
 }
@@ -79,7 +100,7 @@ function syncIngressFromIos(runtime: SyntheticContainerRuntime, targetId: string
   }
 }
 
-export function executeAttackCommand(session: Session, command: string, iosSessions: Record<string, Session>) {
+function executeAttackCommandRaw(session: Session, command: string, iosSessions: Record<string, Session>) {
   if (session.terminalKind !== 'attack' || session.mode !== 'shell' || !isAttackCommand(command)) {
     return { accepted: false, session, output: ['bash: command not found'] };
   }
@@ -91,9 +112,60 @@ export function executeAttackCommand(session: Session, command: string, iosSessi
       rhosts: session.attackTerminal?.rhosts,
       executionLog: [...(session.attackTerminal?.executionLog || [])],
       snmpValues: { ...(session.attackTerminal?.snmpValues || {}) },
+      rangePhase: { ...(session.attackTerminal?.rangePhase || {}) },
+      rangeEvidence: [...(session.attackTerminal?.rangeEvidence || [])],
       containerRuntime: Object.fromEntries(Object.entries(session.attackTerminal?.containerRuntime || {}).map(([id, runtime]) => [id, { ...runtime, ingress: { ...runtime.ingress }, kernel: { ...runtime.kernel, namespaces: { ...runtime.kernel.namespaces }, cgroups: { ...runtime.kernel.cgroups }, droppedCapabilities: [...runtime.kernel.droppedCapabilities], retainedCapabilities: [...runtime.kernel.retainedCapabilities], recentSyscalls: [...runtime.kernel.recentSyscalls] }, socket: { ...runtime.socket, events: [...runtime.socket.events] }, logs: [...runtime.logs] }])),
     },
   };
+
+  if (threatCommands.has(command)) {
+    next.attackTerminal!.executionLog.push(`Synthetic training probe: ${command}`);
+    if (command.startsWith('dig ') && isPortFiltered('dns-1', '53', iosSessions)) return { accepted: true, session: next, output: [
+      ';; connection timed out; no servers could be reached',
+      'Synthetic IOS isolation blocks DNS-01. The poisoned record still requires investigation and repair.',
+    ] };
+    if (command.startsWith('dig ')) return { accepted: true, session: next, output: [
+      ';; SERVER: 10.76.40.53#53(DNS-01)',
+      ';; ANSWER SECTION:',
+      'payroll.training.example. 60 IN A 10.76.20.66',
+      'Synthetic alert: expected approved answer is 10.76.20.82; this response is inconsistent. Source and cause require investigation.',
+    ] };
+    if (command.includes('xss-lab.example') && isPortFiltered('xss-lab', '443', iosSessions)) return { accepted: true, session: next, output: ['curl: (28) Connection timed out', 'Synthetic IOS isolation blocks the web listener; output encoding still requires an application fix.'] };
+    if (command.includes('xss-lab.example')) return { accepted: true, session: next, output: [
+      'HTTP/1.1 200 OK', 'Content-Type: text/html', '',
+      '<main>Search results for <b>training</b></main>',
+      'Synthetic finding: harmless HTML marker reflected without output encoding. This is a candidate XSS sink; no script was executed.',
+    ] };
+    if (command.includes('files-lab.example')) return { accepted: true, session: next, output: isPortFiltered('files-lab', '443', iosSessions)
+      ? ['curl: (28) Connection timed out', 'Synthetic IOS policy filters the fictional file service. The application defect remains until its owner fixes path handling.']
+      : ['HTTP/1.1 200 OK', 'Content-Type: text/plain', '', 'TRAINING-CANARY: outside the fictional web root', 'Synthetic finding: traversal reaches only this built-in canary; no host file is read.'] };
+    if (command.includes('trainee@linux-lab') && isPortFiltered('linux-lab', '22', iosSessions)) return { accepted: true, session: next, output: ['ssh: connect to host linux-lab port 22: Connection timed out', 'Synthetic IOS isolation blocks the training host; its sudo policy is not repaired.'] };
+    if (command.includes('sudo -l')) return { accepted: true, session: next, output: [
+      'Matching Defaults entries for trainee on LINUX-LAB-01:',
+      'User trainee may run the following commands on LINUX-LAB-01:',
+      '    (root) NOPASSWD: /usr/bin/id',
+      'Synthetic policy evidence from a pre-authorized training session; no external SSH connection occurs.',
+    ] };
+    if (command.includes('sudo -n id')) return { accepted: true, session: next, output: [
+      'uid=0(root) gid=0(root) groups=0(root)',
+      'Synthetic privilege boundary crossed for /usr/bin/id only; no root shell or other command is available.',
+    ] };
+    if (command.includes('legacy-app.example')) return { accepted: true, session: next, output: isPortFiltered('legacy-app', '443', iosSessions)
+      ? ['curl: (28) Connection timed out', 'Synthetic IOS policy contains access; it does not repair the parser.']
+      : ['HTTP/1.1 500 Internal Server Error', 'Synthetic event: legacy parser stopped after the built-in oversized fixture; no payload, shell, or code execution.'] };
+    if (command.includes("analyst@legacy-app")) return { accepted: true, session: next, output: [
+      'legacy-service: fixed buffer overrun detected after 32-byte training marker',
+      'systemd: legacy-service restarted after simulated memory fault',
+      'Synthetic incident evidence; not proof of arbitrary code execution.',
+    ] };
+    if (command.includes('unknown-app.example')) return { accepted: true, session: next, output: isPortFiltered('unknown-app', '443', iosSessions)
+      ? ['curl: (28) Connection timed out', 'Synthetic IOS isolation is active; root cause remains unknown.']
+      : ['HTTP/1.1 503 Service Unavailable', 'Synthetic integrity alert: unexpected process behavior. Cause unconfirmed.'] };
+    return { accepted: true, session: next, output: [
+      'unknown-app: integrity alert and unexpected process restart',
+      'No vulnerability or exploit has been identified. Treat zero-day as a hypothesis, not a diagnosis.',
+    ] };
+  }
 
   if (command === 'msfconsole') return { accepted: true, session: next, output: [
     'Metasploit Framework 6 (synthetic training range)',
@@ -223,6 +295,25 @@ export function executeAttackCommand(session: Session, command: string, iosSessi
     `vlan=${target.vlan}`,
     `zone=${target.zone}`,
     `condition=${target.modeledCondition}`,
+    ...(target.attackLens ? [`attack_lens=${target.attackLens}`] : []),
     ...containerMetadata(target),
   ] };
+}
+
+export function executeAttackCommand(session: Session, command: string, iosSessions: Record<string, Session>) {
+  const result = executeAttackCommandRaw(session, command, iosSessions);
+  if (!result.accepted || !result.session.attackTerminal) return result;
+
+  const nmap = command.match(/^nmap (?:-sv --version-light|-pn -p [0-9,]+) ([a-z0-9-]+)$/);
+  const inventory = command.match(/^python3 training\/scripts\/range_inventory\.py ([a-z0-9-]+)$/);
+  const targetId = nmap?.[1] || rangeProbeTargets[command] || inventory?.[1];
+  const phase: RangePhase | undefined = nmap ? 'validation' : inventory ? 'enumeration' : rangeProbeTargets[command] ? 'probe' : undefined;
+  if (!targetId || !phase || !simulatedTargetById[targetId]) return result;
+  const current = result.session.attackTerminal.rangePhase[targetId];
+  const inSequence = phase === 'validation' ? !current : phase === 'probe' ? current === 'validation' : current === 'probe';
+  const failed = result.output.some(line => /timed out|filtered|not present in the synthetic range/i.test(line));
+  if (!inSequence || failed) return result;
+  result.session.attackTerminal.rangePhase[targetId] = phase;
+  result.session.attackTerminal.rangeEvidence.push({ targetId, phase, command, output: [...result.output] });
+  return result;
 }

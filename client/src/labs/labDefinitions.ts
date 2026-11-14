@@ -3,6 +3,7 @@ import { troubleshootingLabs } from './troubleshootingLabs';
 import { techSupportLabs } from './techSupportLabs';
 import { cyberDefenseLabs } from './cyberDefenseLabs';
 import { ethicalHackingLabs } from './ethicalHackingLabs';
+import { threatScenarioLabs } from './threatScenarioLabs';
 import { fundamentalsLabs } from './fundamentalsLabs';
 import { masterTwoExpansionLabs } from './masterTwoExpansion';
 import { applyMasterOneCurriculum } from './masterOneCurriculum';
@@ -12,6 +13,9 @@ import type { Requirement } from '../lib/learning-engine';
 
 export interface LabStep {
   exercise?: FundamentalsExercise;
+  helpQuery?: boolean;
+  requireReachability?: boolean;
+  evidencePhase?: "validation" | "probe" | "enumeration";
   id: number;
   label: string;
   description: string;
@@ -24,6 +28,7 @@ export interface LabStep {
 
 export interface LabConfig {
   curriculumOrder?: number;
+  rangeTargetId?: string;
   id: string;
   title: string;
   description: string;
@@ -43,6 +48,28 @@ export interface LabConfig {
 
 // --- THE UNIFIED REGISTRY ---
 export const LAB_REGISTRY: Record<string, LabConfig> = {
+  "mt1-tr2-ios-context-help": {
+    id: "mt1-tr2-ios-context-help",
+    type: "guided",
+    title: "IOS Context-Sensitive Help",
+    description: "Use Cisco IOS word help and command syntax help to discover DHCP configuration arguments before applying an excluded-address range.",
+    topology: { devices: [{ id: "r1", name: "CE-R1", kind: "router", role: "Branch Router", x: 400, y: 200, ports: ["g0/0"] }], links: [] },
+    initialState: {},
+    outcomes: [
+      { device: "CE-R1", path: ["completedLabSteps", "3"], value: true, label: "Used word help without a space before ?" },
+      { device: "CE-R1", path: ["completedLabSteps", "4"], value: true, label: "Used syntax help with a space before ?" },
+      { device: "CE-R1", path: ["completedLabSteps", "5"], value: true, label: "Inspected the optional high-address argument" },
+      { device: "CE-R1", path: ["dhcpExcludedAddresses"], value: ["10.10.10.1 10.10.10.5"], label: "Excluded the discovered DHCP address range" },
+    ],
+    steps: [
+      { id: 1, label: "Enter Privileged EXEC", description: "Use the IOS router console and enter privileged EXEC mode.", targetDevice: "CE-R1", requiredMode: "user", expectedCommand: "enable", successMessage: "Privileged EXEC is active.", validation: (state) => state.devices["CE-R1"]?.mode === "privileged" },
+      { id: 2, label: "Enter Global Configuration", description: "DHCP server configuration begins at the global configuration prompt.", targetDevice: "CE-R1", requiredMode: "privileged", expectedCommand: "configure terminal", successMessage: "Global configuration is active.", validation: (state) => state.devices["CE-R1"]?.mode === "config" },
+      { id: 3, label: "Discover the Keyword", description: "Type ip dhcp excl followed immediately by ?. With no space, help shows matching command words. Press Enter to request help in this simulator.", targetDevice: "CE-R1", requiredMode: "config", expectedCommand: "ip dhcp excl?", helpQuery: true, successMessage: "Word help identified excluded-address without changing the configuration.", validation: (state) => !!state.devices["CE-R1"]?.completedLabSteps?.[3] },
+      { id: 4, label: "Discover the First Argument", description: "Type the full keyword, a space, then ?. Help describes the next argument rather than matching a keyword. Press Enter to request help.", targetDevice: "CE-R1", requiredMode: "config", expectedCommand: "ip dhcp excluded-address ?", helpQuery: true, successMessage: "Syntax help identified the low IPv4 address argument.", validation: (state) => !!state.devices["CE-R1"]?.completedLabSteps?.[4] },
+      { id: 5, label: "Inspect the Optional Argument", description: "Supply the low address, then a space and ?. Press Enter to see the optional high address and <cr> for a single-address exclusion.", targetDevice: "CE-R1", requiredMode: "config", expectedCommand: "ip dhcp excluded-address 10.10.10.1 ?", helpQuery: true, successMessage: "Syntax help identified the optional high address and <cr>.", validation: (state) => !!state.devices["CE-R1"]?.completedLabSteps?.[5] },
+      { id: 6, label: "Apply the Excluded Range", description: "Complete the command using the high address discovered through syntax help, then press Enter.", targetDevice: "CE-R1", requiredMode: "config", expectedCommand: "ip dhcp excluded-address 10.10.10.1 10.10.10.5", successMessage: "The DHCP exclusion is configured.", validation: (state) => state.devices["CE-R1"]?.dhcpExcludedAddresses?.includes("10.10.10.1 10.10.10.5") },
+    ],
+  },
   "vlan-basics": {
     id: "vlan-basics",
     type: "guided",
@@ -432,6 +459,91 @@ export const LAB_REGISTRY: Record<string, LabConfig> = {
       { id: 53, label: "Verify VLAN Database", description: "Confirm VLAN 10 and VLAN 999 are present on the access switch.", targetDevice: "CE-SW2", requiredMode: "privileged", expectedCommand: "show vlan brief", successMessage: "The VLAN database and host membership are visible.", validation: (state) => true },
       { id: 54, label: "Verify Learned MAC", description: "Inspect the dynamic MAC learned from ENG-PC1.", targetDevice: "CE-SW2", requiredMode: "privileged", expectedCommand: "show mac address-table dynamic", successMessage: "The VLAN 10 host MAC is visible on g0/2.", validation: (state) => true },
       { id: 55, label: "Verify Interfaces", description: "Inspect operational state and VLAN relationships.", targetDevice: "CE-SW2", requiredMode: "privileged", expectedCommand: "show interfaces status", successMessage: "Access and trunk interface state is verified.", validation: (state) => true },
+    ],
+  },
+  "tr2-vtp": {
+    id: "tr2-vtp",
+    type: "guided",
+    title: "VTP: Domain, Modes, and VLAN Propagation",
+    description: "Configure a VTP server and client in one domain, watch VLANs propagate by configuration revision, then prove that transparent mode stops learning while a client cannot create VLANs.",
+    topology: { devices: [{ id: "sw1", name: "CE-SW1", kind: "switch", role: "VTP Server", x: 180, y: 180, ports: ["g0/1", "g0/2"] }, { id: "sw2", name: "CE-SW2", kind: "switch", role: "VTP Client", x: 620, y: 180, ports: ["g0/1", "g0/2"] }], links: [{ id: "l1", from: "sw1", to: "sw2", fromPort: "g0/1", toPort: "g0/1" }] },
+    initialState: { commands: { "CE-SW1": ["enable", "configure terminal", "interface vlan 10", "ip address 10.10.10.1 255.255.255.0", "no shutdown", "end"] } },
+    outcomes: [
+      { device: "CE-SW1", path: ["vtp", "mode"], value: "server", label: "CE-SW1 remains the VTP server" },
+      { device: "CE-SW1", path: ["vtp", "domain"], value: "ccnavtp", label: "CE-SW1 VTP domain is ccnavtp" },
+      { device: "CE-SW1", path: ["vtp", "version"], value: 2, label: "CE-SW1 runs VTP version 2" },
+      { device: "CE-SW1", path: ["vtp", "password"], value: "cisco123", label: "CE-SW1 VTP password is set" },
+      { device: "CE-SW1", path: ["vtp", "revision"], value: 8, label: "CE-SW1 configuration revision is 8" },
+      { device: "CE-SW1", path: ["vlans", "10"], value: "management", label: "CE-SW1 VLAN 10 is named management" },
+      { device: "CE-SW1", path: ["vlans", "20"], value: "students", label: "CE-SW1 VLAN 20 is named students" },
+      { device: "CE-SW1", path: ["vlans", "30"], value: "servers", label: "CE-SW1 VLAN 30 is named servers" },
+      { device: "CE-SW1", path: ["vlans", "40"], value: "guests", label: "CE-SW1 VLAN 40 is named guests" },
+      { device: "CE-SW2", path: ["vtp", "mode"], value: "client", label: "CE-SW2 ends as a VTP client" },
+      { device: "CE-SW2", path: ["vtp", "domain"], value: "ccnavtp", label: "CE-SW2 VTP domain is ccnavtp" },
+      { device: "CE-SW2", path: ["vtp", "version"], value: 2, label: "CE-SW2 runs VTP version 2" },
+      { device: "CE-SW2", path: ["vtp", "password"], value: "cisco123", label: "CE-SW2 VTP password is set" },
+      { device: "CE-SW2", path: ["vtp", "revision"], value: 8, label: "CE-SW2 adopted revision 8" },
+      { device: "CE-SW2", path: ["vlans", "10"], value: "management", label: "CE-SW2 learned VLAN 10" },
+      { device: "CE-SW2", path: ["vlans", "20"], value: "students", label: "CE-SW2 learned VLAN 20" },
+      { device: "CE-SW2", path: ["vlans", "30"], value: "servers", label: "CE-SW2 learned VLAN 30" },
+      { device: "CE-SW2", path: ["vlans", "40"], value: "guests", label: "CE-SW2 learned VLAN 40" },
+      { device: "CE-SW1", path: ["interfaces", "g0/1", "switchportMode"], value: "trunk", label: "CE-SW1 g0/1 is a trunk" },
+      { device: "CE-SW2", path: ["interfaces", "g0/1", "switchportMode"], value: "trunk", label: "CE-SW2 g0/1 is a trunk" },
+    ],
+    steps: [
+      { id: 1, label: "Check the VTP Defaults", description: "CE-SW1 starts with the IOS defaults: server mode, no domain (NULL), version 1, revision 0. Its management SVI is already addressed at 10.10.10.1 on Vl10, which is why the updater ID below reads 10.10.10.1.", targetDevice: "CE-SW1", requiredMode: "privileged", expectedCommand: "show vtp status", successMessage: "The VTP defaults are visible.", validation: (state) => true },
+      { id: 2, label: "Enter Global Configuration", description: "VTP is configured globally.", targetDevice: "CE-SW1", requiredMode: "privileged", expectedCommand: "configure terminal", successMessage: "CE-SW1 global configuration is active.", validation: (state) => true },
+      { id: 3, label: "Set VTP Version 2", description: "Both switches must run the same VTP version to exchange a database.", targetDevice: "CE-SW1", requiredMode: "config", expectedCommand: "vtp version 2", successMessage: "CE-SW1 runs VTP version 2.", validation: (state) => state.devices["CE-SW1"]?.vtp?.version === 2 },
+      { id: 4, label: "Set the VTP Domain", description: "Only switches in the same domain exchange VLANs. Watch for the domain-change message: joining a domain resets the configuration revision to 0.", targetDevice: "CE-SW1", requiredMode: "config", expectedCommand: "vtp domain CCNAVTP", successMessage: "CE-SW1 joined domain CCNAVTP.", validation: (state) => state.devices["CE-SW1"]?.vtp?.domain === "ccnavtp" },
+      { id: 5, label: "Set the VTP Password", description: "A password mismatch blocks propagation, so both switches must agree. The password is not shown by show vtp status.", targetDevice: "CE-SW1", requiredMode: "config", expectedCommand: "vtp password cisco123", successMessage: "CE-SW1 VTP password is set.", validation: (state) => state.devices["CE-SW1"]?.vtp?.password === "cisco123" },
+      { id: 6, label: "Select the Inter-Switch Uplink", description: "VTP advertisements travel over trunk links, so open g0/1 toward CE-SW2.", targetDevice: "CE-SW1", requiredMode: "config", expectedCommand: "interface g0/1", successMessage: "CE-SW1 g0/1 is selected.", validation: (state) => true },
+      { id: 7, label: "Trunk the Uplink", description: "Make g0/1 an 802.1Q trunk so VTP advertisements can cross.", targetDevice: "CE-SW1", requiredMode: "interface", expectedCommand: "switchport mode trunk", successMessage: "CE-SW1 g0/1 is a trunk.", validation: (state) => true },
+      { id: 8, label: "Enable the Uplink", description: "VTP needs the trunk link up on both ends before anything propagates.", targetDevice: "CE-SW1", requiredMode: "interface", expectedCommand: "no shutdown", successMessage: "CE-SW1 g0/1 is active.", validation: (state) => true },
+      { id: 9, label: "Return to Global Configuration", description: "Return to global configuration to create the VLANs.", targetDevice: "CE-SW1", requiredMode: "interface", expectedCommand: "exit", successMessage: "CE-SW1 global configuration is restored.", validation: (state) => true },
+      { id: 10, label: "Create VLAN 10", description: "Creating a VLAN on the server changes the VLAN database and bumps the configuration revision by one.", targetDevice: "CE-SW1", requiredMode: "config", expectedCommand: "vlan 10", successMessage: "VLAN 10 exists on CE-SW1.", validation: (state) => true },
+      { id: 11, label: "Name VLAN 10", description: "Renaming a VLAN is another database change, so the revision bumps again.", targetDevice: "CE-SW1", requiredMode: "vlan", expectedCommand: "name MANAGEMENT", successMessage: "VLAN 10 is named MANAGEMENT.", validation: (state) => state.devices["CE-SW1"]?.vlans?.["10"] === "management" },
+      { id: 12, label: "Return to Global Configuration", description: "Return to global configuration.", targetDevice: "CE-SW1", requiredMode: "vlan", expectedCommand: "exit", successMessage: "CE-SW1 global configuration is restored.", validation: (state) => true },
+      { id: 13, label: "Create VLAN 20", description: "Create a second VLAN on the server.", targetDevice: "CE-SW1", requiredMode: "config", expectedCommand: "vlan 20", successMessage: "VLAN 20 exists on CE-SW1.", validation: (state) => true },
+      { id: 14, label: "Name VLAN 20", description: "Name the second VLAN.", targetDevice: "CE-SW1", requiredMode: "vlan", expectedCommand: "name STUDENTS", successMessage: "VLAN 20 is named STUDENTS.", validation: (state) => state.devices["CE-SW1"]?.vlans?.["20"] === "students" },
+      { id: 15, label: "Return to Global Configuration", description: "Return to global configuration.", targetDevice: "CE-SW1", requiredMode: "vlan", expectedCommand: "exit", successMessage: "CE-SW1 global configuration is restored.", validation: (state) => true },
+      { id: 16, label: "Return to Privileged EXEC", description: "Return to privileged EXEC to verify the server database.", targetDevice: "CE-SW1", requiredMode: "config", expectedCommand: "end", successMessage: "CE-SW1 is ready for verification.", validation: (state) => true },
+      { id: 17, label: "Verify the Server Revision", description: "Two creates plus two renames moved the revision from 0 to 4. The digest changes with every database change.", targetDevice: "CE-SW1", requiredMode: "privileged", expectedCommand: "show vtp status", successMessage: "The server revision and digest are visible.", validation: (state) => true },
+      { id: 18, label: "Verify the Server VLANs", description: "Confirm VLANs 10 and 20 exist locally on the server.", targetDevice: "CE-SW1", requiredMode: "privileged", expectedCommand: "show vlan brief", successMessage: "The server VLAN database is visible.", validation: (state) => true },
+      { id: 19, label: "CE-SW2 Privileged Mode", description: "Move to the second switch. It has no VLANs yet and is still a default server with a NULL domain.", targetDevice: "CE-SW2", requiredMode: "user", expectedCommand: "enable", successMessage: "CE-SW2 is ready.", validation: (state) => true },
+      { id: 20, label: "CE-SW2 Global Configuration", description: "Enter global configuration on CE-SW2.", targetDevice: "CE-SW2", requiredMode: "privileged", expectedCommand: "configure terminal", successMessage: "CE-SW2 global configuration is active.", validation: (state) => true },
+      { id: 21, label: "Set CE-SW2 to Client Mode", description: "A client learns its VLAN database from the server and cannot create VLANs locally.", targetDevice: "CE-SW2", requiredMode: "config", expectedCommand: "vtp mode client", successMessage: "CE-SW2 is a VTP client.", validation: (state) => state.devices["CE-SW2"]?.vtp?.mode === "client" },
+      { id: 22, label: "Match the VTP Version", description: "The client must run the same VTP version as the server.", targetDevice: "CE-SW2", requiredMode: "config", expectedCommand: "vtp version 2", successMessage: "CE-SW2 runs VTP version 2.", validation: (state) => state.devices["CE-SW2"]?.vtp?.version === 2 },
+      { id: 23, label: "Join the VTP Domain", description: "Join the same domain so the client accepts the server's advertisements.", targetDevice: "CE-SW2", requiredMode: "config", expectedCommand: "vtp domain CCNAVTP", successMessage: "CE-SW2 joined domain CCNAVTP.", validation: (state) => state.devices["CE-SW2"]?.vtp?.domain === "ccnavtp" },
+      { id: 24, label: "Match the VTP Password", description: "The password must match the server or propagation is blocked.", targetDevice: "CE-SW2", requiredMode: "config", expectedCommand: "vtp password cisco123", successMessage: "CE-SW2 VTP password is set.", validation: (state) => state.devices["CE-SW2"]?.vtp?.password === "cisco123" },
+      { id: 25, label: "Select the CE-SW2 Uplink", description: "Open g0/1 toward CE-SW1.", targetDevice: "CE-SW2", requiredMode: "config", expectedCommand: "interface g0/1", successMessage: "CE-SW2 g0/1 is selected.", validation: (state) => true },
+      { id: 26, label: "Trunk the CE-SW2 Uplink", description: "The trunk must be configured on both ends before advertisements cross.", targetDevice: "CE-SW2", requiredMode: "interface", expectedCommand: "switchport mode trunk", successMessage: "CE-SW2 g0/1 is a trunk.", validation: (state) => true },
+      { id: 27, label: "Enable the CE-SW2 Uplink", description: "Bring the trunk up so the client can receive the server's database.", targetDevice: "CE-SW2", requiredMode: "interface", expectedCommand: "no shutdown", successMessage: "CE-SW2 g0/1 is active.", validation: (state) => true },
+      { id: 28, label: "Return to Privileged EXEC", description: "Return to privileged EXEC to verify what the client learned.", targetDevice: "CE-SW2", requiredMode: "interface", expectedCommand: "end", successMessage: "CE-SW2 is ready for verification.", validation: (state) => true },
+      { id: 29, label: "Verify the Client Adopted the Database", description: "The client should now report the server's revision 4 and the same digest. Its last-modified-by still points at the server's updater, 10.10.10.1.", targetDevice: "CE-SW2", requiredMode: "privileged", expectedCommand: "show vtp status", successMessage: "The client adopted the server database.", validation: (state) => state.devices["CE-SW2"]?.vtp?.revision === 4 },
+      { id: 30, label: "Verify the Learned VLANs", description: "VLANs 10 and 20 appear on the client even though they were never configured there.", targetDevice: "CE-SW2", requiredMode: "privileged", expectedCommand: "show vlan brief", successMessage: "The learned VLANs are visible.", validation: (state) => state.devices["CE-SW2"]?.vlans?.["10"] === "management" && state.devices["CE-SW2"]?.vlans?.["20"] === "students" },
+      { id: 31, label: "CE-SW2 Global Configuration", description: "Test the client restriction: try to create a VLAN locally.", targetDevice: "CE-SW2", requiredMode: "privileged", expectedCommand: "configure terminal", successMessage: "CE-SW2 global configuration is active.", validation: (state) => true },
+      { id: 32, label: "Attempt a Client VLAN", description: "A VTP client cannot configure VLANs. The command is rejected and no VLAN 30 appears.", targetDevice: "CE-SW2", requiredMode: "config", expectedCommand: "vlan 30", successMessage: "The client refused the local VLAN.", validation: (state) => !state.devices["CE-SW2"]?.vlans?.["30"] },
+      { id: 33, label: "Return to Privileged EXEC", description: "Return to privileged EXEC.", targetDevice: "CE-SW2", requiredMode: "config", expectedCommand: "end", successMessage: "CE-SW2 is ready.", validation: (state) => true },
+      { id: 34, label: "CE-SW1 Global Configuration", description: "Back on the server, create VLAN 30 the right way.", targetDevice: "CE-SW1", requiredMode: "privileged", expectedCommand: "configure terminal", successMessage: "CE-SW1 global configuration is active.", validation: (state) => true },
+      { id: 35, label: "Create VLAN 30 on the Server", description: "The server's revision moves to 5.", targetDevice: "CE-SW1", requiredMode: "config", expectedCommand: "vlan 30", successMessage: "VLAN 30 exists on CE-SW1.", validation: (state) => true },
+      { id: 36, label: "Name VLAN 30", description: "The rename moves the revision to 6.", targetDevice: "CE-SW1", requiredMode: "vlan", expectedCommand: "name SERVERS", successMessage: "VLAN 30 is named SERVERS.", validation: (state) => state.devices["CE-SW1"]?.vlans?.["30"] === "servers" },
+      { id: 37, label: "Return to Global Configuration", description: "Return to global configuration.", targetDevice: "CE-SW1", requiredMode: "vlan", expectedCommand: "exit", successMessage: "CE-SW1 global configuration is restored.", validation: (state) => true },
+      { id: 38, label: "Return to Privileged EXEC", description: "Return to privileged EXEC.", targetDevice: "CE-SW1", requiredMode: "config", expectedCommand: "end", successMessage: "CE-SW1 is ready.", validation: (state) => true },
+      { id: 39, label: "Verify VLAN 30 Propagated", description: "The client adopted revision 6, so VLAN 30 appears without touching the client.", targetDevice: "CE-SW2", requiredMode: "privileged", expectedCommand: "show vlan brief", successMessage: "VLAN 30 propagated to the client.", validation: (state) => state.devices["CE-SW2"]?.vlans?.["30"] === "servers" },
+      { id: 40, label: "CE-SW2 Global Configuration", description: "Now test transparent mode, which neither learns nor advertises its own database.", targetDevice: "CE-SW2", requiredMode: "privileged", expectedCommand: "configure terminal", successMessage: "CE-SW2 global configuration is active.", validation: (state) => true },
+      { id: 41, label: "Set CE-SW2 to Transparent Mode", description: "A transparent switch keeps its local VLANs and stops learning new ones.", targetDevice: "CE-SW2", requiredMode: "config", expectedCommand: "vtp mode transparent", successMessage: "CE-SW2 is transparent.", validation: (state) => state.devices["CE-SW2"]?.vtp?.mode === "transparent" },
+      { id: 42, label: "Return to Privileged EXEC", description: "Return to privileged EXEC.", targetDevice: "CE-SW2", requiredMode: "config", expectedCommand: "end", successMessage: "CE-SW2 is ready.", validation: (state) => true },
+      { id: 43, label: "CE-SW1 Global Configuration", description: "On the server, create one more VLAN while the client is transparent.", targetDevice: "CE-SW1", requiredMode: "privileged", expectedCommand: "configure terminal", successMessage: "CE-SW1 global configuration is active.", validation: (state) => true },
+      { id: 44, label: "Create VLAN 40 on the Server", description: "The server's revision moves to 7.", targetDevice: "CE-SW1", requiredMode: "config", expectedCommand: "vlan 40", successMessage: "VLAN 40 exists on CE-SW1.", validation: (state) => true },
+      { id: 45, label: "Name VLAN 40", description: "The rename moves the revision to 8.", targetDevice: "CE-SW1", requiredMode: "vlan", expectedCommand: "name GUESTS", successMessage: "VLAN 40 is named GUESTS.", validation: (state) => state.devices["CE-SW1"]?.vlans?.["40"] === "guests" },
+      { id: 46, label: "Return to Global Configuration", description: "Return to global configuration.", targetDevice: "CE-SW1", requiredMode: "vlan", expectedCommand: "exit", successMessage: "CE-SW1 global configuration is restored.", validation: (state) => true },
+      { id: 47, label: "Return to Privileged EXEC", description: "Return to privileged EXEC.", targetDevice: "CE-SW1", requiredMode: "config", expectedCommand: "end", successMessage: "CE-SW1 is ready.", validation: (state) => true },
+      { id: 48, label: "Verify Transparent Mode Did Not Learn", description: "The transparent switch still shows only VLANs 10, 20, and 30 — VLAN 40 did not propagate.", targetDevice: "CE-SW2", requiredMode: "privileged", expectedCommand: "show vlan brief", successMessage: "Transparent mode held its database.", validation: (state) => !state.devices["CE-SW2"]?.vlans?.["40"] },
+      { id: 49, label: "CE-SW2 Global Configuration", description: "Switch the client back to client mode to resume learning.", targetDevice: "CE-SW2", requiredMode: "privileged", expectedCommand: "configure terminal", successMessage: "CE-SW2 global configuration is active.", validation: (state) => true },
+      { id: 50, label: "Set CE-SW2 Back to Client Mode", description: "Returning to client mode lets the switch adopt the newer database again.", targetDevice: "CE-SW2", requiredMode: "config", expectedCommand: "vtp mode client", successMessage: "CE-SW2 is a VTP client again.", validation: (state) => state.devices["CE-SW2"]?.vtp?.mode === "client" },
+      { id: 51, label: "Return to Privileged EXEC", description: "Return to privileged EXEC.", targetDevice: "CE-SW2", requiredMode: "config", expectedCommand: "end", successMessage: "CE-SW2 is ready.", validation: (state) => true },
+      { id: 52, label: "Verify VLAN 40 Propagated", description: "Now a client again, the switch adopts revision 8 and VLAN 40 appears.", targetDevice: "CE-SW2", requiredMode: "privileged", expectedCommand: "show vlan brief", successMessage: "VLAN 40 propagated to the client.", validation: (state) => state.devices["CE-SW2"]?.vlans?.["40"] === "guests" },
+      { id: 53, label: "Verify the Final Client State", description: "The client ends at revision 8 with all four VLANs and the server's digest.", targetDevice: "CE-SW2", requiredMode: "privileged", expectedCommand: "show vtp status", successMessage: "The final VTP state is verified.", validation: (state) => state.devices["CE-SW2"]?.vtp?.revision === 8 },
     ],
   },
   "tr2-stp": {
@@ -941,8 +1053,12 @@ export const LAB_REGISTRY: Record<string, LabConfig> = {
     type: "guided",
     title: "Extended ACL Web Policy",
     description: "Permit web traffic from a trusted subnet while denying other TCP traffic to a server network.",
-    topology: { devices: [{ id: "r1", name: "CE-R1", kind: "router", role: "Security Gateway", x: 400, y: 180, ports: ["g0/0"] }, { id: "srv", name: "WEB-SRV1", kind: "pc", role: "Web Server", x: 700, y: 180, ports: ["eth0"] }], links: [{ id: "l1", from: "r1", to: "srv", fromPort: "g0/0", toPort: "eth0" }] },
-    initialState: {},
+    topology: { devices: [{ id: "client", name: "CLIENT-PC1", kind: "pc", role: "Trusted Web Client", x: 180, y: 180, ports: ["eth0"] }, { id: "r1", name: "CE-R1", kind: "router", role: "Security Gateway", x: 440, y: 180, ports: ["g0/0", "g0/1"] }, { id: "srv", name: "WEB-SRV1", kind: "pc", role: "Web Server", x: 720, y: 180, ports: ["eth0"] }], links: [{ id: "l1", from: "client", to: "r1", fromPort: "eth0", toPort: "g0/0" }, { id: "l2", from: "r1", to: "srv", fromPort: "g0/1", toPort: "eth0" }] },
+    initialState: { commands: {
+      "CE-R1": ["enable", "configure terminal", "interface g0/0", "ip address 192.168.60.1 255.255.255.0", "no shutdown", "exit", "interface g0/1", "ip address 192.168.70.1 255.255.255.0", "no shutdown", "end", "disable"],
+      "CLIENT-PC1": ["enable", "configure terminal", "interface eth0", "ip address 192.168.60.10 255.255.255.0", "no shutdown", "exit", "ip default-gateway 192.168.60.1", "end"],
+      "WEB-SRV1": ["enable", "configure terminal", "interface eth0", "ip address 192.168.70.10 255.255.255.0", "no shutdown", "exit", "ip default-gateway 192.168.70.1", "end"],
+    } },
     steps: [
       { id: 1, label: "Privileged Mode", description: "Enter Privileged EXEC mode on the security gateway.", targetDevice: "CE-R1", requiredMode: "user", expectedCommand: "enable", successMessage: "CE-R1 is ready for extended ACL configuration.", validation: (state) => true },
       { id: 2, label: "Global Configuration", description: "Enter Global Configuration mode.", targetDevice: "CE-R1", requiredMode: "privileged", expectedCommand: "configure terminal", successMessage: "Global Configuration mode is active.", validation: (state) => true },
@@ -951,9 +1067,9 @@ export const LAB_REGISTRY: Record<string, LabConfig> = {
       { id: 5, label: "Permit HTTPS", description: "Permit TCP HTTPS traffic from the trusted subnet.", targetDevice: "CE-R1", requiredMode: "acl", expectedCommand: "permit tcp 192.168.60.0 0.0.0.255 any eq 443", successMessage: "HTTPS traffic from the trusted subnet is permitted.", validation: (state) => true },
       { id: 6, label: "Deny Other TCP", description: "Deny other TCP traffic from the trusted subnet so only web services remain available.", targetDevice: "CE-R1", requiredMode: "acl", expectedCommand: "deny tcp 192.168.60.0 0.0.0.255 any", successMessage: "Other TCP traffic is denied by policy.", validation: (state) => true },
       { id: 7, label: "Exit ACL", description: "Return to Global Configuration mode.", targetDevice: "CE-R1", requiredMode: "acl", expectedCommand: "exit", successMessage: "Global Configuration mode is restored.", validation: (state) => true },
-      { id: 8, label: "Apply Policy", description: "Apply WEB-POLICY inbound on the server-facing interface.", targetDevice: "CE-R1", requiredMode: "config", expectedCommand: "interface g0/0", successMessage: "The protected interface is selected.", validation: (state) => true },
+      { id: 8, label: "Apply Policy", description: "Apply WEB-POLICY inbound on the trusted client-facing interface.", targetDevice: "CE-R1", requiredMode: "config", expectedCommand: "interface g0/0", successMessage: "The trusted ingress interface is selected.", validation: (state) => true },
       { id: 9, label: "Attach ACL", description: "Apply the named ACL inbound.", targetDevice: "CE-R1", requiredMode: "interface", expectedCommand: "ip access-group WEB-POLICY in", successMessage: "WEB-POLICY is active on the interface.", validation: (state) => true },
-      { id: 10, label: "Verify Policy", description: "Return to Privileged EXEC and inspect ACL hit counters and entries.", targetDevice: "CE-R1", requiredMode: "interface", expectedCommand: "end", successMessage: "Privileged EXEC is ready for verification.", validation: (state) => true },
+      { id: 10, label: "Verify Policy", description: "Return to Privileged EXEC and inspect the configured ACL entries and interface binding.", targetDevice: "CE-R1", requiredMode: "interface", expectedCommand: "end", successMessage: "Privileged EXEC is ready for verification.", validation: (state) => true },
       { id: 11, label: "Show ACL", description: "Review the extended ACL configuration.", targetDevice: "CE-R1", requiredMode: "privileged", expectedCommand: "show access-lists", successMessage: "The extended web policy has been reviewed.", validation: (state) => true },
     ],
   },
@@ -1649,7 +1765,7 @@ const PRACTICE_EXTENSIONS: Record<string, PracticeExtension> = {
   "tr3-dhcp-server": { targetLength: 40, targetDevice: "CE-R1", commands: ["show ip dhcp pool", "show ip dhcp binding", "show ip dhcp conflict", "show ip dhcp server statistics", "show ip interface brief", "show interfaces g0/0", "show running-config", "show running-config | section dhcp", "show ip route", "show arp", "show cdp neighbors", "show cdp neighbors detail", "ping 192.168.30.10", "show version", "show clock", "show startup-config", "copy running-config startup-config"] },
   "tr4-nat-pat": { targetLength: 50, targetDevice: "CE-R1", commands: ["show ip nat translations", "show ip nat statistics", "show ip nat translations verbose", "show access-lists", "show ip interface brief", "show interfaces g0/0", "show interfaces g0/1", "show running-config", "show running-config | section nat", "show running-config | section access-list", "show ip route", "show arp", "show cdp neighbors", "show cdp neighbors detail", "ping 198.51.100.1", "traceroute 198.51.100.1", "show version", "show clock", "show startup-config", "copy running-config startup-config"] },
   "tr4-standard-acl": { targetLength: 50, targetDevice: "CE-R1", commands: ["show access-lists", "show access-lists 10", "show ip interface", "show ip interface g0/0", "show ip interface brief", "show running-config", "show running-config | section access-list", "show running-config | section interface", "show ip route", "show arp", "show cdp neighbors", "show cdp neighbors detail", "ping 192.168.50.10", "traceroute 192.168.50.10", "show version", "show clock", "show startup-config", "copy running-config startup-config"] },
-  "tr4-extended-acl": { targetLength: 50, targetDevice: "CE-R1", commands: ["show access-lists", "show access-lists WEB-POLICY", "show ip interface", "show ip interface g0/0", "show ip interface brief", "show running-config", "show running-config | section access-list", "show running-config | section interface", "show ip route", "show arp", "show cdp neighbors", "show cdp neighbors detail", "ping 192.168.60.10", "traceroute 192.168.60.10", "show version", "show clock", "show startup-config", "copy running-config startup-config"] },
+  "tr4-extended-acl": { targetLength: 24, targetDevice: "CE-R1", commands: ["show access-lists WEB-POLICY", "show ip interface", "show ip interface g0/0", "show ip interface brief", "show running-config", "show running-config | section access-list", "show running-config | section interface", "show ip route", "ping 192.168.70.10", "show arp", "traceroute 192.168.70.10", "copy running-config startup-config", "show startup-config"] },
   "tr4-ssh-hardening": { targetLength: 50, targetDevice: "CE-SW1", commands: ["show ip ssh", "show users", "show login", "show running-config", "show running-config | section username", "show running-config | section line vty", "show running-config | section crypto", "show crypto key mypubkey rsa", "show ip interface brief", "show interfaces status", "show cdp neighbors", "show cdp neighbors detail", "show version", "show clock", "show startup-config", "copy running-config startup-config"] },
   "tr4-port-security": { targetLength: 50, targetDevice: "CE-SW1", commands: ["show port-security", "show port-security interface g0/1", "show interfaces g0/1 switchport", "show interfaces status", "show mac address-table", "show mac address-table secure", "show mac address-table interface g0/1", "show spanning-tree interface g0/1 detail", "show running-config", "show running-config interface g0/1", "show interfaces counters errors", "show cdp neighbors", "show cdp neighbors detail", "show version", "show clock", "show startup-config", "copy running-config startup-config"] },
   "tr5-binary-cidr": { targetLength: 40, targetDevice: "CE-R1", commands: ["show running-config", "show ip interface", "show ip interface brief", "show interfaces g0/0", "show ip route", "show arp", "show cdp neighbors", "show cdp neighbors detail", "show controllers", "show version", "show clock", "show startup-config", "ping 192.0.2.70", "ping 192.0.2.95", "copy running-config startup-config"] },
@@ -1676,11 +1792,14 @@ for (const [labId, extension] of Object.entries(PRACTICE_EXTENSIONS)) {
     const pass = index + 1;
     return {
       id: lab.steps.length + pass,
-      label: `Evidence Pass ${pass}`,
-      description: `Run ${command} to inspect the ${lab.title.toLowerCase()} state and reinforce the verification workflow.`,
+      label: labId === 'tr4-extended-acl' && command.startsWith('ping ') ? 'Check Server Reachability' : `Evidence Pass ${pass}`,
+      description: labId === 'tr4-extended-acl' && command.startsWith('ping ')
+        ? 'Ping the server to verify the routed ICMP path. This does not validate the HTTP/HTTPS ACL rules.'
+        : `Run ${command} to inspect the ${lab.title.toLowerCase()} state and reinforce the verification workflow.`,
       targetDevice: extension.targetDevice,
       requiredMode: "privileged" as const,
       expectedCommand: command,
+      requireReachability: labId === 'tr4-extended-acl' && command.startsWith('ping '),
       successMessage: `${command} completed. Use the output as evidence before moving to the next check.`,
       validation: (state: any) => true,
     };
@@ -1700,6 +1819,7 @@ Object.assign(LAB_REGISTRY, troubleshootingLabs);
 Object.assign(LAB_REGISTRY, techSupportLabs);
 Object.assign(LAB_REGISTRY, cyberDefenseLabs);
 Object.assign(LAB_REGISTRY, ethicalHackingLabs);
+Object.assign(LAB_REGISTRY, threatScenarioLabs);
 Object.assign(LAB_REGISTRY, fundamentalsLabs);
 
 // Each security incident follows the existing foundational support or repair lab

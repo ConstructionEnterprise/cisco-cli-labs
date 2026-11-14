@@ -16,7 +16,7 @@ function portState(session: Session, port: string): InterfaceState {
   };
 }
 
-function DeviceShape({ kind, ports, session, selectedPort }: { kind: EcosystemDeviceKind; ports: string[]; session: Session; selectedPort: PortRef | null }) {
+function DeviceShape({ kind, role, ports, session, selectedPort }: { kind: EcosystemDeviceKind; role?: string; ports: string[]; session: Session; selectedPort: PortRef | null }) {
   const isSelected = (port: string) => selectedPort?.port === port;
   const colorFor = (port: string) => portState(session, port).status === "up" ? "#63e6a5" : "#778a92";
   const portX = (index: number) => 34 + (index % 4) * 58;
@@ -40,7 +40,7 @@ function DeviceShape({ kind, ports, session, selectedPort }: { kind: EcosystemDe
   return <>
     <rect x="25" y="47" width="250" height="86" rx="10" fill={fill} stroke="#63e6e2" strokeWidth="2" />
     <path d="M42 69h216M42 113h216" stroke="#31545d" />
-    <text x="150" y="62" fill="#b9eeee" fontSize="9" textAnchor="middle" fontFamily="monospace">{kind === "firewall" ? "SECURITY APPLIANCE" : kind === "router" ? "LAYER 3 ROUTER" : "LAYER 2 SWITCH"}</text>
+    <text x="150" y="62" fill="#b9eeee" fontSize="9" textAnchor="middle" fontFamily="monospace">{kind === "firewall" ? "SECURITY APPLIANCE" : kind === "router" ? "LAYER 3 ROUTER" : /Layer 3|OSPF Speaker/i.test(role || "") ? "LAYER 3 SWITCH" : "LAYER 2 SWITCH"}</text>
     {ports.map((port, index) => <g key={port}><rect x={portX(index)} y={portY(index)} width="28" height="13" rx="2" fill="#101923" stroke={isSelected(port) ? "#f5b74b" : colorFor(port)} strokeWidth={isSelected(port) ? 3 : 2} /><circle cx={portX(index) + 7} cy={portY(index) + 6.5} r="3" fill={colorFor(port)} /><text x={portX(index) + 16} y={portY(index) + 9} fill="#b9eeee" fontSize="6" textAnchor="middle" fontFamily="monospace">{port.replace("ethernet", "e")}</text></g>)}
   </>;
 }
@@ -57,7 +57,7 @@ export default function NetworkDeviceSchematic({ node, session, selectedPort }: 
     <svg viewBox="0 0 300 160" className="mt-3 h-40 w-full" role="img" aria-label={`${node.name} device schematic`}>
       <rect x="1" y="1" width="298" height="158" rx="10" fill="#0b151d" stroke="#29424a" />
       <text x="16" y="20" fill="#b9eeee" fontSize="9" fontFamily="monospace" letterSpacing="2">{node.name} / PORT MAP</text>
-      <DeviceShape kind={node.kind} ports={node.ports} session={session} selectedPort={selectedPort} />
+      <DeviceShape kind={node.kind} role={node.role} ports={node.ports} session={session} selectedPort={selectedPort} />
       <text x="150" y="151" fill="#778a92" fontSize="8" textAnchor="middle" fontFamily="monospace">{upPorts}/{node.ports.length} PORTS UP · {node.mountType || "floor"} MOUNT</text>
     </svg>
     <div className="mt-3 grid grid-cols-2 gap-2 text-[10px] text-[#9eb1b5]">

@@ -1,7 +1,7 @@
 import type { LabConfig, LabStep } from './labDefinitions';
 import type { Requirement } from '../lib/learning-engine';
 
-type Command = [string, LabStep['requiredMode'], string, string, string?];
+type Command = [string, LabStep['requiredMode'], string, string, string?, boolean?];
 
 const ORDER: Record<string, number> = {
   'mt2-tr1-time-services': 3,
@@ -28,13 +28,14 @@ const ORDER: Record<string, number> = {
 const success = (label: string) => `${label} recorded in the modeled configuration.`;
 
 function steps(commands: Command[]): LabStep[] {
-  return commands.map(([targetDevice, requiredMode, expectedCommand, label, description], index) => ({
+  return commands.map(([targetDevice, requiredMode, expectedCommand, label, description, requireReachability], index) => ({
     id: index + 1,
     targetDevice,
     requiredMode,
     expectedCommand,
     label,
     description: description || `Apply and verify ${label.toLowerCase()}.`,
+    requireReachability,
     successMessage: success(label),
     validation: () => true,
   }));
@@ -53,6 +54,20 @@ function edgeTopology(serverRole: string, extra: any[] = []): LabConfig['topolog
       { id: 'r1-sw1', from: 'r1', to: 'sw1', fromPort: 'g0/0', toPort: 'g0/1' },
       { id: 'sw1-srv1', from: 'sw1', to: 'srv1', fromPort: 'g0/2', toPort: 'eth0' },
       { id: 'sw1-pc1', from: 'sw1', to: 'pc1', fromPort: 'g0/3', toPort: 'eth0' },
+    ],
+  };
+}
+
+function vlsmTransitTopology(): LabConfig['topology'] {
+  return {
+    devices: [
+      { id: 'r1', name: 'CE-R1', kind: 'router', role: 'Enterprise edge router', x: 150, y: 220, ports: ['g0/0'] },
+      { id: 'sw1', name: 'CE-SW1', kind: 'switch', role: 'Layer 2 transit switch', x: 460, y: 220, ports: ['g0/1', 'g0/2'] },
+      { id: 'r2', name: 'CE-R2', kind: 'router', role: 'Remote aggregate router', x: 790, y: 220, ports: ['g0/0'] },
+    ],
+    links: [
+      { id: 'r1-sw1', from: 'r1', to: 'sw1', fromPort: 'g0/0', toPort: 'g0/1' },
+      { id: 'sw1-r2', from: 'sw1', to: 'r2', fromPort: 'g0/2', toPort: 'g0/0' },
     ],
   };
 }
@@ -375,18 +390,44 @@ export const masterTwoExpansionLabs: Record<string, LabConfig> = {
   ),
   'mt2-tr5-vlsm-supernetting': lab(
     'mt2-tr5-vlsm-supernetting', 5, 'VLSM and Supernet Route Policy',
-    'Apply variable-length addressing at the edge, then summarize contiguous networks into an aggregate route for scalable routing policy.',
+    'Address a /30 transit between two routers through a Layer 2 switch, then route to the remote /22 and verify reachability.',
     [
       ['CE-R1', 'user', 'enable', 'Router Privileged Mode'],
       ['CE-R1', 'privileged', 'configure terminal', 'Router Global Configuration'],
       ['CE-R1', 'config', 'interface g0/0', 'Select VLSM Transit Interface'],
       ['CE-R1', 'interface', 'ip address 10.93.0.1 255.255.255.252', 'Address /30 Transit Link'],
       ['CE-R1', 'interface', 'no shutdown', 'Enable VLSM Transit Link'],
+      ['CE-SW1', 'user', 'enable', 'Switch Privileged Mode'],
+      ['CE-SW1', 'privileged', 'configure terminal', 'Switch Global Configuration'],
+      ['CE-SW1', 'config', 'interface g0/1', 'Select Router Uplink'],
+      ['CE-SW1', 'interface', 'no shutdown', 'Enable Router Uplink'],
+      ['CE-SW1', 'interface', 'exit', 'Return to Switch Configuration'],
+      ['CE-SW1', 'config', 'interface g0/2', 'Select Remote Router Port'],
+      ['CE-SW1', 'interface', 'no shutdown', 'Enable Remote Router Port'],
+      ['CE-R2', 'user', 'enable', 'Remote Router Privileged Mode'],
+      ['CE-R2', 'privileged', 'configure terminal', 'Remote Router Global Configuration'],
+      ['CE-R2', 'config', 'interface g0/0', 'Select Remote Transit Interface'],
+      ['CE-R2', 'interface', 'ip address 10.93.0.2 255.255.255.252', 'Address Remote /30 Endpoint'],
+      ['CE-R2', 'interface', 'no shutdown', 'Enable Remote Transit Interface'],
+      ['CE-R2', 'interface', 'exit', 'Return to Remote Router Configuration'],
+      ['CE-R2', 'config', 'interface loopback 0', 'Select Aggregate Loopback'],
+      ['CE-R2', 'interface', 'ip address 10.93.4.1 255.255.252.0', 'Address Remote /22 Aggregate'],
+      ['CE-R2', 'interface', 'no shutdown', 'Enable Aggregate Loopback'],
       ['CE-R1', 'interface', 'exit', 'Return to Global Configuration'],
       ['CE-R1', 'config', 'ip route 10.93.4.0 255.255.252.0 10.93.0.2', 'Install /22 Supernet Route'],
       ['CE-R1', 'config', 'end', 'Return to Verification'],
       ['CE-R1', 'privileged', 'show ip route static', 'Verify Supernet Route'],
       ['CE-R1', 'privileged', 'show ip interface brief', 'Verify VLSM Interface'],
-    ], edgeTopology('Aggregated enterprise prefixes'), routedOutcome('10.93.0.1 255.255.255.252', 'VLSM transit interface is addressed')
-  ),
+      ['CE-R1', 'privileged', 'ping 10.93.4.1', 'Verify Remote Aggregate Reachability', 'Confirm the remote /22 is reachable through CE-R2 and that its reply returns to CE-R1.', true],
+    ], vlsmTransitTopology(), [
+      ...routedOutcome('10.93.0.1 255.255.255.252', 'VLSM transit interface is addressed'),
+      { device: 'CE-R1', path: ['interfaces', 'g0/0', 'shutdown'], value: false, label: 'Local transit interface is enabled' },
+      { device: 'CE-SW1', path: ['interfaces', 'g0/1', 'shutdown'], value: false, label: 'Switch local transit port is enabled' },
+      { device: 'CE-SW1', path: ['interfaces', 'g0/2', 'shutdown'], value: false, label: 'Switch remote transit port is enabled' },
+      { device: 'CE-R2', path: ['interfaces', 'g0/0', 'ipv4'], value: ['10.93.0.2 255.255.255.252'], label: 'Remote next hop is addressed' },
+      { device: 'CE-R2', path: ['interfaces', 'g0/0', 'shutdown'], value: false, label: 'Remote transit interface is enabled' },
+      { device: 'CE-R2', path: ['interfaces', 'loopback 0', 'ipv4'], value: ['10.93.4.1 255.255.252.0'], label: 'Remote aggregate loopback is addressed' },
+      { device: 'CE-R2', path: ['interfaces', 'loopback 0', 'shutdown'], value: false, label: 'Remote aggregate loopback is enabled' },
+      { device: 'CE-R1', path: ['settings', 'config:global', 'ip route 10.93.4.0 255.255.252.0'], value: '10.93.0.2', label: 'Aggregate static route uses the modeled next hop' },
+    ]),
 };

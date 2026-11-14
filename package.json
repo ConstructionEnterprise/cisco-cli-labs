@@ -9,7 +9,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "preview": "vite preview --host",
     "check": "tsc --noEmit",
-    "test:learning": "tsx --test client/src/lib/learning-engine.test.ts client/src/lib/packet-animation.test.ts client/src/lib/addressing-fundamentals.test.ts",
+    "test:learning": "tsx --test client/src/lib/learning-engine.test.ts client/src/lib/packet-animation.test.ts client/src/lib/addressing-fundamentals.test.ts client/src/lib/ios-device-reference.test.ts",
     "audit:labs": "tsx scripts/audit-labs.ts",
     "format": "prettier --write ."
   },

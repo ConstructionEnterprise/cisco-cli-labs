@@ -6,17 +6,19 @@ import NetworkSandbox from "@/components/NetworkSandbox";
 import OperationsSandbox from "@/components/OperationsSandbox";
 import TrafficDataPanel from "@/components/TrafficDataPanel";
 import GuidedPacketTrace, { getGuidedTraceProfile } from "@/components/GuidedPacketTrace";
+import RangeEvidencePanel from "@/components/RangeEvidencePanel";
 import TrancheVerificationPanel from "@/components/TrancheVerificationPanel";
 import ResizeGrabBar from "@/components/ResizeGrabBar";
 import LearningWorkbench from '@/components/LearningWorkbench';
 import NetworkingVocabulary from '@/components/NetworkingVocabulary';
 import DeviceSelectionAlert from '@/components/DeviceSelectionAlert';
-import { canonicalCommand, DEFAULT_LEARNING_MODE, seedSessions, gradeLab, recordAttempt, type LearningMode } from '@/lib/learning-engine';
+import { canonicalCommand, DEFAULT_LEARNING_MODE, seedSessions, gradeLab, matchesHelpStep, recordAttempt, type LearningMode } from '@/lib/learning-engine';
 import { executeNetworkCommand } from '@/lib/sandbox-network-engine';
 import { executeAttackCommand, isAttackCommand } from '@/lib/attack-console-engine';
 import { protocolEvidence } from '@/lib/operational-evidence';
 import { toast } from "sonner";
 import { applyCommand, applyModeledLayer2Learning, applyModeledNeighborDiscovery, boot, iosContextHelp, isCiscoCommand, modePrompt, normalizeCommand, type Mode, type Session } from "@/lib/ios-engine";
+import { iosDeviceContextHelp, iosPlatformReference } from '@/lib/ios-device-reference';
 import { BookOpenCheck, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleHelp, Copy, Database, History, Minimize2, Network, Play, RotateCcw, TerminalSquare, Wrench } from "lucide-react";
 import { LAB_REGISTRY, type LabConfig } from "@/labs/labDefinitions";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -124,7 +126,7 @@ export default function Home() {
   const [labHeaderOpen, setLabHeaderOpen] = useState(true);
   const [commandHistoryOpen, setCommandHistoryOpen] = useState(false);
   const [commandHistory, setCommandHistory] = useState<Record<string, string[]>>({});
-  const [terminalHeight, setTerminalHeight] = useState(380);
+  const [terminalHeight, setTerminalHeight] = useState(155);
   const [verificationHeight, setVerificationHeight] = useState(320);
   const [terminalMinimized, setTerminalMinimized] = useState(false);
   const [verificationMinimized, setVerificationMinimized] = useState(false);
@@ -133,6 +135,8 @@ export default function Home() {
 
   const step = lab.steps[Math.min(stepIndex, lab.steps.length - 1)];
   const session = sessions[activeDevice];
+  const activeIosReference = session?.terminalKind === 'attack' ? null : iosPlatformReference(lab.topology.devices.find((device) => device.name === activeDevice) || { name: activeDevice, kind: '', ports: [] });
+  const activeConsoleLabel = session?.terminalKind === 'attack' ? 'attack-console' : activeIosReference ? 'ios-sim' : 'device-sim';
   const prompt = session ? modePrompt(activeDevice, session) : "";
   const stateGrade = useMemo(() => gradeLab(lab, sessions), [lab, sessions]);
   const stepDone = (item: typeof step) => Boolean(sessions[item.targetDevice]?.completedLabSteps?.[item.id] || (item.exercise && sessions[item.targetDevice]?.lessonAnswers?.[item.id]));
@@ -209,7 +213,7 @@ export default function Home() {
     setLabHeaderOpen(true);
     setCommandHistoryOpen(false);
     setCommandHistory({});
-    setTerminalHeight(380);
+    setTerminalHeight(155);
     setVerificationHeight(320);
     setTerminalMinimized(false);
     setVerificationMinimized(false);
@@ -224,7 +228,7 @@ export default function Home() {
     setTraceRun(0);
     setCommandHistoryOpen(false);
     setCommandHistory({});
-    setTerminalHeight(380);
+    setTerminalHeight(155);
     setVerificationHeight(320);
     setTerminalMinimized(false);
     setVerificationMinimized(false);
@@ -275,15 +279,20 @@ export default function Home() {
     }
 
     const isAttackConsole = current.terminalKind === 'attack';
-    const help = isAttackConsole ? null : iosContextHelp(raw, current.mode);
+    const helpDevice = lab.topology.devices.find((device) => device.name === activeDevice);
+    const help = isAttackConsole ? null : helpDevice
+      ? iosDeviceContextHelp(raw, current.mode, helpDevice, current.context)
+      : iosContextHelp(raw, current.mode);
     if (help) {
-      setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, ...help] } }));
+      const matches = !complete && matchesHelpStep(step, raw, activeDevice, current.mode, help);
+      setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, ...help], completedLabSteps: matches ? { ...current.completedLabSteps, [step.id]: true } : current.completedLabSteps } }));
+      if (matches) setStepIndex((index) => Math.min(index + 1, lab.steps.length));
       setInput('');
       setHint(false);
       return;
     }
     const commandValid = isAttackConsole ? isAttackCommand(normalized) : isCiscoCommand(normalized, current.mode);
-    if (!commandValid || learningMode === 'guided' && (activeDevice !== expectedDevice || current.mode !== expectedMode || normalized !== canonicalCommand(step.expectedCommand))) {
+    if (!commandValid || learningMode === 'guided' && (activeDevice !== expectedDevice || current.mode !== expectedMode || !step.evidencePhase && normalized !== canonicalCommand(step.expectedCommand))) {
       recordAttempt(lab.id, 'errors');
       const reason = activeDevice !== expectedDevice ? `Switch to ${expectedDevice}.` : current.mode !== expectedMode ? `Use the ${expectedMode === "shell" ? "Linux shell" : expectedMode === "user" ? "user EXEC" : expectedMode === "privileged" ? "privileged EXEC" : expectedMode} prompt.` : !commandValid ? isAttackConsole ? 'That command is not valid in the synthetic Linux attack console.' : `That command is not valid in Cisco IOS ${current.mode} mode.` : `Expected the full command: ${step.expectedCommand}`;
       setSessions((all) => ({ ...all, [activeDevice]: { ...current, history: [...updatedHistory, `% Invalid input detected at '^' marker. Hint: ${reason}`] } }));
@@ -291,7 +300,7 @@ export default function Home() {
       return;
     }
 
-    const matchesStep = activeDevice === expectedDevice && current.mode === expectedMode && normalized === canonicalCommand(step.expectedCommand);
+    const matchesStep = activeDevice === expectedDevice && current.mode === expectedMode && (step.evidencePhase || normalized === canonicalCommand(step.expectedCommand));
     if (learningMode === 'guided') recordAttempt(lab.id, 'hints');
     if (isAttackConsole) {
       const result = executeAttackCommand(current, normalized, sessions);
@@ -301,9 +310,12 @@ export default function Home() {
         setInput('');
         return;
       }
-      const nextAttackSession = { ...result.session, history: [...updatedHistory, ...result.output], completedLabSteps: matchesStep ? { ...result.session.completedLabSteps, [step.id]: true } : result.session.completedLabSteps };
+      const observed = !step.evidencePhase || result.session.attackTerminal?.rangeEvidence.length !== current.attackTerminal?.rangeEvidence.length
+        && result.session.attackTerminal?.rangeEvidence.at(-1)?.phase === step.evidencePhase
+        && result.session.attackTerminal?.rangeEvidence.at(-1)?.targetId === lab.rangeTargetId;
+      const nextAttackSession = { ...result.session, history: [...updatedHistory, ...result.output], completedLabSteps: matchesStep && observed ? { ...result.session.completedLabSteps, [step.id]: true } : result.session.completedLabSteps };
       setSessions((all) => ({ ...all, [activeDevice]: nextAttackSession }));
-      if (matchesStep) setStepIndex((index) => Math.min(index + 1, lab.steps.length));
+      if (matchesStep && observed) setStepIndex((index) => Math.min(index + 1, lab.steps.length));
       setInput('');
       setHint(false);
       return;
@@ -524,7 +536,7 @@ export default function Home() {
 
             {!step?.exercise && <div className="mb-6 grid gap-3 xl:grid-cols-[1.05fr_.95fr]">
               <div className="panel-surface p-4">
-                <div className="instrument-label text-[#f5b74b]">PACKET TRACE / OPERATIONAL CONTEXT</div>
+                <div className="instrument-label text-[#f5b74b]">{lab.rangeTargetId ? 'TARGET PATH / TERMINAL EVIDENCE' : 'PACKET TRACE / OPERATIONAL CONTEXT'}</div>
                 <div className="mt-3 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-[#0e1720] p-3 font-mono text-center text-xs">
                   {lab.topology.devices.map((device: any, index: number) => (
                     <div key={device.id || index} className="flex min-w-0 flex-1 items-center gap-2">
@@ -540,12 +552,12 @@ export default function Home() {
                   <span className="mx-4">{lab.topology.devices.map((d: any) => d.name || d.id).join(" ⇄ ")}</span>
                   <span className="h-px flex-1 bg-gradient-to-l from-[#63e6e2] to-transparent" />
                 </div>
-                {lab.type === "guided" && <GuidedPacketTrace profile={guidedTrace} run={tracePlaybackRun} leftLabel={lab.topology.devices[0]?.name || "SOURCE"} rightLabel={lab.topology.devices[lab.topology.devices.length - 1]?.name || "DESTINATION"} />}
+                {lab.rangeTargetId ? <RangeEvidencePanel targetId={lab.rangeTargetId} terminal={sessions['ATTACKER-KALI']?.attackTerminal} /> : lab.type === "guided" && <GuidedPacketTrace profile={guidedTrace} run={tracePlaybackRun} leftLabel={lab.topology.devices[0]?.name || "SOURCE"} rightLabel={lab.topology.devices[lab.topology.devices.length - 1]?.name || "DESTINATION"} />}
               </div>
 
               <div className="panel-surface p-4">
                 <div className="flex items-center justify-between">
-                  <div className="instrument-label text-[#63e6e2]">CURRENT PACKET TRACE</div>
+                  <div className="instrument-label text-[#63e6e2]">{lab.rangeTargetId ? 'CURRENT RANGE OBJECTIVE' : 'CURRENT PACKET TRACE'}</div>
                   <span className="status-pill"><span className="status-dot" /> {complete ? "COMPLETE" : `${stepIndex + 1}/${lab.steps.length}`}</span>
                 </div>
 
@@ -553,7 +565,7 @@ export default function Home() {
                   <>
                     {/* THE "HOW" - The exact command to type */}
                     <div className="mt-3">
-                      <div className="text-[10px] font-mono uppercase text-[#84969d] mb-1">Command to enter:</div>
+                      <div className="text-[10px] font-mono uppercase text-[#84969d] mb-1">{step.helpQuery && learningMode === 'guided' ? 'Help to request:' : 'Command to enter:'}</div>
                       <div className="font-mono text-lg font-bold text-[#63e6e2] bg-black/40 p-3 rounded border border-[#63e6e2]/20">
                         {learningMode === 'guided' ? step.expectedCommand : learningMode === 'assisted' ? 'Configure the objective; request a hint if needed.' : 'Meet the configuration requirements in the learning workspace.'}
                       </div>
@@ -564,6 +576,7 @@ export default function Home() {
 
                     {/* The "Why" (Instructional Description) */}
                     <p className="mt-2 text-sm leading-6 text-[#aebbc0]">{learningMode === 'guided' ? step.description : lab.description}</p>
+                    {step.helpQuery && learningMode === 'guided' && <p className="mt-2 text-xs leading-5 text-[#63e6e2]">Type the full help query, including ?, then press Enter. Help does not change the configuration.</p>}
 
                     {/* Context */}
                     <div className="mt-3 rounded-lg border border-[#f5b74b]/20 bg-[#f5b74b]/10 p-3">
@@ -595,7 +608,8 @@ export default function Home() {
                   <div className="flex gap-1.5">
                     <span className="h-2.5 w-2.5 rounded-full bg-[#f07178]" /><span className="h-2.5 w-2.5 rounded-full bg-[#f5b74b]" /><span className="h-2.5 w-2.5 rounded-full bg-[#63e6e2]" />
                   </div>
-                  <span className="ml-2 font-mono text-[10px] uppercase tracking-[.18em] text-[#74848d]">{session?.terminalKind === 'attack' ? 'attack-console /' : 'ios-sim /'} {activeDevice}</span>
+                  <span className="ml-2 font-mono text-[10px] uppercase tracking-[.18em] text-[#74848d]">{activeConsoleLabel} / {activeDevice}</span>
+                  {activeIosReference && <a href={activeIosReference.url} target="_blank" rel="noopener noreferrer" className="hidden text-[10px] text-[#8fc9c8] underline underline-offset-2 hover:text-white lg:inline" title="Official Cisco platform documentation; only a subset is executable in this simulator">Cisco command reference</a>}
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="font-mono text-[10px] uppercase tracking-wider text-[#667780]">{prompt}</div>
@@ -612,17 +626,19 @@ export default function Home() {
                   {activeCommandHistory.length ? activeCommandHistory.map((command, index) => <div key={`${command}-${index}`} className="flex gap-3 border-b border-white/[.06] py-1.5 font-mono text-[10px] text-[#b5c2c6]"><span className="w-5 shrink-0 text-right text-[#667780]">{index + 1}</span><span>{command}</span></div>) : <div className="py-3 text-xs text-[#778a92]">No commands entered on this device yet.</div>}
                 </div>}
               </div>
-              {!terminalMinimized && <div ref={terminalScrollbackRef} id="tranche-ios-sim-body" className="terminal-output terminal-scrollback" style={{ height: terminalHeight, minHeight: 0, overflowY: "scroll" }} aria-live="polite" aria-label="Scrollable IOS terminal output" tabIndex={0}>
+              {!terminalMinimized && <div ref={terminalScrollbackRef} id="tranche-ios-sim-body" className="terminal-output terminal-scrollback" style={{ height: terminalHeight, minHeight: 0, overflowY: "scroll" }} aria-live="polite" aria-label="Scrollable terminal history" tabIndex={0}>
                 {terminalLines.map((line, index) => (
                   <div key={`${line}-${index}`} className={`${line.startsWith("%") ? "text-[#f07178]" : line.startsWith("Hint:") ? "text-[#f5b74b]" : line.startsWith("Cisco") || line.includes("·") || line.startsWith("Full IOS") ? "text-[#72848d]" : line.startsWith("✓") || line.includes("applied") || line.includes("enabled") || line.includes("entered") || line.includes("configured") || line.includes("visible") || line.includes("Success") ? "text-[#b5d8d4]" : "text-[#a4b2b7]"}`}>{line || "\u00a0"}</div>
                 ))}
-                {(!complete || learningMode !== 'guided') && (
-                  <div className="mt-4 flex items-center gap-2">
-                    <span className="text-[#63e6e2]">{prompt}</span>
-                    <input autoFocus value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && submit()} className="min-w-0 flex-1 bg-transparent font-mono text-sm text-white outline-none placeholder:text-[#42535c]" placeholder={session?.terminalKind === 'attack' ? 'type a synthetic Linux range command...' : 'type IOS command or ? for help...'} aria-label={session?.terminalKind === 'attack' ? 'Linux attack console command' : 'Cisco IOS command'} />
-                  </div>
-                )}
               </div>}
+              {!terminalMinimized && (!complete || learningMode !== 'guided') && (
+                <div className="flex items-center gap-2 border-t border-white/10 bg-[#091016] px-5 py-3 font-mono">
+                  <span className="shrink-0 text-sm text-[#63e6e2]">{prompt}</span>
+                  <input autoFocus value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => {
+                    if (event.key === 'Enter') submit();
+                  }} className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-[#42535c]" placeholder={session?.terminalKind === 'attack' ? 'type a synthetic Linux range command...' : activeIosReference ? 'type IOS command or ? for help, then press Enter...' : 'type a modeled device command...'} aria-label={session?.terminalKind === 'attack' ? 'Linux attack console command' : activeIosReference ? 'Cisco IOS command' : 'Modeled device command'} />
+                </div>
+              )}
               {!terminalMinimized && <div className="border-t border-white/10 bg-[#0e1720] px-5 py-3">
                   {hint && learningMode !== 'assessment' && <p className="mb-3 text-xs text-[#f4d998]">On {step.targetDevice}, in {step.requiredMode} mode: {step.expectedCommand}</p>}
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -644,10 +660,10 @@ export default function Home() {
             {!step?.exercise && !terminalMinimized && <ResizeGrabBar
               label={session?.terminalKind === 'attack' ? 'Resize attack console' : 'Resize IOS simulator'}
               value={terminalHeight}
-              min={220}
+              min={155}
               max={760}
-              onPointerDown={(event) => beginResize(event, setTerminalHeight, terminalHeight, 220, 760)}
-              onKeyDown={(event) => handleResizeKey(event, setTerminalHeight, terminalHeight, 220, 760)}
+              onPointerDown={(event) => beginResize(event, setTerminalHeight, terminalHeight, 155, 760)}
+              onKeyDown={(event) => handleResizeKey(event, setTerminalHeight, terminalHeight, 155, 760)}
             />}
 
             <TrancheVerificationPanel

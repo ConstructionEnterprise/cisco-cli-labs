@@ -1,14 +1,17 @@
-import { applyCommand, iosContextHelp, isCiscoCommand, applyModeledLayer2Learning, type Session, type DhcpClientState, type DhcpLease } from './ios-engine';
+import { applyCommand, isCiscoCommand, applyModeledLayer2Learning, type Mode, type Session, type DhcpClientState, type DhcpLease } from './ios-engine';
 import { canonicalCommand } from './learning-engine';
 import type { SandboxNode, SandboxLink, Topology } from '../components/NetworkSandbox';
 import type { LabConfig } from '../labs/labDefinitions';
 import { supportsDeviceCommand } from './capabilities';
+import { iosDeviceContextHelp } from './ios-device-reference';
 import { channelForwarding, evidenceOutput, protocolEvidence, interfaceEvidence, vlanAllowed, leaseState, electionEvidence, ospfTransitLinks, ospfOperationalEvidence, formatOspfProcessCli, formatOspfDatabaseCli, formatOspfInterfaceCli } from './operational-evidence';
 import { ecosystemDevice } from './network-ecosystem';
 import { evaluateAsaTraffic } from './asa-engine';
 import { createSimulatedFlow } from './traffic-engine';
 import { diagnosePath } from './operational-evidence';
-import { evaluateInterfaceAcl } from './ipv4-policy';
+import { aclEntries, evaluateInterfaceAcl } from './ipv4-policy';
+import { syncVtp, vtpDigest, vtpDomainDisplay, vtpModeDisplay, vtpState, vtpUpdater, VTP_MAX_VLANS } from './vtp';
+import { renderSpanningTree, renderSpanningTreeInterface, renderSpanningTreeRoot, renderSpanningTreeSummary } from './stp';
 
 function traceOneWay(sourceId: string, destinationIp: string, topology: Topology, sessions: Record<string, Session>, establishedFirewalls = new Set<string>(), sourceAddress?: string) {
   const hops: string[] = [];
@@ -79,16 +82,49 @@ export function tracePacket(sourceId: string, destinationIp: string, topology: T
   const reverse = traceOneWay(destination.id, sourceIp, topology, sessions, established, destinationIp);
   return { ...forward, replyPath: reverse.path, passed: reverse.passed, summary: reverse.passed ? 'Modeled IPv4 request and reply paths passed route, VLAN, interface and ICMP policy checks.' : `Return path failed: ${reverse.summary}`, hops: [...forward.hops, 'Return path:', ...reverse.hops] };
 }
-export function executeNetworkCommand(node: SandboxNode, topology: Topology, sessions: Record<string, Session>, raw: string) {
+export function executeNetworkCommand(node: SandboxNode, topology: Topology, sessions: Record<string, Session>, raw: string): { accepted: boolean; sessions: Record<string, Session>; output: string[] } {
+  // Note: `accepted` is typed as boolean (not a literal union) because the
+  // `do`-prefix path recurses through this function, which defeats literal
+  // return-type inference.
   const command = canonicalCommand(raw);
   const current = sessions[node.id];
-  const help = current ? iosContextHelp(raw, current.mode) : null;
+  const help = current ? iosDeviceContextHelp(raw, current.mode, node, current.context) : null;
   if (help) return { accepted: true, sessions, output: help };
+  // `do` runs a privileged EXEC command without leaving configuration mode.
+  if (current && current.mode !== 'privileged' && current.mode !== 'user' && current.mode !== 'shell') {
+    const doInner = command.match(/^do (.+)$/);
+    if (doInner) {
+      const inner = doInner[1].trim();
+      if (!inner || !isCiscoCommand(inner, 'privileged') || !supportsDeviceCommand(inner, node, current.context)) {
+        return { accepted: false, sessions, output: ["% Invalid input detected at '^' marker."] };
+      }
+      const asPrivileged = { ...sessions, [node.id]: { ...current, mode: 'privileged' as Mode, context: null } };
+      const innerResult = executeNetworkCommand(node, topology, asPrivileged, inner);
+      // `do` always returns to the config prompt it ran from.
+      const restored = { ...innerResult.sessions[node.id], mode: current.mode, context: current.context };
+      return { ...innerResult, sessions: { ...innerResult.sessions, [node.id]: restored } };
+    }
+    if (command === 'do' || command.startsWith('do ')) {
+      return { accepted: false, sessions, output: ["% Invalid input detected at '^' marker."] };
+    }
+  }
   if (!current || !isCiscoCommand(command, current.mode) || !supportsDeviceCommand(command, node, current.context)) {
     return { accepted: false, sessions, output: ["% Invalid input detected at '^' marker."] };
   }
   let next = { ...sessions, [node.id]: applyCommand(current, command, current.history) };
   const details: string[] = [];
+  const vtpBlocked = ((current.mode === 'config' && /^vlan \d+$/.test(command)) || (current.mode === 'vlan' && command.startsWith('name '))) && (current.vtp?.mode || 'server') === 'client';
+  if (vtpBlocked) {
+    details.push('% VTP client cannot configure VLANs; configure them on the VTP server.');
+  }
+  if (current.vtp && next[node.id].vtp && current.vtp.domain !== next[node.id].vtp!.domain) {
+    const nextDomain = next[node.id].vtp!.domain || 'NULL';
+    details.push(`Changing VTP domain name from ${current.vtp.domain || 'NULL'} to ${nextDomain}`);
+    const now = new Date();
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const pad = (value: number) => String(value).padStart(2, '0');
+    details.push(`*${months[now.getMonth()]} ${now.getDate()} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}.${String(now.getMilliseconds()).padStart(3, '0')}: %SW_VLAN-6-VTP_DOMAIN_NAME_CHG: VTP domain name changed to ${nextDomain}.`);
+  }
   const context = next[node.id].context;
   if (context && (command === 'ip address dhcp' || command === 'no shutdown') && next[node.id].interfaces[context]?.dhcpClient) {
     if (next[node.id].interfaces[context].shutdown) details.push('DHCP: waiting for the client interface to be enabled.');
@@ -112,11 +148,21 @@ export function executeNetworkCommand(node: SandboxNode, topology: Topology, ses
     for (const link of topology.links.filter(l => l.from === node.id && l.fromPort === current.context || l.to === node.id && l.toPort === current.context)) next = removeMacEntriesForLink(next, topology, link);
   }
   next = reconcileOspfRoutes(topology, next);
+  next = syncVtp(topology, next);
   const named = Object.fromEntries(topology.nodes.filter(device => next[device.id]).map(device => [device.name, next[device.id]]));
   const learned = applyModeledLayer2Learning(named, { devices: topology.nodes, links: topology.links });
   next = { ...next, ...Object.fromEntries(topology.nodes.filter(device => learned[device.name]).map(device => [device.id, learned[device.name]])) };
-  if (command.startsWith('ping ') && !tracePacket(node.id, command.split(' ')[1], topology, next).passed) {
-    next[node.id] = { ...next[node.id], arpTable: current.arpTable, macTable: current.macTable };
+  next = ageMacTables(next);
+  if (command.startsWith('ping ')) {
+    const destination = command.split(' ')[1];
+    const diagnostic = tracePacket(node.id, destination, topology, next);
+    if (!diagnostic.passed) {
+      next[node.id] = { ...next[node.id], arpTable: current.arpTable, macTable: current.macTable };
+    } else if (diagnostic.path.length) {
+      const firstLink = topology.links.find(link => link.id === diagnostic.path[0]);
+      const egress = firstLink?.from === node.id ? firstLink.fromPort : firstLink?.to === node.id ? firstLink.toPort : undefined;
+      if (egress) next[node.id] = { ...next[node.id], arpTable: next[node.id].arpTable.map(entry => entry.ip === destination ? { ...entry, interface: egress } : entry) };
+    }
   }
   return { accepted: true, sessions: next, output: [...outputFor(command, node, topology, next[node.id], next), ...details] };
 }
@@ -141,6 +187,14 @@ export function ospfNetworksMatch(address: string, networks: { network: string; 
 
 export function isOspfSpeaker(node: SandboxNode): boolean {
   return node.kind === "router" || node.role.includes("Layer 3") || node.role.includes("OSPF Speaker");
+}
+
+// A device maintains an IP routing table only when it can actually forward
+// by IP: routers, firewalls, and switches whose role marks them Layer 3 /
+// OSPF speakers. A Layer 2 switch forwards by MAC table, not by routing
+// table, even when it carries a management SVI address.
+export function isRoutedDevice(node: { kind: string; role?: string }): boolean {
+  return node.kind === "router" || node.kind === "firewall" || /Layer 3|OSPF Speaker/i.test(node.role || "");
 }
 
 export function supportsSandboxCommand(command: string, node: SandboxNode, context: string | null): boolean {
@@ -192,6 +246,10 @@ export function reconcileOspfRoutes(topology: Topology, sessions: Record<string,
   for (const node of topology.nodes) {
     const session = next[node.id];
     if (!session) continue;
+    // Only OSPF speakers learn OSPF routes. A Layer 2 switch never gains
+    // protocol entries from an adjacency it cannot participate in, even if
+    // a stale routing-table entry or a mis-seeded session claims otherwise.
+    if (!isOspfSpeaker(node)) continue;
     const prefix = (address: string) => { const [, mask] = address.split(' '); return `${numberToIp(interfaceSubnet(address) || 0)}/${prefixLength(mask)}`; };
     const connected = new Set(Object.entries(session.interfaces).filter(([port]) => interfaceEvidence(session, port).up).flatMap(([, state]) => state.ipv4.map(prefix)));
     const seen = new Set([node.id]);
@@ -224,7 +282,162 @@ export function reconcileOspfRoutes(topology: Topology, sessions: Record<string,
 export function outputFor(command: string, node: SandboxNode, topology: Topology, session: Session, sessions: Record<string, Session> = {}): string[] {
   const shared = evidenceOutput(command, session, { topology: { devices: topology.nodes, links: topology.links } } as LabConfig, { ...sessions, [node.id]: session });
   if (shared) return shared;
+  // VTP-aware view: a client shows the database it has adopted from the
+  // domain's highest revision, not its stale local copy. executeNetworkCommand
+  // already syncs, so this mostly covers direct outputFor callers; sync is
+  // idempotent, so running it twice is harmless.
+  const view = syncVtp(topology, sessions)[node.id] || session;
   if (command.startsWith("show ")) {
+    const physicalPorts = node.ports.filter(port => !/^vlan|^port-channel/i.test(port));
+    const portEvidence = (port: string) => {
+      const state = session.interfaces[port];
+      const link = topology.links.find(item => item.from === node.id && item.fromPort === port || item.to === node.id && item.toPort === port);
+      const peerId = link?.from === node.id ? link.to : link?.from;
+      const peerPort = link?.from === node.id ? link.toPort : link?.fromPort;
+      const peer = topology.nodes.find(item => item.id === peerId);
+      const peerState = peerPort ? sessions[peerId || '']?.interfaces[peerPort] : undefined;
+      const localUp = !!state && !state.shutdown && state.status === 'up';
+      // End hosts power their own NICs: a PC/server/printer runs no IOS
+      // session in the labs, so a missing interface entry means its NIC is
+      // up, not down. Network devices still default to down until they are
+      // configured, and an explicit host shutdown/down entry still wins.
+      const hostKinds = ['pc', 'server', 'printer', 'iot', 'access-point'];
+      const peerUp = peerState
+        ? !peerState.shutdown && peerState.status === 'up'
+        : !!peer && hostKinds.includes(peer.kind);
+      const status = state?.status === 'err-disabled' ? 'err-disabled' : state?.shutdown ? 'disabled' : link && localUp && peerUp ? 'connected' : 'notconnect';
+      return { state, peer, peerPort, status };
+    };
+    if (command === 'show interfaces status') {
+      return ['Port       Name                 Status        Vlan       Duplex Speed  Type', ...physicalPorts.map(port => {
+        const { state, status } = portEvidence(port);
+        const description = [...(state?.commands || [])].reverse().find(value => value.startsWith('description '))?.slice(12) || '';
+        const vlan = state?.switchportMode === 'trunk' ? 'trunk' : state?.switchportMode === 'access' ? String(state.accessVlan || 1) : state?.ipv4.length ? 'routed' : '1';
+        return `${port.padEnd(11)}${description.slice(0, 20).padEnd(21)}${status.padEnd(14)}${vlan.padEnd(11)}${(state?.duplex || 'auto').padEnd(7)}${(state?.speed || 'auto').padEnd(7)}Ethernet`;
+      })];
+    }
+    if (command === 'show interfaces counters errors') {
+      return ['Port       CRC errors  Collisions', ...physicalPorts.map(port => {
+        const counters = session.interfaces[port]?.errors;
+        return `${port.padEnd(11)}${String(counters?.crc ?? 'not modeled').padEnd(12)}${counters?.collisions ?? 'not modeled'}`;
+      })];
+    }
+    if (command === 'show version') {
+      const platform = node.kind === 'router'
+        ? { model: 'Cisco ISR 4331', ios: 'Cisco IOS XE Software, Version 16.09.04', image: 'bootflash:isr4300-universalk9.16.09.04.SPA.bin', register: '0x2102' }
+        : node.kind === 'switch'
+          ? /Layer 3|OSPF Speaker/i.test(node.role || '')
+            ? { model: 'Cisco Catalyst 3560-X', ios: 'Cisco IOS Software, C3560E Software (C3560E-UNIVERSALK9-M), Version 15.0(2)SE7', image: 'flash:c3560e-universalk9-mz.150-2.SE7.bin', register: '0xF' }
+            : { model: 'Cisco Catalyst 2960', ios: 'Cisco IOS Software, C2960 Software (C2960-LANBASEK9-M), Version 15.0(2)SE7', image: 'flash:c2960-lanbasek9-mz.150-2.SE7.bin', register: '0xF' }
+          : node.kind === 'firewall'
+            ? { model: 'Cisco ASA 5506-X', ios: 'Cisco Adaptive Security Appliance Software Version 9.12(2)', image: 'disk0:/asa912-smp-k8.bin', register: '0x1' }
+            : null;
+      if (!platform) return [`% Version information is not available on ${node.name}.`];
+      return [
+        platform.ios,
+        'RELEASE SOFTWARE (fc1)',
+        '',
+        `${node.name} uptime is not modeled`,
+        `System image file is "${platform.image}"`,
+        '',
+        `${platform.model} (modeled training platform)`,
+        `Configuration register is ${platform.register}`,
+      ];
+    }
+    if (command === 'show clock') {
+      // The leading '*' is the IOS marker for a clock that is not
+      // authoritative (no NTP source modeled), which is the honest state here.
+      const now = new Date();
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const pad = (value: number, width = 2) => String(value).padStart(width, '0');
+      return [`*${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}.${pad(now.getUTCMilliseconds(), 3)} UTC ${days[now.getUTCDay()]} ${months[now.getUTCMonth()]} ${pad(now.getUTCDate())} ${now.getUTCFullYear()}`];
+    }
+    if (command === 'show arp') {
+      return ['Protocol  Address          Age (min)  Hardware Addr   Type   Interface', ...(session.arpTable.length
+        ? session.arpTable.map(entry => `Internet  ${entry.ip.padEnd(17)}${String(entry.age).padEnd(11)}${entry.mac.padEnd(16)}ARPA   ${entry.interface}`)
+        : ['% No ARP entries learned.'])];
+    }
+    const portSecurity = command.match(/^show port-security interface (\S+)$/);
+    if (portSecurity) {
+      const port = portSecurity[1];
+      if (!physicalPorts.includes(port)) return [`% Interface ${port} does not exist on ${node.name}.`];
+      const state = session.interfaces[port];
+      const enabled = !!state?.commands.includes('switchport port-security');
+      const maximum = state?.commands.find(value => value.startsWith('switchport port-security maximum '))?.split(' ').at(-1) || '1';
+      const violation = state?.commands.find(value => value.startsWith('switchport port-security violation '))?.split(' ').at(-1) || 'shutdown';
+      return [`Port Security              : ${enabled ? 'Enabled' : 'Disabled'}`,
+        `Port Status                : ${portEvidence(port).status}`,
+        `Violation Mode             : ${enabled ? violation : 'not configured'}`,
+        `Maximum MAC Addresses     : ${enabled ? maximum : 'not configured'}`,
+        `Learned MAC Addresses     : ${session.macTable.filter(entry => entry.port === port).length}`,
+        'Security violation counter: not modeled'];
+    }
+    if (command === 'show port-security') {
+      if (node.kind !== 'switch') return [`% Port security is not available on ${node.name}.`];
+      const securePorts = physicalPorts.filter(port => session.interfaces[port]?.commands.includes('switchport port-security'));
+      const rows = securePorts.map(port => {
+        const state = session.interfaces[port];
+        const maximum = state?.commands.find(value => value.startsWith('switchport port-security maximum '))?.split(' ').at(-1) || '1';
+        const violation = state?.commands.find(value => value.startsWith('switchport port-security violation '))?.split(' ').at(-1) || 'shutdown';
+        const current = session.macTable.filter(entry => entry.port === port).length;
+        const action = violation.charAt(0).toUpperCase() + violation.slice(1);
+        return `${port.padEnd(14)}${maximum.padEnd(16)}${String(current).padEnd(14)}${'0'.padEnd(20)}${action}`;
+      });
+      return [
+        `${'Secure Port'.padEnd(14)}${'MaxSecureAddr'.padEnd(16)}${'CurrentAddr'.padEnd(14)}${'SecurityViolation'.padEnd(20)}Security Action`,
+        `${''.padEnd(14)}${'(Count)'.padEnd(16)}${'(Count)'.padEnd(14)}${'(Count)'.padEnd(20)}`,
+        '------------------------------------------------------------------------',
+        ...rows,
+        ...(rows.length ? ['------------------------------------------------------------------------'] : []),
+        'Total Addresses in System (excluding one mac per port)     : 0',
+        'Max Addresses limit in System (excluding one mac per port) : 6144',
+        'Security violation counts are not modeled; the violation column reports 0.',
+      ];
+    }
+    if (command === 'show access-lists' || command.startsWith('show access-lists ')) {
+      const name = command.slice('show access-lists'.length).trim().toLowerCase();
+      const entries = aclEntries(session).filter(entry => !name || entry.acl === name);
+      if (!entries.length) return [name ? `% Access list ${name} is not configured.` : '% No access lists configured.'];
+      const groups = new Map<string, typeof entries>();
+      for (const entry of entries) groups.set(entry.acl, [...(groups.get(entry.acl) || []), entry]);
+      return Array.from(groups.entries()).flatMap(([acl, rules]) => [
+        `${rules[0].type === 'extended' ? 'Extended' : 'Standard'} IP access list ${acl}`,
+        ...rules.map((rule, index) => `    ${(index + 1) * 10} ${rule.action} ${rule.match}`),
+      ]);
+    }
+    const renderInterface = (port: string, switchportOnly: boolean): string[] => {
+      if (!physicalPorts.includes(port) && !session.interfaces[port]) return [`% Interface ${port} does not exist on ${node.name}.`];
+      const { state, peer, peerPort, status } = portEvidence(port);
+      if (switchportOnly) return [
+        `Name: ${port}`,
+        `Administrative Mode: ${state?.switchportMode || 'not configured'}`,
+        `Operational Mode: ${status === 'connected' ? state?.switchportMode || 'not configured' : 'down'}`,
+        `Access Mode VLAN: ${state?.accessVlan || 1}`,
+        `Trunking Native Mode VLAN: ${state?.nativeVlan || 1}`,
+        `Trunking VLANs Enabled: ${state?.allowedVlans || 'all'}`,
+      ];
+      const lineStatus = status === 'connected' ? 'up' : status === 'disabled' ? 'administratively down' : status === 'err-disabled' ? 'down (err-disabled)' : 'down';
+      return [
+        `${port} is ${lineStatus}, line protocol is ${status === 'connected' ? 'up' : 'down'}`,
+        `Description: ${[...(state?.commands || [])].reverse().find(value => value.startsWith('description '))?.slice(12) || 'not configured'}`,
+        `Modeled topology peer: ${peer ? `${peer.name} ${peerPort}` : 'not connected'}`,
+        `Switchport mode: ${state?.switchportMode || 'not configured'}`,
+        ...(state?.switchportMode === 'access' ? [`Access VLAN: ${state.accessVlan || 1}`] : []),
+        ...(state?.switchportMode === 'trunk' ? [`Native VLAN: ${state.nativeVlan || 1}`, `Allowed VLANs: ${state?.allowedVlans || 'all'}`] : []),
+        `Duplex: ${state?.duplex || 'auto'}, speed: ${state?.speed || 'auto'} Mb/s`,
+        `CRC errors: ${state?.errors.crc ?? 'not modeled'}, collisions: ${state?.errors.collisions ?? 'not modeled'}`,
+      ];
+    };
+    if (command === 'show interfaces' || command === 'show interfaces switchport') {
+      // Bare `show interfaces` dumps every physical port, as IOS does.
+      const switchportOnly = command === 'show interfaces switchport';
+      return physicalPorts.flatMap((port, index) => [...(index ? [''] : []), ...renderInterface(port, switchportOnly)]);
+    }
+    const interfaceCommand = command.match(/^show interfaces (?!trunk$|status$|counters\b)(\S+)(?: switchport)?$/);
+    if (interfaceCommand) {
+      return renderInterface(interfaceCommand[1], command.endsWith(' switchport'));
+    }
     if (command.startsWith('show running-config interface ')) {
       const port = command.slice('show running-config interface '.length);
       const state = session.interfaces[port];
@@ -266,6 +479,9 @@ export function outputFor(command: string, node: SandboxNode, topology: Topology
       return formatOspfInterfaceCli(evidence, suffix && suffix !== 'brief' ? suffix : undefined, suffix === 'brief');
     }
     if (command === "show ip route" || command.startsWith('show ip route ')) {
+      if (!isRoutedDevice(node)) {
+        return ["% No modeled IP routing table on " + node.name + ".", "Layer 2 switches forward by MAC address table; use 'show mac address-table' for forwarding evidence."];
+      }
       const code = (protocol: string) => protocol === 'connected' ? 'C' : protocol === 'static' ? 'S' : 'O';
       const detail = (route: { protocol: string; prefix: string; nextHop?: string; interface?: string; metric?: number }) => {
         if (route.protocol === 'connected') return `${code(route.protocol)}    ${route.prefix} is directly connected, ${route.interface || '-'}`;
@@ -276,22 +492,86 @@ export function outputFor(command: string, node: SandboxNode, topology: Topology
       const routes = ipv4Routes(session).filter(route => !filter || ['connected', 'static', 'ospf'].includes(filter) ? !filter || route.protocol === filter : route.prefix.split('/')[0] === filter);
       return routes.length ? ["Codes: C - connected, S - static, O - OSPF", "", ...routes.map(detail)] : ["Codes: C - connected, S - static, O - OSPF", "% No modeled routes are present."];
     }
+    if (command === 'show running-config | section interface') {
+      return Object.keys(session.interfaces).flatMap(port => outputFor(`show running-config interface ${port}`, node, topology, session, sessions).slice(1, -1));
+    }
+    if (command === 'show running-config | section access-list') {
+      const lines: string[] = [];
+      let inAcl = false;
+      for (const line of session.runningConfig) {
+        if (/^ip access-list /.test(line)) { inAcl = true; lines.push(line); }
+        else if (inAcl && /^(?:permit|deny|remark) /.test(line)) lines.push(` ${line}`);
+        else { inAcl = false; if (/^access-list /.test(line)) lines.push(line); }
+      }
+      return lines.length ? lines : ['% No access lists configured.'];
+    }
     if (command === "show running-config" || command.startsWith("show running-config |")) {
-      return ["Building configuration...", `hostname ${session.hostname}`, ...session.runningConfig, "!", "end"];
+      const interfaceCommands = new Set(Object.values(session.interfaces).flatMap(state => state.commands.map(line => line.toLowerCase())));
+      const globalAndAcl: string[] = [];
+      let inAcl = false;
+      for (const line of session.runningConfig) {
+        if (/^ip access-list /i.test(line)) { inAcl = true; globalAndAcl.push(line); }
+        else if (inAcl && /^(?:permit|deny|remark) /i.test(line)) globalAndAcl.push(` ${line}`);
+        else { inAcl = false; if (!interfaceCommands.has(line.toLowerCase())) globalAndAcl.push(line); }
+      }
+      const interfaces = Object.keys(session.interfaces).flatMap(port => outputFor(`show running-config interface ${port}`, node, topology, session, sessions).slice(1, -1));
+      return ["Building configuration...", `hostname ${session.hostname}`, ...globalAndAcl, ...interfaces, "!", "end"];
     }
     if (command === "show startup-config") {
       return session.startupConfig.length > 0
-        ? [`hostname ${session.hostname}`, ...session.startupConfig, "!", "end"]
+        ? session.startupConfig.join('\n') === session.runningConfig.join('\n')
+          ? outputFor('show running-config', node, topology, session, sessions).slice(1)
+          : [`hostname ${session.hostname}`, ...session.startupConfig, "!", "end"]
         : ["% Startup configuration is empty."];
     }
     if (command === "show vlan brief") {
-      const entries = Object.entries(session.vlans);
+      const entries = Object.entries(view.vlans);
       return ["VLAN Name                             Status    Ports", ...(entries.length ? entries.map(([id, name]) => {
-        const ports = Object.entries(session.interfaces)
+        const ports = Object.entries(view.interfaces)
           .filter(([, state]) => state.switchportMode === 'access' && String(state.accessVlan || 1) === id)
           .map(([port]) => port).sort();
         return `${id.padEnd(4)} ${name.padEnd(32)} active    ${ports.join(', ')}`;
       }) : ["% No user VLANs configured."])];
+    }
+    if (command === "show vtp status") {
+      if (node.kind !== "switch") return [`% VTP is not available on ${node.name}.`];
+      const state = vtpState(view);
+      const updater = vtpUpdater(view);
+      const digest = vtpDigest(state, view.vlans);
+      const existing = 1 + Object.keys(view.vlans).filter((id) => id !== "1").length;
+      // The top block follows standard IOS show vtp status layout above the
+      // screenshot's visible cut; the emulator supports versions 1–2 only.
+      return [
+        `${"VTP Version capable".padEnd(34)}: 1 to 2`,
+        `${"VTP version running".padEnd(34)}: ${state.version}`,
+        `${"VTP Domain Name".padEnd(34)}: ${vtpDomainDisplay(state.domain)}`,
+        `${"VTP Pruning Mode".padEnd(34)}: Disabled`,
+        `${"VTP Traps Generation".padEnd(34)}: Disabled`,
+        "",
+        `Configuration last modified by ${state.lastModifiedBy} at ${state.lastModifiedAt}`,
+        `Local updater ID is ${updater.id} on interface ${updater.iface} (${updater.id === "0.0.0.0" ? "no VLAN interface with an address found" : "lowest numbered VLAN interface found"})`,
+        "",
+        "Feature VLAN:",
+        "--------------",
+        `${"VTP Operating Mode".padEnd(34)}: ${vtpModeDisplay(state.mode)}`,
+        `${"Maximum VLANs supported locally".padEnd(34)}: ${VTP_MAX_VLANS}`,
+        `${"Number of existing VLANs".padEnd(34)}: ${existing}`,
+        `${"Configuration Revision".padEnd(34)}: ${state.revision}`,
+        `${"MD5 digest".padEnd(34)}: ${digest[0]}`,
+        `${" ".repeat(36)}${digest[1]}`,
+      ];
+    }
+    const spanningTreeVlan = command.match(/^show spanning-tree(?: vlan (\d+))?$/);
+    const spanningTreeInterface = command.match(/^show spanning-tree interface (\S+) detail$/);
+    if (spanningTreeVlan || spanningTreeInterface || command === 'show spanning-tree root' || command === 'show spanning-tree summary') {
+      if (node.kind !== "switch") return [`% Spanning tree is not available on ${node.name}.`];
+      // The VLAN list follows the VTP-synced database, so a client shows
+      // instances for adopted VLANs. `root`, `summary`, and
+      // `interface <port> detail` render from the same converged tree.
+      if (spanningTreeInterface) return renderSpanningTreeInterface(node, topology, session, sessions, view.vlans, spanningTreeInterface[1]);
+      if (command === 'show spanning-tree root') return renderSpanningTreeRoot(node, topology, session, sessions, view.vlans);
+      if (command === 'show spanning-tree summary') return renderSpanningTreeSummary(node, topology, session, sessions, view.vlans);
+      return renderSpanningTree(node, topology, session, sessions, view.vlans, spanningTreeVlan![1] === undefined ? undefined : Number(spanningTreeVlan![1]));
     }
     if (command === "show ip dhcp pool") {
       const pools = Object.values(session.dhcpPools || {});
@@ -315,17 +595,43 @@ export function outputFor(command: string, node: SandboxNode, topology: Topology
       return vlans.length ? ["Source Mac Validation      : enabled", `ARP inspection VLANs      : ${vlans.join(", ")}`, "Inspection decisions are modeled from configured training policy."] : ["ARP inspection is not configured"];
     }
     if (command.startsWith("show mac address-table")) {
+      // The grammar's variants filter the table the way IOS does: `secure`
+      // shows only addresses on port-security ports, `dynamic` excludes
+      // them, and `interface <port>` shows one port's addresses.
+      const securePorts = new Set(physicalPorts.filter(port => session.interfaces[port]?.commands.includes('switchport port-security')));
+      let entries = session.macTable;
+      if (command === 'show mac address-table secure') entries = entries.filter(entry => securePorts.has(entry.port));
+      else if (command === 'show mac address-table dynamic') entries = entries.filter(entry => entry.type === 'dynamic' && !securePorts.has(entry.port));
+      else {
+        const iface = command.match(/^show mac address-table interface (\S+)$/);
+        if (iface) entries = entries.filter(entry => entry.port === iface[1]);
+      }
       return [
         "          Mac Address Table",
         "-------------------------------------------",
         "Vlan    Mac Address       Type        Ports",
         "----    -----------       --------    -----",
-        ...(session.macTable.length ? session.macTable.map((entry) => `${String(entry.vlan).padEnd(8)}${entry.mac.padEnd(18)}${entry.type.padEnd(12)}${entry.port}`) : ["          % No MAC addresses learned."]),
+        ...(entries.length ? entries.map((entry) => `${String(entry.vlan).padEnd(8)}${entry.mac.padEnd(18)}${entry.type.padEnd(12)}${entry.port}`) : ["          % No MAC addresses learned."]),
       ];
     }
     if (command === "show ip interface brief") {
       const entries = Object.entries(session.interfaces);
       return ["Interface              IP-Address      OK? Method Status                Protocol", ...(entries.length ? entries.map(([name, state]) => `${name.padEnd(22)} ${(state.ipv4[0]?.split(" ")[0] || "unassigned").padEnd(15)} YES manual ${state.shutdown ? "administratively down" : "up"}                    ${state.shutdown ? "down" : "up"}`) : ["% No interfaces configured."])];
+    }
+    if (command === 'show ip interface' || command.startsWith('show ip interface ')) {
+      const port = command.slice('show ip interface'.length).trim();
+      const ports = port ? [port] : Object.keys(session.interfaces);
+      return ports.flatMap(name => {
+        const state = session.interfaces[name];
+        if (!state) return [`% Interface ${name} is not configured.`];
+        const status = portEvidence(name).status === 'connected' ? 'up' : 'down';
+        const bindings = state.commands.filter(line => /^ip access-group \S+ (?:in|out)$/.test(line));
+        const address = state.ipv4[0]?.split(' ');
+        return [`${name} is ${state.shutdown ? 'administratively down' : status}, line protocol is ${status}`,
+          `  Internet address is ${address ? `${address[0]}/${prefixLength(address[1])}` : 'unassigned'}`,
+          `  Inbound access list is ${[...bindings].reverse().find(line => line.endsWith(' in'))?.split(' ')[2] || 'not set'}`,
+          `  Outgoing access list is ${[...bindings].reverse().find(line => line.endsWith(' out'))?.split(' ')[2] || 'not set'}`];
+      });
     }
     if (command === "show ntp associations") {
       const server = session.runningConfig.find(line => /^ntp server /.test(line))?.slice("ntp server ".length);
@@ -390,22 +696,254 @@ export function outputFor(command: string, node: SandboxNode, topology: Topology
     }
     if (command === "show interfaces trunk") {
       const trunks = Object.entries(session.interfaces).filter(([, state]) => state.switchportMode === 'trunk');
-      return trunks.length ? ["Port        Mode         Encapsulation  Status        Native vlan", ...trunks.map(([name, state]) => `${name}       on           802.1q         ${interfaceEvidence(session, name).up ? 'trunking' : 'not-trunking'}  ${state.nativeVlan || 1}`), "", "Port        Vlans allowed on trunk", ...trunks.map(([name, state]) => `${name}       ${state.allowedVlans || "1-4094"}`)] : ["% No configured trunk interfaces."];
+      return trunks.length ? ["Port        Mode         Encapsulation  Status        Native vlan", ...trunks.map(([name, state]) => `${name}       on           802.1q         ${portEvidence(name).status === 'connected' ? 'trunking' : 'not-trunking'}  ${state.nativeVlan || 1}`), "", "Port        Vlans allowed on trunk", ...trunks.map(([name, state]) => `${name}       ${state.allowedVlans || "1-4094"}`)] : ["% No configured trunk interfaces."];
     }
-    if (command === "show etherchannel summary") {
+    if (command === "show etherchannel" || command.startsWith("show etherchannel ")) {
+      // EtherChannel is a switch feature in the capability matrix; the
+      // display gate mirrors the Layer 3 show ip route gate.
+      if (node.kind !== "switch") return [`% EtherChannel is not available on ${node.name}.`];
+      const rest = command.slice("show etherchannel".length).trim();
+      if (!rest) return ["% Incomplete command."];
       const members = Object.entries(session.interfaces).filter(([, state]) => state.channelGroup);
-      const groups = Array.from(new Set(members.map(([, state]) => state.channelGroup))).filter(Boolean);
-      return groups.length ? ["Group  Port-channel  Protocol    Ports", ...groups.map((group) => {
-        const ports = members.filter(([, state]) => state.channelGroup === group).map(([name, state]) => `${name}(${state.channelMode === "on" ? "P" : "P"})`).join(" ");
-        return `${group}     Po${group}           ${members.find(([, state]) => state.channelGroup === group)?.[1].channelMode === "on" ? "-" : "LACP"}         ${ports}`;
-      })] : ["% No EtherChannels configured."];
+      const groups = Array.from(new Set(members.map(([, state]) => state.channelGroup))).filter((group): group is number => Boolean(group)).sort((a, b) => a - b);
+      const formatEcPort = (port: string) => {
+        const gigabit = port.match(/^g(\d+)\/(\d+)(?:\.(\d+))?$/i);
+        if (gigabit) return `Gi${gigabit[1]}/${gigabit[2]}${gigabit[3] ? `.${gigabit[3]}` : ''}`;
+        return port;
+      };
+      const normalizeEcPort = (port: string) => port.toLowerCase().replace(/\s+/g, '').replace(/^gigabitethernet/, 'g').replace(/^gig/, 'g');
+      const peerFor = (port: string) => {
+        const link = topology.links.find((item) => (item.from === node.id && item.fromPort === port) || (item.to === node.id && item.toPort === port));
+        if (!link) return undefined;
+        const remoteId = link.from === node.id ? link.to : link.from;
+        return { remoteId, remotePort: link.from === node.id ? link.toPort : link.fromPort, remote: topology.nodes.find((item) => item.id === remoteId) };
+      };
+      // Per-member flag: only D (down), P (bundled), and s (suspended) are
+      // emitted. The other flags in the legend are IOS's full set; this
+      // simulator does not model hot-standby, minimum-links, or Auto LAG.
+      const memberFlag = (port: string) => {
+        if (!interfaceEvidence(session, port).up) return "D";
+        const peer = peerFor(port);
+        if (!peer) return "s";
+        return channelForwarding(session, port, sessions[peer.remoteId], peer.remotePort).bundled ? "P" : "s";
+      };
+      const memberReason = (port: string) => {
+        const peer = peerFor(port);
+        if (!peer) return "No modeled peer member";
+        return channelForwarding(session, port, sessions[peer.remoteId], peer.remotePort).reason;
+      };
+      const protocolForGroup = (group: number | undefined) => members.some(([, state]) => state.channelGroup === group && state.channelMode === "on") ? "-" : "LACP";
+      const portChannelFlags = (group: number) => {
+        const poState = session.interfaces[`port-channel ${group}`];
+        const layer = poState?.ipv4.length ? "R" : "S";
+        const inUse = members.some(([name, state]) => state.channelGroup === group && memberFlag(name) === "P");
+        return `${layer}${inUse ? "U" : "N"}`;
+      };
+      const portsForGroup = (group: number) => members.filter(([, state]) => state.channelGroup === group).map(([name]) => `${formatEcPort(name)}(${memberFlag(name)})`).join(" ");
+      const groupLine = (group: number) => `${String(group).padEnd(7)}${`Po${group}(${portChannelFlags(group)})`.padEnd(14)}${protocolForGroup(group).padEnd(12)}${portsForGroup(group)}`;
+      const notConfigured = (group: number) => [`% Channel-group ${group} is not configured on ${node.name}.`];
+      const summaryFor = (only?: number) => {
+        const shown = only === undefined ? groups : groups.filter((group) => group === only);
+        const aggregators = shown.filter((group) => members.some(([name, state]) => state.channelGroup === group && memberFlag(name) === "P")).length;
+        return [
+          "Flags:  D - down        P - bundled in port-channel",
+          "        I - stand-alone s - suspended",
+          "        H - Hot-standby (LACP only)",
+          "        R - Layer3      S - Layer2",
+          "        U - in use      N - not in use, no aggregation",
+          "        f - failed to allocate aggregator",
+          "",
+          "        M - not in use, minimum links not met",
+          "        m - not in use, port not aggregated due to minimum links not met",
+          "        u - unsuitable for bundling",
+          "        w - waiting to be aggregated",
+          "        d - default port",
+          "",
+          "        A - formed by Auto LAG",
+          "",
+          `Number of channel-groups in use: ${shown.length}`,
+          "Number of aggregators:".padEnd(34) + String(aggregators),
+          "Group  Port-channel  Protocol    Ports",
+          "------+-------------+-----------+-----------------------------------------------",
+          ...shown.map(groupLine),
+        ];
+      };
+      const detailFor = (only: number) => [
+        `Channel-group ${only} detail`,
+        `  Port-channel: Po${only}(${portChannelFlags(only)})`,
+        `  Protocol: ${protocolForGroup(only)}`,
+        "  Members:",
+        ...members.filter(([, state]) => state.channelGroup === only).map(([name, state]) => `    ${formatEcPort(name)} (${memberFlag(name)}) - mode ${state.channelMode}, ${interfaceEvidence(session, name).up ? "up" : "down"}, ${memberReason(name)}`),
+        "",
+        "LACP timers, counters, and per-port neighbor detail are not modeled.",
+      ];
+      const portFor = (filter?: string, only?: number) => {
+        let shown = only === undefined ? members : members.filter(([, state]) => state.channelGroup === only);
+        if (filter) {
+          if (!node.ports.some((port) => normalizeEcPort(port) === normalizeEcPort(filter))) return [`% Interface ${filter} does not exist on ${node.name}.`];
+          shown = shown.filter(([name]) => normalizeEcPort(name) === normalizeEcPort(filter));
+          if (!shown.length) return [`% ${filter} is not an EtherChannel member on ${node.name}.`];
+        }
+        if (!shown.length) return ["% No EtherChannels configured."];
+        return shown.flatMap(([name, state]) => {
+          const peer = peerFor(name);
+          const flag = memberFlag(name);
+          const stateText = !interfaceEvidence(session, name).up ? "Down" : flag === "P" ? "Up, bundled" : "Up, suspended";
+          return [
+            `Port: ${formatEcPort(name)}`,
+            `  Channel-group: ${state.channelGroup}`,
+            `  Mode: ${state.channelMode}`,
+            `  Port state: ${stateText} (${flag})`,
+            `  Protocol: ${protocolForGroup(state.channelGroup)}`,
+            `  Peer: ${peer?.remote ? `${peer.remote.name} ${formatEcPort(peer.remotePort)}` : "No modeled peer"}`,
+            `  Evidence: ${memberReason(name)}`,
+          ];
+        });
+      };
+      const portChannelFor = (only?: number) => {
+        const shown = only === undefined ? groups : groups.filter((group) => group === only);
+        if (!shown.length) return only === undefined ? ["% No EtherChannels configured."] : notConfigured(only);
+        return shown.flatMap((group) => {
+          const bundleState = members.some(([name, state]) => state.channelGroup === group && memberFlag(name) === "P") ? "BUNDLED" : members.some(([name, state]) => state.channelGroup === group && interfaceEvidence(session, name).up) ? "SUSPENDED" : "DOWN";
+          return [
+            `Port-channel: Po${group}(${portChannelFlags(group)})`,
+            `  Channel-group: ${group}`,
+            `  Protocol: ${protocolForGroup(group)}`,
+            `  Members: ${portsForGroup(group)}`,
+            `  Bundle state: ${bundleState}`,
+          ];
+        });
+      };
+      const protocolFor = (only?: number) => {
+        const shown = only === undefined ? groups : groups.filter((group) => group === only);
+        if (!shown.length) return only === undefined ? ["% No EtherChannels configured."] : notConfigured(only);
+        return [
+          "Channel-group  Protocol",
+          ...shown.map((group) => `${String(group).padEnd(14)}${protocolForGroup(group)}`),
+          "PAgP is not modeled; mode on groups show - (static).",
+        ];
+      };
+      if (rest === "summary") return summaryFor();
+      if (rest === "auto") return ["% No auto-formed EtherChannels.", "Auto LAG is not modeled in this simulator."];
+      if (rest === "detail") {
+        if (!groups.length) return ["% No EtherChannels configured."];
+        return groups.flatMap((group) => detailFor(group));
+      }
+      if (rest === "load-balance") return [
+        "EtherChannel Load-Balancing Configuration:",
+        "        src-mac",
+        "",
+        "EtherChannel Load-Balancing Addresses Used:",
+        "        not modeled",
+        "",
+        "Load-balance method is not configurable in this simulator; frame",
+        "distribution is not simulated.",
+      ];
+      if (rest === "port-channel") return portChannelFor();
+      if (rest.startsWith("port-channel ")) {
+        const parsed = Number(rest.slice("port-channel ".length).trim());
+        if (Number.isInteger(parsed)) return portChannelFor(parsed);
+      }
+      if (rest === "port") return portFor();
+      if (rest.startsWith("port ")) return portFor(rest.slice("port ".length).trim());
+      if (rest === "protocol") return protocolFor();
+      const groupMatch = rest.match(/^(\d+)(?:\s+(detail|port|port-channel|protocol|summary))?$/);
+      if (groupMatch) {
+        const group = Number(groupMatch[1]);
+        const sub = groupMatch[2];
+        if (!groups.includes(group)) return notConfigured(group);
+        if (!sub || sub === "summary") return summaryFor(group);
+        if (sub === "detail") return detailFor(group);
+        if (sub === "port") return portFor(undefined, group);
+        if (sub === "port-channel") return portChannelFor(group);
+        if (sub === "protocol") return protocolFor(group);
+      }
+      // Unknown form falls through to the generic no-modeled-output return.
     }
-    return [
-      "IOS verification output is modeled from the current session state.",
-      `Command accepted: ${command}`,
-      `Device: ${node.name}; modeled links: ${topology.links.length}.`,
-      "This command has no modeled output for the current simulator profile.",
-    ];
+    if (command === 'show cdp neighbors' || command.startsWith('show cdp neighbors ')) {
+      // CDP output is topology-backed, same derivation as the verification
+      // panel's CDP tab: one entry per link to a CDP-capable neighbor.
+      // CDP hellos, aging, and per-neighbor timers are not modeled, so
+      // Holdtime is the 180-second CDP default for every entry and
+      // capability/platform are modeled from kind/role, not live hellos.
+      const cdpCapable = (device: { kind: string } | undefined) => ["router", "switch", "firewall", "asa", "modem", "access-point"].includes(device?.kind || '');
+      if (!cdpCapable(node)) return [`% CDP is not available on ${node.name}.`];
+      let rest = command.slice('show cdp neighbors'.length).trim();
+      let detail = false;
+      if (rest.endsWith(' detail')) { detail = true; rest = rest.slice(0, -' detail'.length).trim(); }
+      else if (rest === 'detail') { detail = true; rest = ''; }
+      const normalizeCdpPort = (port: string) => port.toLowerCase().replace(/\s+/g, '').replace(/^gigabitethernet/, 'g').replace(/^gig/, 'g');
+      if (rest && !node.ports.some((port) => normalizeCdpPort(port) === normalizeCdpPort(rest))) return [`% Interface ${rest} does not exist on ${node.name}.`];
+      const formatCdpPort = (port: string) => {
+        const gigabit = port.match(/^g(\d+)\/(\d+)(?:\.(\d+))?$/i);
+        if (gigabit) return `Gig ${gigabit[1]}/${gigabit[2]}${gigabit[3] ? `.${gigabit[3]}` : ''}`;
+        const bundle = port.match(/^port-channel\s*(\d+)$/i);
+        if (bundle) return `Port-channel${bundle[1]}`;
+        return port;
+      };
+      const formatCdpPortLong = (port: string) => {
+        const gigabit = port.match(/^g(\d+)\/(\d+)(?:\.(\d+))?$/i);
+        if (gigabit) return `GigabitEthernet${gigabit[1]}/${gigabit[2]}${gigabit[3] ? `.${gigabit[3]}` : ''}`;
+        const bundle = port.match(/^port-channel\s*(\d+)$/i);
+        if (bundle) return `Port-channel${bundle[1]}`;
+        return port;
+      };
+      const cdpCapability = (device: { kind: string; role?: string }) => {
+        if (device.kind === 'router') return 'R';
+        if (device.kind === 'switch') return /Layer 3|OSPF Speaker/i.test(device.role || '') ? 'R S' : 'S';
+        if (device.kind === 'access-point') return 'T';
+        return 'R';
+      };
+      const cdpCapabilityWords = (capability: string) => capability.split(' ').map((code) => code === 'R' ? 'Router' : code === 'S' ? 'Switch' : code === 'T' ? 'Trans Bridge' : code).join(' ');
+      const cdpPlatform = (device: { kind: string; role?: string }) => {
+        if (device.kind === 'router') return 'Cisco ISR';
+        if (device.kind === 'switch') return /Layer 3|OSPF Speaker/i.test(device.role || '') ? 'Catalyst 3560-X' : 'Catalyst 2960';
+        if (device.kind === 'firewall' || device.kind === 'asa') return 'Cisco ASA';
+        if (device.kind === 'access-point') return 'Cisco AP';
+        if (device.kind === 'modem') return 'Cisco Modem';
+        return 'Cisco IOS';
+      };
+      const entries = topology.links.flatMap((link) => {
+        if (link.from !== node.id && link.to !== node.id) return [];
+        const remoteId = link.from === node.id ? link.to : link.from;
+        const remote = topology.nodes.find((item) => item.id === remoteId);
+        if (!remote || !cdpCapable(remote)) return [];
+        const localPort = link.from === node.id ? link.fromPort : link.toPort;
+        const remotePort = link.from === node.id ? link.toPort : link.fromPort;
+        if (rest && normalizeCdpPort(localPort) !== normalizeCdpPort(rest)) return [];
+        return [{ remote, localPort, remotePort }];
+      });
+      if (detail) {
+        if (!entries.length) return ['% No CDP neighbors discovered.'];
+        return entries.flatMap(({ remote, localPort, remotePort }) => {
+          const remoteSession = sessions[remote.id];
+          const entryAddress = remoteSession ? Object.values(remoteSession.interfaces).flatMap((state) => state.ipv4.map((address) => address.split(' ')[0]))[0] || 'not modeled' : 'not modeled';
+          return [
+            '-------------------------',
+            `Device ID: ${remote.name}`,
+            'Entry address(es):',
+            `  IP address: ${entryAddress}`,
+            `Platform: ${cdpPlatform(remote)},  Capabilities: ${cdpCapabilityWords(cdpCapability(remote))}`,
+            `Interface: ${formatCdpPortLong(localPort)},  Port ID (outgoing port): ${formatCdpPortLong(remotePort)}`,
+            'Holdtime : 180 sec',
+            '',
+            'Version :',
+            'not modeled',
+            '',
+          ];
+        });
+      }
+      return [
+        'Capability Codes: R - Router, T - Trans Bridge, B - Source Route Bridge',
+        '                  S - Switch, H - Host, I - IGMP, r - Repeater, P - Phone,',
+        '                  D - Remote, C - CVTA, M - Two-port Mac Relay',
+        '',
+        `${'Device ID'.padEnd(17)}${'Local Intrfce'.padEnd(18)}${'Holdtme'.padEnd(11)}${'Capability'.padEnd(12)}${'Platform'.padEnd(16)}Port ID`,
+        ...entries.map(({ remote, localPort, remotePort }) => `${remote.name.padEnd(17)}${formatCdpPort(localPort).padEnd(18)}${'180'.padEnd(11)}${cdpCapability(remote).padEnd(12)}${cdpPlatform(remote).padEnd(16)}${formatCdpPort(remotePort)}`),
+        `Total cdp entries displayed : ${entries.length}`,
+      ];
+    }
+    return [`% No modeled operational output for ${command} on ${node.name}.`];
   }
   if (command.startsWith("nslookup ")) return ["Server:  Unresolved until a modeled DNS server is reached.", `% DNS lookup requested for ${command.slice("nslookup ".length)}.`];
   if (command.startsWith('ping ') || command.startsWith('traceroute ')) {
@@ -420,7 +958,19 @@ export function outputFor(command: string, node: SandboxNode, topology: Topology
 export type ProbeResolution = { path: string[]; destination: SandboxNode } | { error: string };
 
 export function ipv4Routes(session: Session) {
-  const routes = session.routingTable.filter(route => route.protocol !== 'connected');
+  // NOTE: ipv4Routes is the forwarding calculation, not the `show ip route`
+  // display. Hosts and Layer 2 switches still need their local connected
+  // routes (and gateway) to originate traffic, even though they never
+  // transit traffic for others — transit through an L2 switch is modeled
+  // by the VLAN path, not by this table. The display gate lives in
+  // outputFor, which refuses `show ip route` on non-routed devices.
+  const routes = session.routingTable.filter(route => {
+    if (route.protocol === 'connected') return false;
+    // Never surface an OSPF entry the simulator has not actually learned:
+    // without a local OSPF process there is no adjacency to learn from.
+    if (route.protocol === 'ospf' && !Object.keys(session.ospfProcesses || {}).length) return false;
+    return true;
+  });
   for (const [port, state] of Object.entries(session.interfaces)) {
     if (!interfaceEvidence(session, port).up) continue;
     for (const address of state.ipv4) {
@@ -431,9 +981,30 @@ export function ipv4Routes(session: Session) {
   }
   const configured = session.settings?.['config:global'];
   const staticCommands = configured ? Object.entries(configured).filter(([key]) => key.startsWith('ip route ')).map(([key, value]) => `${key} ${value}`) : session.runningConfig;
+  const pending = [];
   for (const command of staticCommands) {
     const match = command.toLowerCase().match(/^ip route ([0-9.]+) ([0-9.]+) ([0-9.]+)$/);
-    if (match) routes.push({ prefix: `${match[1]}/${prefixLength(match[2])}`, nextHop: match[3], protocol: 'static' });
+    if (match) pending.push({ prefix: `${match[1]}/${prefixLength(match[2])}`, nextHop: match[3] });
+  }
+  // IOS installs a next-hop static route only after recursive resolution finds an active egress.
+  for (let pass = 0; pass < pending.length; pass++) {
+    let installed = false;
+    for (let index = pending.length - 1; index >= 0; index--) {
+      const candidate = pending[index];
+      const nextHop = ipToNumber(candidate.nextHop);
+      if (nextHop === null) continue;
+      const resolver = routes.filter(route => {
+        const [network, bits] = route.prefix.split('/');
+        const networkNumber = ipToNumber(network);
+        const mask = Number(bits) === 0 ? 0 : (0xffffffff << (32 - Number(bits))) >>> 0;
+        return networkNumber !== null && ((nextHop & mask) >>> 0) === ((networkNumber & mask) >>> 0) && !!route.interface;
+      }).sort((a, b) => Number(b.prefix.split('/')[1]) - Number(a.prefix.split('/')[1]))[0];
+      if (!resolver) continue;
+      routes.push({ ...candidate, interface: resolver.interface, protocol: 'static' });
+      pending.splice(index, 1);
+      installed = true;
+    }
+    if (!installed) break;
   }
   return routes;
 }
@@ -460,7 +1031,7 @@ export function resolveProbePath(sourceId: string, destinationIp: string, topolo
     }).sort((a, b) => Number(b.prefix.split('/')[1]) - Number(a.prefix.split('/')[1]) || ({ connected: 0, static: 1, ospf: 110 }[a.protocol] - { connected: 0, static: 1, ospf: 110 }[b.protocol]));
     const route = routes[0];
     const host = ['pc', 'server', 'printer', 'iot'].includes(node.kind);
-    const gateway = session.dhcpClient?.gateway || [...session.runningConfig].reverse().find(command => /^ip default-gateway /i.test(command))?.split(' ')[1];
+    const gateway = session.dhcpClient?.gateway || [...session.runningConfig].reverse().find(command => /^ip default-gateway /i.test(command))?.split(' ')[2];
     const nextIp = route?.nextHop || (route?.protocol === 'connected' ? destinationIp : host ? gateway : undefined);
     if (!nextIp) return { error: `${node.name}: no route matches ${destinationIp}.` };
     const nextNode = topology.nodes.find(candidate => Object.entries(sessions[candidate.id]?.interfaces || {}).some(([port, state]) => interfaceEvidence(sessions[candidate.id], port).up && state.ipv4.some(address => address.split(' ')[0] === nextIp)));
@@ -502,7 +1073,10 @@ export function deterministicMac(nodeId: string): string {
 }
 
 export type VlanPath = { nodeIds: string[]; links: SandboxLink[] } | { error: string };
-const MAC_AGING_MS = 5 * 60 * 1000;
+// MAC aging uses a lengthy timer on purpose: a learner pausing mid-lab must
+// not come back to an emptied MAC table. Real IOS defaults to 300 seconds;
+// the emulator keeps entries for an hour of wall-clock inactivity.
+const MAC_AGING_MS = 60 * 60 * 1000;
 
 export function ageMacTables(sessions: Record<string, Session>, now = Date.now()): Record<string, Session> {
   return Object.fromEntries(Object.entries(sessions).map(([nodeId, session]) => [nodeId, {

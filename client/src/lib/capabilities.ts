@@ -1,9 +1,9 @@
 import type { EcosystemDeviceKind } from "@/lib/network-ecosystem";
 
-export type DeviceCapability = "vlan" | "trunk" | "etherchannel" | "poe" | "mac-table" | "stp" | "ip" | "routing" | "ospf" | "dhcp-relay" | "acl" | "nat" | "vpn" | "inspection" | "dhcp" | "dns" | "http" | "ftp" | "ssid" | "wpa2" | "wpa3" | "vlan-mapping" | "dhcp-client" | "dns-client" | "wan" | "nat-passthrough";
+export type DeviceCapability = "vlan" | "trunk" | "etherchannel" | "poe" | "mac-table" | "stp" | "vtp" | "ip" | "routing" | "ospf" | "dhcp-relay" | "acl" | "nat" | "vpn" | "inspection" | "dhcp" | "dns" | "http" | "ftp" | "ssid" | "wpa2" | "wpa3" | "vlan-mapping" | "dhcp-client" | "dns-client" | "wan" | "nat-passthrough";
 
 export const CAPABILITY_MATRIX: Record<EcosystemDeviceKind, DeviceCapability[]> = {
-  switch: ["vlan", "trunk", "etherchannel", "poe", "mac-table", "stp", "dhcp"],
+  switch: ["vlan", "trunk", "etherchannel", "poe", "mac-table", "stp", "vtp", "dhcp"],
   router: ["ip", "routing", "ospf", "dhcp", "dhcp-relay", "dns", "acl", "nat"],
   firewall: ["ip", "routing", "acl", "nat", "inspection"],
   server: ["ip", "dhcp", "dns", "http", "ftp"],
@@ -18,14 +18,17 @@ export const CAPABILITY_MATRIX: Record<EcosystemDeviceKind, DeviceCapability[]> 
 // Capability ownership describes the device roadmap; this set describes what
 // the current simulator release actually models.
 export const IMPLEMENTED_CAPABILITIES = new Set<DeviceCapability>([
-  "vlan", "trunk", "etherchannel", "poe", "mac-table", "stp", "ip", "routing", "ospf", "acl", "nat", "inspection", "dhcp", "dns", "dns-client", "dhcp-client",
+  "vlan", "trunk", "etherchannel", "poe", "mac-table", "stp", "vtp", "ip", "routing", "ospf", "acl", "nat", "inspection", "dhcp", "dns", "dns-client", "dhcp-client",
 ]);
 
 export function commandCapability(command: string): DeviceCapability | null {
+  // `do` carries the capability of the EXEC command it wraps.
+  if (/^do /.test(command)) return commandCapability(command.slice(3));
   if (/^(vlan |show vlan|switchport access vlan)/.test(command)) return "vlan";
   if (/^(switchport trunk|switchport mode trunk|show interfaces trunk)/.test(command)) return "trunk";
   if (/^(channel-group|interface port-channel|show etherchannel)/.test(command)) return "etherchannel";
   if (/^(spanning-tree|show spanning-tree)/.test(command)) return "stp";
+  if (/^(vtp (mode|domain|version|password) |show vtp status$)/.test(command)) return "vtp";
   if (/^show mac address-table/.test(command)) return "mac-table";
   if (/^(router ospf|ipv6 router ospf|show ip ospf|show ipv6 ospf)/.test(command)) return "ospf";
   if (/^(ip route|ipv6 route|show ip route|show ipv6 route)/.test(command)) return "routing";

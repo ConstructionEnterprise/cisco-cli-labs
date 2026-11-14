@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { ArrowLeft, ArrowRight, BookOpenCheck, RotateCcw } from 'lucide-react';
-import { networkingVocabularyCards } from '@/labs/vocabularyCards';
+import { networkingVocabularyCards, shuffleVocabularyCards } from '@/labs/vocabularyCards';
 import { recordAttempt, type LearningMode } from '@/lib/learning-engine';
 
-const cards = networkingVocabularyCards();
+const sourceCards = networkingVocabularyCards();
 
 const modeLabels: Record<LearningMode, string> = {
   guided: 'Guided',
@@ -12,6 +12,7 @@ const modeLabels: Record<LearningMode, string> = {
 };
 
 export default function NetworkingVocabulary({ mode, onMode, onExit }: { mode: LearningMode; onMode: (mode: LearningMode) => void; onExit: () => void }) {
+  const [cards, setCards] = useState(() => shuffleVocabularyCards(sourceCards));
   const [index, setIndex] = useState(0);
   const [answer, setAnswer] = useState('');
   const [checked, setChecked] = useState(false);
@@ -40,6 +41,11 @@ export default function NetworkingVocabulary({ mode, onMode, onExit }: { mode: L
   };
 
   const restart = () => {
+    setCards((current) => {
+      const next = shuffleVocabularyCards(sourceCards);
+      if (next.length > 1 && next[0].id === current[0].id) [next[0], next[1]] = [next[1], next[0]];
+      return next;
+    });
     setIndex(0);
     setAnswer('');
     setChecked(false);
@@ -66,7 +72,7 @@ export default function NetworkingVocabulary({ mode, onMode, onExit }: { mode: L
             <h1 className="mt-3 font-display text-4xl font-semibold tracking-tight text-white sm:text-5xl">Networking Vocabulary</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[#b4c1c5]">Review every vocabulary card authored for the curriculum in one focused quiz path. Your assistance setting applies here exactly as it does in guided labs.</p>
           </div>
-          <button type="button" onClick={restart} className="inline-flex items-center gap-2 rounded-lg border border-[#f5b74b]/45 bg-[#2a2112] px-3 py-2 font-mono text-xs text-[#f4d998] transition hover:bg-[#3a2a16]"><RotateCcw className="h-3.5 w-3.5" /> Restart</button>
+          <button type="button" onClick={restart} className="inline-flex items-center gap-2 rounded-lg border border-[#f5b74b]/45 bg-[#2a2112] px-3 py-2 font-mono text-xs text-[#f4d998] transition hover:bg-[#3a2a16]"><RotateCcw className="h-3.5 w-3.5" /> Restart and reshuffle</button>
         </div>
         <div className="mt-7 grid gap-3 sm:grid-cols-[auto_1fr_auto] sm:items-center">
           <span className="font-mono text-xs text-[#63e6e2]">CARD {index + 1} / {cards.length}</span>

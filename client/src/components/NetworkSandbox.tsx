@@ -18,10 +18,12 @@ import TabbedInspector from "@/components/TabbedInspector";
 import NetworkDeviceSchematic from "@/components/NetworkDeviceSchematic";
 import DeviceSelectionAlert from "@/components/DeviceSelectionAlert";
 import { supportsDeviceCommand } from "@/lib/capabilities";
+import { iosDeviceContextHelp, iosPlatformReference } from '@/lib/ios-device-reference';
 import { createSimulatedFlow, flowToPackets } from "@/lib/traffic-engine";
 import { evaluateAsaTraffic } from "@/lib/asa-engine";
 import LearningWorkbench from './LearningWorkbench';
-import { canonicalCommand, DEFAULT_LEARNING_MODE, seedSessions, gradeLab, recordAttempt, type LearningMode } from '../lib/learning-engine';
+import RangeEvidencePanel from './RangeEvidencePanel';
+import { canonicalCommand, DEFAULT_LEARNING_MODE, seedSessions, gradeLab, matchesHelpStep, recordAttempt, type LearningMode } from '../lib/learning-engine';
 import { executeNetworkCommand, tracePacket } from '../lib/sandbox-network-engine';
 import { executeAttackCommand, isAttackCommand } from '../lib/attack-console-engine';
 import { interfaceSubnet, ospfNetworksMatch, isOspfSpeaker, supportsSandboxCommand, ospfNeighbors, prefixLength, reconcileOspfRoutes, outputFor, resolveProbePath, ipToNumber, numberToIp, deterministicMac, ageMacTables, removeMacEntriesForPort, removeMacEntriesForLink, vlanFromInterface, portAllowsVlan, clientVlan, resolveVlanPath, resolveDhcpLease, resolveDnsName, negotiatePoe, type ProbeResolution, type DhcpResolution, type DnsResolution, type VlanPath } from '../lib/sandbox-network-engine';
@@ -70,6 +72,7 @@ const STORAGE_KEY = "ipv6-cli-lab-network-sandbox-v3";
 const MISSION_STORAGE_PREFIX = "ipv6-cli-lab-mission-v1:";
 
 type PersistedMission = {
+  version?: number;
   persisted: PersistedSandbox;
   stepIndex: number;
   selectedId: string | null;
@@ -83,7 +86,10 @@ function missionStorageKey(labId: string): string {
 function loadMission(labId: string): PersistedMission | null {
   try {
     const raw = window.localStorage.getItem(missionStorageKey(labId));
-    return raw ? JSON.parse(raw) as PersistedMission : null;
+    const mission = raw ? JSON.parse(raw) as PersistedMission : null;
+    if (labId.includes('mt2-tr5-vlsm-supernetting') && mission?.version !== 2) return null;
+    if (labId.includes('tr4-extended-acl') && mission?.version !== 3) return null;
+    return mission;
   } catch {
     return null;
   }
@@ -194,6 +200,7 @@ export default function NetworkSandbox({ onExit, labId = "mt1-tr1-binary-foundat
 
   const selectedNode = topology.nodes.find((node) => node.id === selectedId) ?? null;
   const selectedSession = selectedNode ? sessions[selectedNode.id] : null;
+  const selectedIosReference = selectedNode && selectedSession?.terminalKind !== 'attack' ? iosPlatformReference(selectedNode) : null;
   const selectedRole = selectedNode?.role ?? "Select a device to open its IOS console";
   const terminalLines = selectedSession?.history ?? [];
   useEffect(() => {
@@ -260,6 +267,7 @@ export default function NetworkSandbox({ onExit, labId = "mt1-tr1-binary-foundat
   useEffect(() => {
     if (config.type === "guided" || config.type === "sandbox") {
       window.localStorage.setItem(missionStorageKey(activeLabId), JSON.stringify({
+        version: activeLabId.includes('tr4-extended-acl') ? 3 : activeLabId.includes('mt2-tr5-vlsm-supernetting') ? 2 : undefined,
         persisted,
         stepIndex,
         selectedId,
@@ -563,9 +571,20 @@ ${linksCode}
     setNotice(freshState.topology.name + " reset");
   }
 
+  function submitIosHelp(query: string) {
+    if (!selectedNode || !selectedSession || selectedSession.terminalKind === 'attack') return false;
+    const help = iosDeviceContextHelp(query, selectedSession.mode, selectedNode, selectedSession.context);
+    if (!help) return false;
+    const matches = matchesHelpStep(currentStep, query, selectedNode.name, selectedSession.mode, help);
+    setPersisted(current => ({ ...current, sessions: { ...current.sessions, [selectedNode.id]: { ...selectedSession, history: [...selectedSession.history, `${modePrompt(selectedNode.name, selectedSession)} ${query}`, ...help], completedLabSteps: matches ? { ...selectedSession.completedLabSteps, [currentStep.id]: true } : selectedSession.completedLabSteps } } }));
+    if (matches) { setTerminalInput(''); setStepIndex(index => index + 1); setLastFeedback(currentStep.successMessage); }
+    return true;
+  }
+
   function submitTerminal(value = terminalInput) {
     if (!selectedNode || !selectedSession || !value.trim()) return;
     const raw = value.trim();
+    if (submitIosHelp(raw)) { setTerminalInput(''); return; }
     const command = canonicalCommand(raw);
     const isAttackConsole = selectedSession.terminalKind === 'attack';
     if (isAttackConsole) {
@@ -577,7 +596,11 @@ ${linksCode}
         return;
       }
       if (result.accepted && currentStep) {
-        const matches = selectedNode.name === currentStep.targetDevice && selectedSession.mode === currentStep.requiredMode && command === canonicalCommand(currentStep.expectedCommand);
+        const observed = !currentStep.evidencePhase || result.session.attackTerminal?.rangeEvidence.length !== selectedSession.attackTerminal?.rangeEvidence.length
+          && result.session.attackTerminal?.rangeEvidence.at(-1)?.phase === currentStep.evidencePhase
+          && result.session.attackTerminal?.rangeEvidence.at(-1)?.targetId === config.rangeTargetId;
+        const matches = selectedNode.name === currentStep.targetDevice && selectedSession.mode === currentStep.requiredMode && observed
+          && (currentStep.evidencePhase || command === canonicalCommand(currentStep.expectedCommand));
         if (matches) { setStepIndex(index => index + 1); setLastFeedback(currentStep.successMessage); }
       }
       setPersisted(current => ({ ...current, sessions: { ...current.sessions, [selectedNode.id]: { ...result.session, history: [...history, ...result.output] } } }));
@@ -589,8 +612,10 @@ ${linksCode}
     const result = executeNetworkCommand(selectedNode, topology, sessions, command);
     if (!result.accepted) recordAttempt(config.id, 'errors');
     if (result.accepted && currentStep) {
-      const matches = selectedNode.name === currentStep.targetDevice && selectedSession.mode === currentStep.requiredMode && command === canonicalCommand(currentStep.expectedCommand);
+      const reachable = !currentStep.requireReachability || tracePacket(selectedNode.id, command.slice(5), topology, result.sessions).passed;
+      const matches = selectedNode.name === currentStep.targetDevice && selectedSession.mode === currentStep.requiredMode && command === canonicalCommand(currentStep.expectedCommand) && reachable;
       if (matches) { setStepIndex(index => index + 1); setLastFeedback(currentStep.successMessage); }
+      else if (currentStep.requireReachability && !reachable) setLastFeedback('The modeled request/reply path is not reachable yet. Check both router interfaces and the switch ports.');
       else if (learningMode === 'guided') setLastFeedback(`Command accepted. Next guided step: ${currentStep.targetDevice} / ${currentStep.expectedCommand}`);
     }
     if (result.accepted && command.startsWith('ping ')) spawnPingProbe(selectedNode.id, command.slice(5));
@@ -951,6 +976,7 @@ ${linksCode}
           {missionCollapsed && <button type="button" onClick={() => setMissionCollapsed(false)} className="absolute inset-x-2 top-14 rounded border border-white/10 p-1.5 text-[#f5b74b] hover:bg-[#2d2518]" aria-label="Expand mission brief panel"><PanelRightClose className="mx-auto h-4 w-4 rotate-180" /></button>}
           <div className={missionCollapsed ? "hidden" : ""}>
           <LearningWorkbench key={activeLabId} lab={{ ...config, topology: { devices: topology.nodes, links: topology.links } }} catalog={LAB_REGISTRY} sessions={sessions} step={stepIndex} mode={learningMode} onMode={setLearningMode} onRestore={(restored, index, restoredTopology) => { setPersisted(current => ({ ...current, sessions: restored, topology: { ...current.topology, nodes: restoredTopology.devices, links: restoredTopology.links } })); setStepIndex(index); setTerminalInput(''); }} />
+          {config.rangeTargetId && <div className="mb-4"><RangeEvidencePanel targetId={config.rangeTargetId} terminal={Object.values(sessions).find(item => item?.terminalKind === 'attack')?.attackTerminal} /></div>}
           
           {currentStep?.exercise ? <div className="rounded-xl border border-[#63e6e2]/30 p-4 text-sm text-[#b9eeee]">{currentStep.label}<p className="mt-2">Complete the addressing worksheet above the viewport. No device selection is required for this step.</p></div> : learningMode !== 'guided' ? <div className="rounded-xl border border-[#63e6e2]/30 p-4 text-xs"><p>{config.description}</p><p className="mt-3">{gradeLab(config, sessions).passed ? 'All modeled configuration requirements are satisfied.' : 'Inspect the network and meet the requirements in the learning workspace. Commands may be entered in any order.'}</p></div> : config?.steps && config.steps.length > 0 ? (
             <div className="space-y-6">
@@ -961,10 +987,11 @@ ${linksCode}
 
                     {/* CURRENT COMMAND SECTION */}
                     <div className="mb-6">
-                      <div className="font-mono text-[10px] uppercase tracking-wider text-[#f5b74b] mb-1">Current Command:</div>
+                      <div className="font-mono text-[10px] uppercase tracking-wider text-[#f5b74b] mb-1">{currentStep?.helpQuery ? 'Help to request:' : 'Current Command:'}</div>
                       <div className="font-mono text-lg font-bold text-[#63e6e2] bg-black/60 p-3 rounded border border-[#63e6e2]/30 shadow-inner">
                         {learningMode === 'guided' ? currentStep?.expectedCommand : config.description}
                       </div>
+                      {currentStep?.helpQuery && <p className="mt-2 text-xs leading-5 text-[#b9eeee]">Type the full help query, including ?, then press Enter. Help does not change the configuration.</p>}
                       <button
                         type="button"
                         onClick={() => {
@@ -1046,8 +1073,9 @@ ${linksCode}
             <div className="relative flex items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2">
                 <SquareTerminal className="h-4 w-4 shrink-0 text-[#63e6e2]" />
-                <span className="font-mono text-[10px] uppercase tracking-[.16em] text-[#738890]">{selectedSession.terminalKind === 'attack' ? 'ATTACK-CONSOLE /' : 'IOS-SIM /'} {selectedNode.name}</span>
+                <span className="font-mono text-[10px] uppercase tracking-[.16em] text-[#738890]">{selectedSession.terminalKind === 'attack' ? 'ATTACK-CONSOLE /' : selectedIosReference ? 'IOS-SIM /' : 'DEVICE-SIM /'} {selectedNode.name}</span>
                 <span className="hidden truncate text-[10px] text-[#53666e] sm:block">{selectedRole}</span>
+                {selectedIosReference && <a href={selectedIosReference.url} target="_blank" rel="noopener noreferrer" className="hidden shrink-0 text-[10px] text-[#8fc9c8] underline underline-offset-2 hover:text-white lg:block" title="Official Cisco platform documentation; the simulator implements only a subset of commands">{selectedIosReference.label} reference</a>}
               </div>
               <div className="flex items-center gap-2">
                 <span className="hidden font-mono text-[10px] text-[#53666e] sm:block">{modePrompt(selectedNode.name, selectedSession)}</span>
@@ -1081,10 +1109,12 @@ ${linksCode}
                   autoFocus 
                   value={terminalInput} 
                   onChange={(event) => setTerminalInput(event.target.value)} 
-                  onKeyDown={(event) => event.key === "Enter" && submitTerminal()} 
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') submitTerminal();
+                  }}
                   className="min-w-0 flex-1 bg-transparent text-[#edf4f3] outline-none placeholder:text-[#3f555d]" 
-                  placeholder={selectedSession.terminalKind === 'attack' ? 'type a synthetic Linux range command...' : 'type IOS command or ? for help...'}
-                  aria-label={selectedSession.terminalKind === 'attack' ? 'Linux attack console command' : 'IOS command'}
+                  placeholder={selectedSession.terminalKind === 'attack' ? 'type a synthetic Linux range command...' : selectedIosReference ? 'type IOS command or ? for help, then press Enter...' : 'type a modeled device command...'}
+                  aria-label={selectedSession.terminalKind === 'attack' ? 'Linux attack console command' : selectedIosReference ? 'IOS command' : 'Modeled device command'}
                 />
               </div>
             </div>}

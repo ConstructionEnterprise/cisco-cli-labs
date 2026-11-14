@@ -3,11 +3,11 @@ import type { LabConfig } from './labDefinitions';
 // IDs stay stable for saved attempts; placement is independent of legacy ID prefixes.
 export const MASTER_ONE_CURRICULUM = [
   { tranche: 2, title: 'Applied Addressing and Neighbor Discovery', labs: [
-    'tr2-ipv4-interface', 'tr5-binary-cidr', 'tr2-ipv6-interface',
+    'mt1-tr2-ios-context-help', 'tr2-ipv4-interface', 'tr5-binary-cidr', 'tr2-ipv6-interface',
     'tr5-ipv6-subnetting', 'tr5-vlsm-dual-stack', 'tr5-broadcast-neighbor-discovery',
   ] },
   { tranche: 3, title: 'Switching and LAN Services', labs: [
-    'tr2-vlan-access', 'tr2-trunking', 'tr2-stp', 'tr3-router-on-a-stick', 'tr3-dhcp-server',
+    'tr2-vlan-access', 'tr2-trunking', 'tr2-vtp', 'tr2-stp', 'tr3-router-on-a-stick', 'tr3-dhcp-server',
   ] },
   { tranche: 4, title: 'Routing and Resilience', labs: [
     'tr3-static-routing', 'tr3-ospfv2', 'tr3-ospf-drbdr', 'tr3-ospfv3', 'tr3-fhrp', 'tr5-multicast',

@@ -2,6 +2,10 @@ import { applyCommand, boot, isCiscoCommand, normalizeCommand, type Session } fr
 import type { LabConfig } from '../labs/labDefinitions';
 import { supportsDeviceCommand } from './capabilities';
 import { executeAttackCommand, isAttackCommand } from './attack-console-engine';
+import { iosDeviceContextHelp } from './ios-device-reference';
+import type { LabStep } from '../labs/labDefinitions';
+import { syncVtp } from './vtp';
+import type { Topology } from '../components/NetworkSandbox';
 
 export type LearningMode = 'guided' | 'assisted' | 'assessment';
 export const DEFAULT_LEARNING_MODE: LearningMode = 'guided';
@@ -15,11 +19,24 @@ export function canonicalCommand(raw: string) {
     .replace(/gigabitethernet\s*(\d+\/\d+)/g, 'g$1');
 }
 
+export function matchesHelpStep(step: LabStep | undefined, query: string, deviceName: string, mode: Session['mode'], help: string[] | null) {
+  return !!step?.helpQuery && step.targetDevice === deviceName && step.requiredMode === mode
+    && query.trim().toLowerCase() === step.expectedCommand.toLowerCase()
+    && !!help?.length && !help[0].startsWith('%');
+}
+
 export function seedSessions(lab: LabConfig): Sessions {
   const sessions: Sessions = {};
   for (const device of lab.topology.devices) {
     const isAttackConsole = device.terminal === 'attack';
     let session = boot(device.name || device.id, device.role || 'Lab device', isAttackConsole ? 'attack' : 'ios');
+    if (!isAttackConsole && device.kind !== 'router' && device.kind !== 'switch') {
+      session.history = [
+        'Simulated device console (legacy lab syntax; not Cisco IOS)',
+        `${device.name || device.id} · ${device.role || 'Lab device'}`,
+        'This endpoint uses a modeled training command set, not an IOS command reference.',
+      ];
+    }
     for (const command of lab.initialState?.commands?.[device.name] || []) {
       session = applyCommand(session, canonicalCommand(command), session.history);
     }
@@ -43,6 +60,16 @@ export function replayLab(lab: LabConfig) {
       sessions[step.targetDevice] = { ...session, lessonAnswers: { ...session.lessonAnswers, [step.id]: true } };
       continue;
     }
+    if (step.helpQuery) {
+      const device = lab.topology.devices.find(device => device.name === step.targetDevice);
+      const help = device ? iosDeviceContextHelp(step.expectedCommand, session.mode, device, session.context) : null;
+      if (!matchesHelpStep(step, step.expectedCommand, step.targetDevice, session.mode, help)) {
+        findings.push({ severity: 'error', message: `Step ${step.id}: unavailable IOS context help ${step.expectedCommand}` });
+      } else {
+        sessions[step.targetDevice] = { ...session, history: [...session.history, `${session.hostname} ${step.expectedCommand}`, ...help!], completedLabSteps: { ...session.completedLabSteps, [step.id]: true } };
+      }
+      continue;
+    }
     const command = canonicalCommand(step.expectedCommand || '');
     const device = lab.topology.devices.find(device => device.name === step.targetDevice);
     if (session.mode === 'shell') {
@@ -56,6 +83,16 @@ export function replayLab(lab: LabConfig) {
       findings.push({ severity: 'error', message: `Step ${step.id} on ${step.targetDevice}: ${command} requires ${step.requiredMode}, actual ${session.mode}` });
     }
     sessions[step.targetDevice] = applyCommand(session, command, [...session.history, `${session.hostname}> ${command}`]);
+  }
+  // Replay applies commands device-by-device, like the interactive executor's
+  // reconciliation: propagate VTP databases once at the end so graded
+  // outcomes see what a client actually learned. Labs without a configured
+  // VTP domain are untouched (a NULL domain never propagates).
+  const topology = { name: lab.title, description: lab.description, nodes: lab.topology.devices, links: lab.topology.links } as Topology;
+  const byId = Object.fromEntries(lab.topology.devices.map((device) => [device.id, sessions[device.name || device.id]]));
+  const synced = syncVtp(topology, byId);
+  for (const device of lab.topology.devices) {
+    if (synced[device.id]) sessions[device.name || device.id] = synced[device.id];
   }
   return { sessions, findings };
 }
