@@ -50,6 +50,12 @@ const scenarios: Scenario[] = [
     targetId: 'legacy-app', probe: "curl -i --data-binary 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' https://legacy-app.example/input", inspect: 'nmap -Pn -p 443 legacy-app',
     finding: 'The modeled parser overruns a fixed buffer and crashes; that does not prove arbitrary code execution.',
   },
+  {
+    master: 6, tranche: 5, slug: 'cyber-vm-practice-target', title: 'Red Team: Virtual Machine Practice Target',
+    description: 'Validate the fictional practice target listener, probe its health endpoint, and enumerate its asset context. The captured response shows TLS and token enforcement are not enabled; the runtime boundary needs review.',
+    targetId: 'cyber-vm-01', probe: 'curl -i https://cyber-vm-01:8443/health', inspect: 'nmap -Pn -p 8443 cyber-vm-01',
+    finding: 'Service health shows TLS and token enforcement are not enabled; the runtime boundary needs review.',
+  },
 ];
 
 function makeLab(scenario: Scenario): LabConfig {

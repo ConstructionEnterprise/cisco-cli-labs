@@ -13,12 +13,14 @@ const threatCommands = new Set([
   "curl -i --data-binary 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' https://legacy-app.example/input",
   "ssh analyst@legacy-app 'journalctl -u legacy-app --no-pager'",
   'curl -i https://unknown-app.example/health',
+  'curl -i https://cyber-vm-01:8443/health',
   "ssh analyst@unknown-app 'journalctl -u unknown-app --no-pager'",
 ]);
 
 const rangeProbeTargets: Record<string, string> = {
   'dig @dns-1 payroll.training.example': 'dns-1',
   'curl -i https://unknown-app.example/health': 'unknown-app',
+  'curl -i https://cyber-vm-01:8443/health': 'cyber-vm-01',
   'curl -i "https://xss-lab.example/search?q=%3cb%3etraining%3c%2fb%3e"': 'xss-lab',
   'curl -i "https://files-lab.example/download?file=../training-canary.txt"': 'files-lab',
   "ssh trainee@linux-lab 'sudo -n id'": 'linux-lab',
@@ -161,6 +163,11 @@ function executeAttackCommandRaw(session: Session, command: string, iosSessions:
     if (command.includes('unknown-app.example')) return { accepted: true, session: next, output: isPortFiltered('unknown-app', '443', iosSessions)
       ? ['curl: (28) Connection timed out', 'Synthetic IOS isolation is active; root cause remains unknown.']
       : ['HTTP/1.1 503 Service Unavailable', 'Synthetic integrity alert: unexpected process behavior. Cause unconfirmed.'] };
+    if (command.includes('cyber-vm-01')) return { accepted: true, session: next, output: [
+      'HTTP/1.1 200 OK', 'Content-Type: application/json', '',
+      '{"service":"cyber-vm-01","state":"healthy","tls":false,"tokenRequired":false}',
+      'Synthetic finding: TLS and token enforcement are not enabled on the practice target; the runtime boundary needs review.',
+    ] };
     return { accepted: true, session: next, output: [
       'unknown-app: integrity alert and unexpected process restart',
       'No vulnerability or exploit has been identified. Treat zero-day as a hypothesis, not a diagnosis.',

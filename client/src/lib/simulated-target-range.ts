@@ -78,6 +78,28 @@ export const simulatedTargetRange: SimulatedAsset[] = [
       },
     },
   },
+  {
+    id: "cyber-vm-01", name: "CYBER-VM-01", kind: "Container", address: "10.76.20.101:8443", vlan: 20, zone: "Application DMZ", purpose: "Fictional containerized practice target for the local model cyber project", modeledCondition: "Virtual-machine practice target: container runtime, service inventory, and boundary review", permittedWork: "Inspect synthetic runtime metadata, logs, policy, and findings; no image pulls, shell access, requests, or execution.", services: [{ port: 8443, protocol: "tcp", name: "https-alt", product: "Synthetic Practice Target API" }],
+    container: {
+      image: "registry.training.local/cyber-vm:1.0.0",
+      runtime: "Docker (simulated)",
+      network: "training-app-dmz",
+      publishedPorts: ["8443/tcp"],
+      environmentClassification: "Synthetic production-like training data only",
+      health: "healthy",
+      restartPolicy: "unless-stopped (modeled)",
+      volumePolicy: "read-only application image; no host mounts",
+      logSummary: "Synthetic practice target: runtime and policy review pending.",
+      simulatedFindings: ["Approved TLS listener is required.", "Token enforcement must be enabled.", "No shell, image, registry, or network action is available."],
+      behavior: {
+        ingress: { tlsEnabled: false, tlsCertValid: true, tokenRequired: false, rateLimitRps: 60, burst: 60 },
+        health: "healthy",
+        kernel: { version: "6.1.0-training-alpine", memoryLimitMb: 512, cpuLimitCores: 0.5, pidsLimit: 100, seccompProfile: "docker-default", droppedCapabilities: ["CAP_SYS_ADMIN", "CAP_NET_ADMIN", "CAP_SYS_PTRACE"], retainedCapabilities: ["CAP_NET_BIND_SERVICE"] },
+        socket: { protocol: "tcp", port: 8443, interface: "eth0", backlogMax: 128, sendBufferBytes: 16384, receiveBufferBytes: 16384, tcpNoDelay: true, keepAlive: true, reuseAddress: true },
+        initialLogs: [{ level: "info", message: "container booted in synthetic runtime" }, { level: "info", message: "practice target ready for authorized training" }],
+      },
+    },
+  },
 ];
 
 export const simulatedTargetById = Object.fromEntries(simulatedTargetRange.map((asset) => [asset.id, asset]));
