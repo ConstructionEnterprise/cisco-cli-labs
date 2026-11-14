@@ -28,7 +28,7 @@ const rangeProbeTargets: Record<string, string> = {
 };
 
 export function isAttackCommand(command: string): boolean {
-  return threatCommands.has(command) || /^(?:nmap (?:-sv --version-light|-pn -p [0-9,]+) [a-z0-9-]+|snmpwalk -v2c -c trainingro [a-z0-9-]+ 1\.3\.6\.1\.2\.1\.1|snmpset -v2c -c trainingrw [a-z0-9-]+ 1\.3\.6\.1\.2\.1\.1\.4\.0 s range-owner|msfconsole|search type:auxiliary name:http_version|info auxiliary\/scanner\/http\/http_version|use auxiliary\/scanner\/http\/http_version|set rhosts [a-z0-9-]+|run|python3 training\/scripts\/range_inventory\.py [a-z0-9-]+|openssl s_client -connect container-api-1:8443|curl -ss(?: -h "authorization: bearer training-token")? https:\/\/container-api-1:8443\/api\/status|for i in \{1\.\.100\}; do curl -ss -h "authorization: bearer training-token" https:\/\/container-api-1:8443\/api\/status; done|ss -tnlp|cat \/proc\/self\/status|journalctl -u container-api-1 --no-pager)$/.test(command);
+  return threatCommands.has(command) || /^(?:nmap (?:-sV --version-light|-Pn -p [0-9,]+) [a-z0-9-]+|snmpwalk -v2c -c trainingro [a-z0-9-]+ 1\.3\.6\.1\.2\.1\.1|snmpset -v2c -c trainingrw [a-z0-9-]+ 1\.3\.6\.1\.2\.1\.1\.4\.0 s range-owner|msfconsole|search type:auxiliary name:http_version|info auxiliary\/scanner\/http\/http_version|use auxiliary\/scanner\/http\/http_version|set rhosts [a-z0-9-]+|run|python3 training\/scripts\/range_inventory\.py [a-z0-9-]+|openssl s_client -connect container-api-1:8443|curl -ss(?: -h "authorization: bearer training-token")? https:\/\/container-api-1:8443\/api\/status|for i in \{1\.\.100\}; do curl -ss -h "authorization: bearer training-token" https:\/\/container-api-1:8443\/api\/status; done|ss -tnlp|cat \/proc\/self\/status|journalctl -u container-api-1 --no-pager)$/.test(command);
 }
 
 function targetAddress(address: string) {
@@ -255,7 +255,7 @@ function executeAttackCommandRaw(session: Session, command: string, iosSessions:
     return { accepted: true, session: next, output: throttled ? [`HTTP/1.1 200 OK x${accepted}`, `HTTP/1.1 429 Too Many Requests x${throttled}`] : ['HTTP/1.1 200 OK', '{"service":"order-status-api","state":"healthy"}'] };
   }
 
-  const nmap = command.match(/^nmap (?:-sv --version-light|-pn -p ([0-9,]+)) ([a-z0-9-]+)$/);
+  const nmap = command.match(/^nmap (?:-sV --version-light|-Pn -p ([0-9,]+)) ([a-z0-9-]+)$/);
   const snmp = command.match(new RegExp(`^snmpwalk -v2c -c trainingro ([a-z0-9-]+) ${systemOid.replaceAll('.', '\\.')}$`));
   const snmpSet = command.match(new RegExp(`^snmpset -v2c -c trainingrw ([a-z0-9-]+) ${sysContactOid.replaceAll('.', '\\.')} s range-owner$`));
   const script = command.match(/^python3 training\/scripts\/range_inventory\.py ([a-z0-9-]+)$/);
@@ -311,7 +311,7 @@ export function executeAttackCommand(session: Session, command: string, iosSessi
   const result = executeAttackCommandRaw(session, command, iosSessions);
   if (!result.accepted || !result.session.attackTerminal) return result;
 
-  const nmap = command.match(/^nmap (?:-sv --version-light|-pn -p [0-9,]+) ([a-z0-9-]+)$/);
+  const nmap = command.match(/^nmap (?:-sV --version-light|-Pn -p [0-9,]+) ([a-z0-9-]+)$/);
   const inventory = command.match(/^python3 training\/scripts\/range_inventory\.py ([a-z0-9-]+)$/);
   const targetId = nmap?.[1] || rangeProbeTargets[command] || inventory?.[1];
   const phase: RangePhase | undefined = nmap ? 'validation' : inventory ? 'enumeration' : rangeProbeTargets[command] ? 'probe' : undefined;
